@@ -10,6 +10,8 @@ var tests = new (string Name, Action Run)[]
     ("fresh sensory inputs bypass recurrent backlog", FreshSensoryInputsBypassRecurrentBacklog),
     ("terminal reset clears state and recovers", TerminalResetClearsStateAndRecovers),
     ("healthy standing leaves sensory headroom", HealthyStateLeavesSensoryHeadroom),
+    ("normalized blood and vitality drive injury", NormalizedBloodAndVitalityDriveInjury),
+    ("nearby stimulus does not force escape walking", NearbyStimulusDoesNotForceEscapeWalking),
     ("R7 R8 variants receive light drive", RetinaVariantsReceiveLightDrive),
     ("bundled payload identity", BundledPayloadIdentity),
     ("sustained full-payload load reports backlog", SustainedFullPayloadLoadReportsBacklog),
@@ -99,6 +101,53 @@ static void HealthyStateLeavesSensoryHeadroom()
     True(standing > 0f && standing < 1f, "healthy standing must retain sensory headroom");
     brain.Step(Healthy(touch: 1f, physicalContact: 1f, heartbeat: 1f, velocity: .2f, sound: .2f));
     True(brain.TestSensoryDrive > standing && brain.TestSensoryDrive < 1f, "movement and sound must modulate healthy standing drive");
+}
+
+static void NormalizedBloodAndVitalityDriveInjury()
+{
+    var brain = OneNeuronBrain();
+    brain.Step(new SensoryFrame
+    {
+        Alive = true,
+        Health = 1f,
+        Oxygen = 1f,
+        Consciousness = 1f,
+        Blood = 0f,
+        Vitality = 1f,
+        Circulation = 1f
+    });
+    Equal(0f, brain.TestSensoryDrive);
+
+    brain.Step(new SensoryFrame
+    {
+        Alive = true,
+        Health = 1f,
+        Oxygen = 1f,
+        Consciousness = 1f,
+        Blood = 1f,
+        Vitality = 0f,
+        Circulation = 1f
+    });
+    Equal(1f, brain.TestSensoryDrive);
+}
+
+static void NearbyStimulusDoesNotForceEscapeWalking()
+{
+    var brain = OneNeuronBrain();
+    brain.SetTestPopulation("type:LC4", 0);
+    brain.SetTestPending(0, 1f);
+    var command = brain.Step(new SensoryFrame
+    {
+        Alive = true,
+        Health = 1f,
+        Oxygen = 1f,
+        Consciousness = 1f,
+        Vitality = 1f,
+        Circulation = 1f,
+        Nearby = 1f,
+        NearbyDirection = 1f
+    });
+    Equal(0f, command.Walk);
 }
 
 static void FreshSensoryInputsBypassRecurrentBacklog()

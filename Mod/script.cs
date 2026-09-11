@@ -329,7 +329,7 @@ namespace Mod
 
         private bool IsDangerous(SensoryFrame sensory)
         {
-            return sensory.Pain + sensory.Fire + sensory.Shock + sensory.SubmergedHypoxia > .5f || Fired("type:DNp01") || Fired("type:LC4");
+            return sensory.Pain + sensory.Fire + sensory.Shock + sensory.SubmergedHypoxia > .5f || Fired("type:DNp01");
         }
 
         private static float EscapeDirection(float nearbyDirection)

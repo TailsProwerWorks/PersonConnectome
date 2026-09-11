@@ -13,6 +13,7 @@ internal static class Program
             ("invalid health stops control without inventing death", InvalidHealth),
             ("destroyed and newly added inactive limbs", LimbLifecycle),
             ("normal blood, gorse blood and knockout identities", Liquids),
+            ("blood baseline and vitality fallback", BloodAndVitality),
             ("hypoxia and submersion remain distinct", Oxygen),
             ("external audio excludes own limbs, mute and invalid distances", Audio),
             ("contact impacts do not fabricate hearing", Impacts),
@@ -84,6 +85,35 @@ internal static class Program
         frame = f.Adapter.Read(); Equal(.7f, frame.LiquidSedation); Equal(0, frame.LiquidHazard); Equal("SEDATION", f.Adapter.LiveSignal);
         c.LiquidDistribution[new Liquid("ACID")] = new() { Raw = .3f }; Equal(.3f, f.Adapter.Read().LiquidHazard);
         c.LiquidDistribution.Clear(); frame = f.Adapter.Read(); Equal(0, frame.LiquidSedation); Equal(0, frame.LiquidHazard);
+        foreach (var identity in new[] { "REANIMATION AGENT", "TISSUE DECONSTRUCTION AGENT", "NITRO", "GASOLINE", "COOLANT", "TRITIUM" })
+        {
+            c.LiquidDistribution[new Liquid(identity)] = new() { Raw = .4f };
+            Equal(.4f, f.Adapter.Read().LiquidHazard);
+            c.LiquidDistribution.Clear();
+        }
+        foreach (var identity in new[] { "LIFE SERUM", "MENDING SERUM", "COAGULATION SERUM", "ENHANCING SERUM", "ULTRA STRENGTH SERUM" })
+        {
+            c.LiquidDistribution[new Liquid(identity)] = new() { Raw = .4f };
+            frame = f.Adapter.Read();
+            True(frame.LiquidHealing > .0f || frame.LiquidStimulation > .0f);
+            c.LiquidDistribution.Clear();
+        }
+    }
+    private static void BloodAndVitality()
+    {
+        var f = new Fixture();
+        Equal(0, f.Adapter.Read().Blood);
+        f.Limb.CirculationBehaviour.BloodAmount = .5f;
+        Equal(.5f, f.Adapter.Read().Blood);
+        f.Limb.CirculationBehaviour.BloodAmount = 0;
+        Equal(1, f.Adapter.Read().Blood);
+        f.Limb.CirculationBehaviour.BloodAmount = 1;
+        f.Limb.Vitality = 0;
+        var frame = f.Adapter.Read();
+        Equal(1, frame.Vitality);
+        f.Limb.Health = 40;
+        frame = f.Adapter.Read();
+        Equal(.4f, frame.Vitality);
     }
     private static void Oxygen()
     {

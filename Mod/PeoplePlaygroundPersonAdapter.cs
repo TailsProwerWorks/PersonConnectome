@@ -12,6 +12,7 @@ namespace Mod
         private readonly List<LimbBehaviour> limbs = [];
         private readonly List<PersonConnectomeLimbController> limbControllers = [];
         private readonly List<LimbBehaviour> discoveredLimbs = [];
+        private readonly Dictionary<CirculationBehaviour, float> bloodBaselines = [];
         private readonly Action<float> reportCollision;
         private float appliedWalk;
         private int appliedLimbCount;
@@ -379,7 +380,7 @@ namespace Mod
             return !float.IsNaN(averageHealth) && !float.IsInfinity(averageHealth) && averageHealth <= DeathHealthThreshold;
         }
 
-        private static float ReadLimb(ref SensoryFrame frame, LimbBehaviour limb)
+        private float ReadLimb(ref SensoryFrame frame, LimbBehaviour limb)
         {
             var health = Unit(limb.Health / Mathf.Max(1f, limb.InitialHealth));
             frame.LimbLoss = Mathf.Max(frame.LimbLoss, limb.IsDismembered || limb.Broken || limb.CurrentlyShattered != 0 ? 1f : 0f);
@@ -392,7 +393,7 @@ namespace Mod
             frame.Paralysis = Mathf.Max(frame.Paralysis, limb.IsParalysed ? 1f : 0f);
             frame.Paralysis = Mathf.Max(frame.Paralysis, limb.IsCapable ? 0f : 1f);
             frame.Numbness = Mathf.Max(frame.Numbness, Unit(limb.Numbness));
-            frame.Vitality = Mathf.Min(frame.Vitality, Unit(limb.Vitality));
+            frame.Vitality = Mathf.Min(frame.Vitality, ReadVitality(limb, health));
             frame.LungDamage = Mathf.Max(frame.LungDamage, limb.HasLungs && limb.LungsPunctured ? 1f : 0f);
             frame.Touch = Mathf.Max(frame.Touch, limb.IsOnFloor ? 1f : 0f);
             ReadCirculation(ref frame, limb.CirculationBehaviour);
@@ -401,7 +402,7 @@ namespace Mod
             return health;
         }
 
-        private static void ReadCirculation(ref SensoryFrame frame, CirculationBehaviour circulation)
+        private void ReadCirculation(ref SensoryFrame frame, CirculationBehaviour circulation)
         {
             if (circulation == null)
             {
@@ -414,8 +415,30 @@ namespace Mod
             frame.Circulation = Mathf.Min(frame.Circulation, circulation.HasBloodFlow ? Unit(circulation.BloodFlow) : 0f);
             frame.Disconnected = Mathf.Max(frame.Disconnected, circulation.IsDisconnected || !circulation.HasCirculation ? 1f : 0f);
             frame.Wounds = Mathf.Max(frame.Wounds, Unit((circulation.StabWoundCount + circulation.GunshotWoundCount + circulation.BleedingPointCount) / 8f));
-            frame.Blood = Mathf.Max(frame.Blood, 1f - Unit(circulation.GetAmountOfBlood()));
+            frame.Blood = Mathf.Max(frame.Blood, ReadBloodDeficit(circulation));
             ReadLiquidIdentities(ref frame, circulation);
+        }
+
+        private static float ReadVitality(LimbBehaviour limb, float health)
+        {
+            return IsFinite(limb.Vitality) && limb.Vitality > .001f ? Unit(limb.Vitality) : health;
+        }
+
+        private float ReadBloodDeficit(CirculationBehaviour circulation)
+        {
+            var amount = circulation.GetAmountOfBlood();
+            if (!IsFinite(amount) || amount <= .001f)
+            {
+                return bloodBaselines.ContainsKey(circulation) ? 1f : 0f;
+            }
+
+            if (!bloodBaselines.TryGetValue(circulation, out var baseline) || amount > baseline)
+            {
+                bloodBaselines[circulation] = amount;
+                return 0f;
+            }
+
+            return 1f - Unit(amount / baseline);
         }
 
         private static void ReadLiquidIdentities(ref SensoryFrame frame, CirculationBehaviour circulation)
@@ -448,6 +471,8 @@ namespace Mod
                 }
 
                 if (MatchesLiquid(identity, "acid", "corrosion", "gorse", "toxin", "zombie") ||
+                    MatchesLiquid(identity, "reanimation", "deconstruction", "combustion", "osteomorphosis", "tritium") ||
+                    MatchesLiquid(identity, "nitro", "gasoline", "coolant", "oil", "explosive") ||
                     (!isSedation && MatchesLiquid(identity, "poison")))
                 {
                     frame.LiquidHazard = Mathf.Max(frame.LiquidHazard, amount);
@@ -458,12 +483,13 @@ namespace Mod
                     frame.LiquidSedation = Mathf.Max(frame.LiquidSedation, amount);
                 }
 
-                if (MatchesLiquid(identity, "adrenaline", "stimulation"))
+                if (MatchesLiquid(identity, "adrenaline", "stimulation", "enhancing", "ultra strength", "durability"))
                 {
                     frame.LiquidStimulation = Mathf.Max(frame.LiquidStimulation, amount);
                 }
 
-                if (MatchesLiquid(identity, "regeneration", "healing", "immortality"))
+                if (MatchesLiquid(identity, "regeneration", "healing", "immortality", "life serum", "mending") ||
+                    MatchesLiquid(identity, "coagulation"))
                 {
                     frame.LiquidHealing = Mathf.Max(frame.LiquidHealing, amount);
                 }
