@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Mod
@@ -13,6 +14,8 @@ namespace Mod
         private PeoplePlaygroundPersonAdapter adapter;
         private PersonConnectomeStatusDisplay statusDisplay;
         private float accumulator;
+        private readonly List<SuppressedContextMenuButton> suppressedContextMenuButtons = [];
+        private readonly List<ContextMenuOptionComponent> contextMenuOptions = [];
 
         private void Awake()
         {
@@ -27,6 +30,19 @@ namespace Mod
             {
                 Debug.Log("Person Connectome: " + loadStatus + ". Active control is disabled; no fallback graph is substituted.");
             }
+            SuppressNativePoseOptions();
+        }
+
+        private void Start()
+        {
+            // LimbBehaviour creates its native pose buttons during startup; repeat
+            // once after all child Start methods have run so the menu is consistent.
+            SuppressNativePoseOptions();
+        }
+
+        private void OnEnable()
+        {
+            SuppressNativePoseOptions();
         }
 
         private void FixedUpdate()
@@ -59,12 +75,99 @@ namespace Mod
             accumulator = 0f;
             brain?.Step(default(SensoryFrame));
             adapter?.Stop();
+            RestoreNativePoseOptions();
         }
 
         private void OnDestroy()
         {
+            RestoreNativePoseOptions();
             adapter?.Dispose();
             statusDisplay?.Dispose();
+        }
+
+        private void SuppressNativePoseOptions()
+        {
+            if (brain == null || adapter == null || !adapter.IsUsable || gameObject == null)
+            {
+                return;
+            }
+
+            gameObject.GetComponentsInChildren(true, contextMenuOptions);
+            foreach (var optionComponent in contextMenuOptions)
+            {
+                if (optionComponent == null || optionComponent.Buttons == null)
+                {
+                    continue;
+                }
+
+                for (var i = optionComponent.Buttons.Count - 1; i >= 0; i--)
+                {
+                    var button = optionComponent.Buttons[i];
+                    if (!IsNativePoseOption(button))
+                    {
+                        continue;
+                    }
+
+                    suppressedContextMenuButtons.Add(new SuppressedContextMenuButton(optionComponent, button));
+                    optionComponent.Buttons.RemoveAt(i);
+                }
+            }
+        }
+
+        private void RestoreNativePoseOptions()
+        {
+            for (var i = suppressedContextMenuButtons.Count - 1; i >= 0; i--)
+            {
+                var suppressed = suppressedContextMenuButtons[i];
+                if (suppressed.Component != null && suppressed.Component.Buttons != null && !suppressed.Component.Buttons.Contains(suppressed.Button))
+                {
+                    suppressed.Component.Buttons.Add(suppressed.Button);
+                }
+            }
+
+            suppressedContextMenuButtons.Clear();
+        }
+
+        private static bool IsNativePoseOption(ContextMenuButton button)
+        {
+            return IsPoseIdentity(button.Identity) ||
+                ContainsPoseDescription(button.Description);
+        }
+
+        private static bool IsPoseIdentity(string identity)
+        {
+            return string.Equals(identity, "startWalking", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(identity, "startProtect", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(identity, "startSit", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(identity, "startPetrified", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(identity, "startStumbling", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool ContainsPoseDescription(string description)
+        {
+            return !string.IsNullOrEmpty(description) &&
+                (description.IndexOf("animation override", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 description.IndexOf("stumbling", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 description.IndexOf("protection", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 description.IndexOf("sitting", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 description.IndexOf("resting", StringComparison.OrdinalIgnoreCase) >= 0) &&
+                (description.IndexOf("walk", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 description.IndexOf("stumbling", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 description.IndexOf("protection", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 description.IndexOf("sitting", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 description.IndexOf("resting", StringComparison.OrdinalIgnoreCase) >= 0);
+        }
+
+        private sealed class SuppressedContextMenuButton
+        {
+            public readonly ContextMenuOptionComponent Component;
+            public readonly ContextMenuButton Button;
+
+            public SuppressedContextMenuButton(ContextMenuOptionComponent component, ContextMenuButton button)
+            {
+                Component = component;
+                Button = button;
+            }
         }
 
         private void RegisterCollision(float magnitude) => adapter?.RegisterCollision(magnitude);

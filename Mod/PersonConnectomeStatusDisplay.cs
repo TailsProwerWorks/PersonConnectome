@@ -1,6 +1,7 @@
 using System;
 using TMPro;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace Mod
 {
@@ -40,6 +41,7 @@ namespace Mod
             {
                 label.font = TMP_Settings.defaultFontAsset;
             }
+            ConfigureForegroundRendering();
         }
 
         public void Update(float elapsedSeconds, ConnectomeBrain brain, PeoplePlaygroundPersonAdapter adapter)
@@ -90,6 +92,33 @@ namespace Mod
             if (direction.sqrMagnitude > .001f)
             {
                 labelObject.transform.rotation = Quaternion.LookRotation(-direction, camera.transform.up);
+            }
+        }
+
+        private void ConfigureForegroundRendering()
+        {
+            var renderer = label == null ? null : label.GetComponent<Renderer>();
+            if (renderer != null)
+            {
+                var frontLayer = renderer.sortingLayerID;
+                var frontLayerValue = SortingLayer.GetLayerValueFromID(frontLayer);
+                foreach (var layer in SortingLayer.layers)
+                {
+                    if (layer.value > frontLayerValue)
+                    {
+                        frontLayer = layer.id;
+                        frontLayerValue = layer.value;
+                    }
+                }
+
+                renderer.sortingLayerID = frontLayer;
+                renderer.sortingOrder = short.MaxValue;
+            }
+
+            var material = label == null ? null : label.fontMaterial;
+            if (material != null && material.HasProperty("_ZTest"))
+            {
+                material.SetFloat("_ZTest", (float)CompareFunction.Always);
             }
         }
 

@@ -8,6 +8,7 @@ internal static class Program
         (string, Action)[] tests =
         [
             ("terminal motors and grips clear immediately", TerminalStop),
+            ("native pose context actions are suppressed", ContextMenuPoseActions),
             ("unconscious and incapable limbs clear old commands", IncapableStop),
             ("brain injury remains alive with matching signal value", BrainInjury),
             ("invalid health stops control without inventing death", InvalidHealth),
@@ -107,6 +108,21 @@ internal static class Program
             True(frame.LiquidHealing > .0f || frame.LiquidStimulation > .0f);
             c.LiquidDistribution.Clear();
         }
+    }
+    private static void ContextMenuPoseActions()
+    {
+        var f = new Fixture();
+        var options = f.Root.AddComponent<ContextMenuOptionComponent>();
+        var walking = new ContextMenuButton("startWalking", "Forces the walking animation override");
+        var sitting = new ContextMenuButton("startSit", "Forces the sitting animation override");
+        var delete = new ContextMenuButton("delete", "Delete");
+        options.Buttons.Add(walking); options.Buttons.Add(sitting); options.Buttons.Add(delete);
+        var controller = f.Root.AddComponent<PersonConnectomeController>();
+        var type = typeof(PersonConnectomeController);
+        type.GetMethod("Awake", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(controller, null);
+        Equal(1, options.Buttons.Count); True(options.Buttons.Contains(delete));
+        type.GetMethod("OnDisable", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(controller, null);
+        Equal(3, options.Buttons.Count); True(options.Buttons.Contains(walking)); True(options.Buttons.Contains(sitting));
     }
     private static void BloodAndVitality()
     {

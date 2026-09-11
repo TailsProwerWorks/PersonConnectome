@@ -16,6 +16,7 @@ The game-facing project targets `net48` and references installed People Playgrou
 | `CirculationBehaviour.BloodRegenerationPerSecond` / `LimbBehaviour.RegenerationSpeed` | Bounded boosts never lower an existing baseline. Cleanup restores only an unchanged last assignment owned by this controller. A newer external write wins. |
 | `PersonBehaviour.AdrenalineLevel` | Bounded stimulation/calming during active control. |
 | `PhysicalBehaviour.BurnIntensity` | Bounded reduction during active control. |
+| `ContextMenuOptionComponent.Buttons` / `ContextMenuButton.Identity` | Controlled people suppress only the native walking/protective/sitting/resting/stumbling pose actions; unrelated context-menu actions remain available and the original buttons are restored when the controller is disabled. |
 
 Restorative outputs are engineered interventions. They do not demonstrate human physiology or a biological fly-to-human chemistry mapping.
 

@@ -161,6 +161,16 @@ public class GenericScifiProjectileBehaviour : UnityEngine.Component { }
 public class MachineGunProjectileBehaviour : UnityEngine.Component { }
 public class LaunchedRocketBehaviour : UnityEngine.Component { }
 public class ActivationPropagation { }
+public class ContextMenuOptionComponent : UnityEngine.Component
+{
+    public List<ContextMenuButton> Buttons = [];
+}
+public class ContextMenuButton
+{
+    public string Identity;
+    public string Description;
+    public ContextMenuButton(string identity, string description = "") { Identity = identity; Description = description; }
+}
 public class GripBehaviour
 {
     public bool isHolding;
