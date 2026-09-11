@@ -67,7 +67,19 @@ namespace Mod
             refractoryUntil = new long[asset.NeuronCount];
         }
         public string Status { get { return "MaleCNS v1.0 " + asset.NeuronCount + " neurons / " + asset.EdgeCount + (stopped ? " STOPPED" : " queued=" + pending.Count + " processed=" + processedThisStep + " deferred=" + deferredThisStep + " fired=" + fired.Count + " input=" + LastSensoryDrive.ToString("0.00") + " request-walk=" + lastCommand.Walk.ToString("0.00")); } }
-        public string DisplaySummary { get { return stopped ? "NEURAL: STOPPED\n  queued=0  processed=0  deferred=0  fired=0" : "NEURAL:\n  input=" + LastSensoryDrive.ToString("0.00") + "  queued=" + pending.Count + "  active=" + active.Count + "\n  processed=" + processedThisStep + "/" + MaxActivePerStep + "  deferred=" + deferredThisStep + "\n  fired=" + fired.Count + "  scheduler=" + (deferredThisStep > 0 ? "BACKLOG" : "STEADY"); } }
+        public string DisplaySummary
+        {
+            get
+            {
+                if (stopped)
+                {
+                    return "NEURAL: STOPPED\n  queued=0  processed=0  deferred=0  fired=0";
+                }
+
+                var scheduler = deferredThisStep > 0 ? "BACKLOG" : "STEADY";
+                return "NEURAL:\n  input=" + LastSensoryDrive.ToString("0.00") + "  queued=" + pending.Count + "  active=" + active.Count + "\n  processed=" + processedThisStep + "/" + MaxActivePerStep + "  deferred=" + deferredThisStep + "\n  fired=" + fired.Count + "  scheduler=" + scheduler;
+            }
+        }
         public string DisplayInputSummary { get { return stopped ? "INPUT: STOPPED" : "INPUT:\n  injury=" + injuryDrive.ToString("0.00") + "  hazard=" + hazardDrive.ToString("0.00") + "  motion=" + motionDrive.ToString("0.00") + "\n  arousal=" + arousalDrive.ToString("0.00") + "  total=" + LastSensoryDrive.ToString("0.00"); } }
         public string DisplayMotorSummary { get { return stopped ? "REQUEST: STOPPED\n  arms=0.00/0.00  legs=0.00/0.00\n  head=0.00  core=0.00  grips=0.00/0.00" : "REQUEST:\n  arms=" + lastCommand.LeftArm.ToString("0.00") + "/" + lastCommand.RightArm.ToString("0.00") + "  legs=" + lastCommand.LeftLeg.ToString("0.00") + "/" + lastCommand.RightLeg.ToString("0.00") + "\n  head=" + lastCommand.Head.ToString("0.00") + "  core=" + lastCommand.Core.ToString("0.00") + "  grips=" + lastCommand.LeftGrip.ToString("0.00") + "/" + lastCommand.RightGrip.ToString("0.00"); } }
 
