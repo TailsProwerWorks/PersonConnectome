@@ -180,12 +180,12 @@ namespace Mod
                 return "THREAT";
             }
 
-            if (lastFrame.Nearby > .05f || lastFrame.Sound > .05f || lastFrame.Impact > .05f)
+            if (lastFrame.Sound > .05f || lastFrame.Impact > .05f)
             {
                 return "ALERT";
             }
 
-            if (lastFrame.LiquidExposure > .05f || lastFrame.Touch > .05f || lastFrame.PhysicalContact > .05f)
+            if (lastFrame.Nearby > .05f || lastFrame.LiquidExposure > .05f || lastFrame.Touch > .05f || lastFrame.PhysicalContact > .05f)
             {
                 return "SENSING";
             }
@@ -616,7 +616,8 @@ namespace Mod
         private void ReadExternalSound(ref SensoryFrame frame, PhysicalBehaviour physical, float distance)
         {
             var audio = physical == null ? null : physical.MainAudioSource;
-            if (physical == null || IsOwnTransform(physical.transform) || audio == null || IsOwnTransform(audio.transform) ||
+            if (physical == null || IsOwnTransform(physical.transform) || physical.GetComponentInParent<PersonBehaviour>() == person ||
+                audio == null || IsOwnTransform(audio.transform) ||
                 !audio.isPlaying || audio.mute || !audio.isActiveAndEnabled)
             {
                 return;
