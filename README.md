@@ -41,7 +41,6 @@ Requires .NET 10 SDK; no NuGet packages are needed:
 ```sh
 dotnet format PersonConnectome.sln --verify-no-changes
 dotnet build PersonConnectome.sln -c Release
-dotnet run --project tests/PersonConnectome.Tests -c Release
 dotnet run --project tests/PersonConnectome.Runtime.Tests -c Release
 dotnet run --project tests/PersonConnectome.Adapter.Tests -c Release
 git diff --check
@@ -71,22 +70,19 @@ To rebuild the game-safe PNG carrier from the pinned FLYB/GZip CNS payload, run 
 
 Use `-InputPath`, `-OutputPath`, `-Width`, `-Height`, and optional `-ExpectedSha256` for carrier tooling. Runtime identity constants must also be deliberately updated before a different payload is accepted. The builder writes top-to-bottom PNG rows, matching the Unity runtime decoder, and refuses to finish unless the carrier round-trips to the exact input hash.
 
-The solution also compiles the game-facing sources against the installed assemblies. The legacy tests cover the separate pure engine and source contracts. The runtime and adapter test projects link the actual shipped sources against narrow test doubles to check neural timing, payload identity, terminal cleanup, limb lifecycle, liquid/audio/oxygen semantics, regeneration ownership and invalid readings. Those doubles do not emulate Unity physics or rendering. Follow [the manual game checklist](docs/manual-game-test.md) before release.
+The solution also compiles the game-facing sources against the installed assemblies. `Mod/RuntimeBrain.cs` is the single brain implementation: the mod and runtime tests compile that same physical file. The runtime and adapter test projects link the actual shipped integration sources against narrow test doubles to check neural timing, payload identity, terminal cleanup, limb lifecycle, liquid/audio/oxygen semantics, regeneration ownership and invalid readings. Those doubles do not emulate Unity physics or rendering. Follow [the manual game checklist](docs/manual-game-test.md) before release.
 
 ## Layout
 
-- `Mod/script.cs`: loadable People Playground entrypoint and bounded runtime brain orchestration.
+- `Mod/script.cs`: loadable People Playground entrypoint and runtime brain factory.
+- `Mod/RuntimeBrain.cs`: single bounded MaleCNS controller implementation compiled by the mod and source/test projects.
 - `Mod/ConnectomeRuntimeAsset.cs`: game-safe texture-carrier and FLYB parser.
 - `Mod/PersonConnectomeController.cs`: Unity lifecycle and collision probe.
 - `Mod/PeoplePlaygroundPersonAdapter.cs`: People Playground sensory and motor bridge.
 - `Mod/PersonConnectomeStatusDisplay.cs`: world-space TextMeshPro state label and camera-facing display.
 - `Mod/RuntimeTypes.cs`: game-facing sensory and motor value types.
-- `src/PersonConnectome/`: game-independent graph, simulator, controller, and domain primitives.
-- `src/PersonConnectome/FlybConnectomeGraph.cs`: connectome graph model and metadata types.
-- `src/PersonConnectome/FlybConnectomeLoader.cs`: bounded FLYB loader and stream limit enforcement.
-- `src/PersonConnectome/Persistence.cs`: versioned simulator-state serialization.
-- `src/PersonConnectome/ReflectionPersonCapabilities.cs`: optional capability reflection adapter.
-- `tests/PersonConnectome.Tests/`: dependency-free offline/contract tests.
+- `tests/PersonConnectome.Runtime.Tests/`: source-linked runtime tests using narrow game/Unity doubles.
+- `tests/PersonConnectome.Adapter.Tests/`: adapter contract tests using focused game doubles.
 - `config/`: versioned settings and runtime asset identity.
 - `Mod/connectome/malecns-v1.0.flyb.gz`: downloaded raw FLYB payload used by the carrier builder; it is not a deployed mod file.
 - `Mod/connectome/malecns-v1.0.png`: game-facing texture carrier loaded through `ModAPI.LoadTexture`.

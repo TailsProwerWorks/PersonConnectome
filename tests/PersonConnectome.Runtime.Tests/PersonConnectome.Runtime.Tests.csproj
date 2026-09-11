@@ -11,9 +11,9 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../../Mod/script.cs" Link="Mod/script.cs" />
-    <Compile Include="../../Mod/ConnectomeSensoryRouter.cs" Link="Mod/ConnectomeSensoryRouter.cs" />
     <Compile Include="../../Mod/ConnectomeRuntimeAsset.cs" Link="Mod/ConnectomeRuntimeAsset.cs" />
     <Compile Include="../../Mod/ConnectomeRuntimeAssetReader.cs" Link="Mod/ConnectomeRuntimeAssetReader.cs" />
     <Compile Include="../../Mod/RuntimeTypes.cs" Link="Mod/RuntimeTypes.cs" />
+    <Compile Include="../../Mod/RuntimeBrain.cs" Link="Mod/RuntimeBrain.cs" />
   </ItemGroup>
 </Project>

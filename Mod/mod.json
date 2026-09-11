@@ -7,10 +7,10 @@
   "EntryPoint": "Mod.Mod",
   "Scripts": [
     "script.cs",
-    "ConnectomeSensoryRouter.cs",
     "ConnectomeRuntimeAsset.cs",
     "ConnectomeRuntimeAssetReader.cs",
     "RuntimeTypes.cs",
+    "RuntimeBrain.cs",
     "PersonConnectomeController.cs",
     "PeoplePlaygroundPersonAdapter.cs",
     "PersonConnectomeLimbController.cs",

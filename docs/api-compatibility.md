@@ -1,10 +1,10 @@
 # People Playground API compatibility
 
-The loadable bridge is in `Mod/`; the reusable `src/PersonConnectome` engine is separate. Members were checked against the installed game assemblies and official modding pages on 2026-09-11. Offline compilation and test doubles do not establish in-game physics behavior.
+The loadable bridge and authoritative runtime are in `Mod/`. Members were checked against the installed game assemblies and official modding pages on 2026-09-11. Source-linked test doubles do not establish in-game physics behavior.
 
 ## Runtime target boundary
 
-The game-facing project targets `net48` and references installed People Playground/Unity assemblies. Installed `Assembly-CSharp` reports CLR `v4.0.30319`; the shipped Mono BCL files report `4.6.57.0`, with a netstandard 2.0 facade. This does not prove that every .NET Framework 4.8 API is available or that net48 is the highest compatible target. The current code uses members present in the inspected assemblies. Installed Roslyn 5 supports the modern C# syntax. The separate engine and test runners target `net10.0`, with no project reference from the mod to them.
+The game-facing project targets `net48` and references installed People Playground/Unity assemblies. Installed `Assembly-CSharp` reports CLR `v4.0.30319`; the shipped Mono BCL files report `4.6.57.0`, with a netstandard 2.0 facade. This does not prove that every .NET Framework 4.8 API is available or that net48 is the highest compatible target. The current code uses members present in the inspected assemblies. Installed Roslyn 5 supports the modern C# syntax. The game project and runtime test harness compile the same physical `Mod/RuntimeBrain.cs`; no separate offline brain library is loaded by the game.
 
 ## Public active members
 

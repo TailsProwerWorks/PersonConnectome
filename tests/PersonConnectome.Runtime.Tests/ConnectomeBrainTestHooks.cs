@@ -22,7 +22,7 @@ namespace Mod
 
         internal void SetTestPopulation(string name, params int[] ids)
         {
-            asset.populations[name] = ids;
+            asset.SetPopulation(name, ids);
         }
 
         internal void SetTestPending(int id, float value)

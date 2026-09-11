@@ -2,6 +2,7 @@
 
 namespace Mod
 {
+#pragma warning disable CS0649
     internal struct SensoryFrame
     {
         public bool Alive, BrainDead, HealthValid;
@@ -20,4 +21,5 @@ namespace Mod
         public float Walk, LeftArm, RightArm, LeftLeg, RightLeg, Core, Head;
         public float ReachGrab, LeftGrip, RightGrip, Avoid, Freeze, Heal, Stimulate, Calm, Extinguish;
     }
+#pragma warning restore CS0649
 }

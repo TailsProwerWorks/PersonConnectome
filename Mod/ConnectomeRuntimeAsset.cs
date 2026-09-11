@@ -9,7 +9,7 @@ namespace Mod
 {
     internal sealed partial class ConnectomeBrain
     {
-        private sealed partial class RuntimeAsset
+        private sealed partial class RuntimeAsset : IRuntimeConnectomeAsset
         {
             public int NeuronCount, EdgeCount;
             public int[] RowPointers, PostIndexes;
@@ -21,6 +21,17 @@ namespace Mod
             {
                 return populations.TryGetValue(name, out var ids) ? ids : [];
             }
+
+            int IRuntimeConnectomeAsset.NeuronCount => NeuronCount;
+            int IRuntimeConnectomeAsset.EdgeCount => EdgeCount;
+            int IRuntimeConnectomeAsset.OutgoingStart(int neuronId) => RowPointers[neuronId];
+            int IRuntimeConnectomeAsset.OutgoingEnd(int neuronId) => RowPointers[neuronId + 1];
+            int IRuntimeConnectomeAsset.TargetAt(int edgeIndex) => PostIndexes[edgeIndex];
+            float IRuntimeConnectomeAsset.WeightAt(int edgeIndex) => Weights[edgeIndex];
+            sbyte IRuntimeConnectomeAsset.SignAt(int neuronId) => NtSigns[neuronId];
+            string IRuntimeConnectomeAsset.SuperclassAt(int neuronId) => Superclasses[neuronId];
+            string IRuntimeConnectomeAsset.SideAt(int neuronId) => Sides[neuronId];
+            void IRuntimeConnectomeAsset.SetPopulation(string name, int[] ids) => populations[name] = ids ?? [];
 
             public static bool TryLoad(out RuntimeAsset asset, out string status)
             {

@@ -1,9 +1,8 @@
 # Architecture
 
-There are two implementations with an explicit boundary:
+The runtime brain has one implementation: `Mod/RuntimeBrain.cs`. The game compiles and loads that file directly, while the .NET source project and runtime tests compile the same physical file as a linked source. `Mod/script.cs` only registers the Human variation and creates the brain after the game-specific asset loader succeeds. The remaining `Mod` files are integration code for People Playground/Unity sensing, actuation, asset decoding and display; they do not contain a second neural controller.
 
-- `src/PersonConnectome` is the reusable .NET 10 graph/simulator/controller library, including optional reflection capabilities and JSON state. It is not referenced or deployed by the game mod.
-- `Mod` is the standalone net48 game-facing source set. `script.cs` owns its sparse brain; the adapter directly samples and commands installed game APIs. Runtime and adapter tests link these exact source files with narrow game/Unity doubles.
+The former standalone `src/PersonConnectome` offline library and its contract-test project were removed because the game never compiled or loaded them. The shipped game path is now the `Mod/` project, with runtime and adapter tests using the same shipped source files and narrow game/Unity doubles. There is one authoritative brain implementation rather than a parallel offline engine.
 
 The shipped asset is a thresholded MaleCNS v1.0 derivative: 176,422 neurons, 6,287,749 retained connections (weight >=5, self-edges excluded). It is not the full released connection graph. The PNG carries the exact compressed FLYB bytes. Runtime verifies SHA-256, dataset identity, exact counts, CSR structure, target and used metadata indexes before caching shared graph arrays. Each person has independent dynamic neural state.
 
