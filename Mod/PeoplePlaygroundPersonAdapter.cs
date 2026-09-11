@@ -663,6 +663,16 @@ namespace Mod
             return Unit((32f - temperature) / 32f);
         }
 
+        private static float AmbientTemperatureHeat(float temperature)
+        {
+            return Unit((temperature - 30f) / 70f);
+        }
+
+        private static float AmbientTemperatureCold(float temperature)
+        {
+            return Unit((10f - temperature) / 10f);
+        }
+
         private void ApplyCollision(ref SensoryFrame frame)
         {
             frame.Touch = Mathf.Max(frame.Touch, collision);
@@ -694,6 +704,7 @@ namespace Mod
         {
             var closest = float.MaxValue;
             var origin = (Vector2)FindStatusAnchor().position;
+            ReadAmbientTemperature(ref f, origin);
             Collider2D closestCollider = null;
             PhysicalBehaviour closestPhysical = null;
             var closestPoint = origin;
@@ -773,14 +784,32 @@ namespace Mod
 
         private void ReadExternalTemperature(ref SensoryFrame frame, PhysicalBehaviour physical, float distance)
         {
-            if (physical == null || IsOwnPhysical(physical))
+            if (physical == null || IsOwnPhysical(physical) || physical.rigidbody == null || physical.rigidbody.bodyType == RigidbodyType2D.Static)
             {
                 return;
             }
 
             var distanceSignal = Mathf.Clamp01(1f - distance / visionRadius);
-            frame.AmbientHeat = Mathf.Max(frame.AmbientHeat, TemperatureHeat(physical.Temperature) * distanceSignal);
-            frame.AmbientCold = Mathf.Max(frame.AmbientCold, TemperatureCold(physical.Temperature) * distanceSignal);
+            frame.AmbientHeat = Mathf.Max(frame.AmbientHeat, AmbientTemperatureHeat(physical.Temperature) * distanceSignal);
+            frame.AmbientCold = Mathf.Max(frame.AmbientCold, AmbientTemperatureCold(physical.Temperature) * distanceSignal);
+        }
+
+        private static void ReadAmbientTemperature(ref SensoryFrame frame, Vector2 origin)
+        {
+            var grid = AmbientTemperatureGridBehaviour.Instance;
+            if (grid == null)
+            {
+                return;
+            }
+
+            var temperature = grid.GetTemperatureAtPoint(origin);
+            if (!IsFinite(temperature))
+            {
+                return;
+            }
+
+            frame.AmbientHeat = Mathf.Max(frame.AmbientHeat, AmbientTemperatureHeat(temperature));
+            frame.AmbientCold = Mathf.Max(frame.AmbientCold, AmbientTemperatureCold(temperature));
         }
 
         private void ReadExternalSound(ref SensoryFrame frame, PhysicalBehaviour physical, float distance)

@@ -83,7 +83,14 @@ namespace UnityEngine
         public Vector2 Surface;
         public Vector2 ClosestPoint(Vector2 origin) => Surface;
     }
-    public class Rigidbody2D : Component { public Vector2 velocity; }
+    public enum RigidbodyType2D { Dynamic, Kinematic, Static }
+    public class Rigidbody2D : Component { public Vector2 velocity; public RigidbodyType2D bodyType = RigidbodyType2D.Dynamic; }
+    public class AmbientTemperatureGridBehaviour : Component
+    {
+        public static AmbientTemperatureGridBehaviour Instance;
+        public float Temperature = 20;
+        public float GetTemperatureAtPoint(Vector2 point) => Temperature;
+    }
     public struct RaycastHit2D { public Collider2D collider; }
     public static class Physics2D
     {
