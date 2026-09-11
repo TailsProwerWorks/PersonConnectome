@@ -183,7 +183,7 @@ internal static class Program
         True(!script.Contains("ActiveControl", StringComparison.Ordinal));
         True(!script.Contains("OnGUI", StringComparison.Ordinal));
         True(!script.Contains("GUI.", StringComparison.Ordinal));
-        True(script.Contains("ModAPI.Notify", StringComparison.Ordinal));
+        True(!script.Contains("F7", StringComparison.Ordinal));
         foreach (var sensor in TestData.WiredGameSensors)
         {
             True(script.Contains("sensory." + sensor, StringComparison.Ordinal), $"game sensor was not routed: {sensor}");

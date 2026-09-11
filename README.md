@@ -7,13 +7,13 @@
 1. In a disposable People Playground install, run `.\scripts\Deploy-Mod.ps1` from an administrator PowerShell. It copies only the manifest-listed scripts, `mod.json`, and the PNG carrier to `People Playground/Mods/PersonConnectome`.
 2. Start the game and enable **Person Connectome** in the mod list.
 3. From **Entities**, spawn **Person Connectome (Active)**. This variation is the explicit attachment mechanism: it is a normal Human with `PersonConnectomeController` attached on spawn. Existing stock Humans are never silently modified.
-4. The controller samples the person when the validated asset and adapter are available. Motor and chemistry requests are suppressed for invalid health, terminal state, consciousness at or below 0.8, or a freeze request. A world-space status label follows the brain/head limb and is the primary live display; **F7** remains an optional `ModAPI.Notify` diagnostic notification.
+4. The controller samples the person when the validated asset and adapter are available. Motor and chemistry requests are suppressed for invalid health, terminal state, consciousness at or below 0.8, or a freeze request. A world-space status label follows the brain/head limb and is the primary live display.
 
-The public component fields on the spawned variation expose bounded timing, sensing, and diagnostic-key settings. There is no fallback or observe-only runtime mode. The bundled graph is a thresholded derivative, not the full released connection graph. No persistence is attempted: saved game object/component serialization is game-version-dependent.
+The public component fields on the spawned variation expose bounded timing and sensing settings. There is no fallback or observe-only runtime mode. The bundled graph is a thresholded derivative, not the full released connection graph. No persistence is attempted: saved game object/component serialization is game-version-dependent.
 
 ## Active control
 
-The shipped runtime loads the downloaded MaleCNS FLYB payload through the allowed `ModAPI.LoadTexture("connectome/malecns-v1.0.png")` mod-asset API. The texture carrier contains the exact bytes of `malecns-v1.0.flyb.gz`; the raw payload is a repository/build input and is not copied into the deployed mod. The runtime verifies the compressed payload SHA-256, dataset identity and exact counts, and rejects missing, malformed or incompatible data. It uses a deterministic sparse leaky integrate-and-fire simulation with a capped fixed tick (default 20 Hz, maximum four catch-up ticks), drives real sensory populations by stable MaleCNS metadata, and decodes activity from real descending/motor populations into bounded commands. The game adapter uses documented People Playground members for its primary control path:
+The shipped runtime loads the downloaded MaleCNS FLYB payload through the allowed `ModAPI.LoadTexture("connectome/malecns-v1.0.png")` mod-asset API. The texture carrier contains the exact bytes of `malecns-v1.0.flyb.gz`; the raw payload is a repository/build input and is not copied into the deployed mod. The runtime verifies the compressed payload SHA-256, dataset identity and exact counts, and rejects missing, malformed or incompatible data. It uses a deterministic sparse leaky integrate-and-fire simulation with a capped fixed tick (default 20 Hz, at most one neural tick per physics callback), drives real sensory populations by stable MaleCNS metadata, and decodes activity from real descending/motor populations into bounded commands. The game adapter uses documented People Playground members for its primary control path:
 
 - `PersonBehaviour.DesiredWalkingDirection` for left/right locomotion;
 - `LimbBehaviour.InfluenceMotorSpeed` for differentiated head, core, arm, hand, leg, and foot motor channels;
@@ -77,7 +77,7 @@ The solution also compiles the game-facing sources against the installed assembl
 
 - `Mod/script.cs`: loadable People Playground entrypoint and bounded runtime brain orchestration.
 - `Mod/ConnectomeRuntimeAsset.cs`: game-safe texture-carrier and FLYB parser.
-- `Mod/PersonConnectomeController.cs`: Unity lifecycle, `ModAPI.Notify` diagnostics, and collision probe.
+- `Mod/PersonConnectomeController.cs`: Unity lifecycle and collision probe.
 - `Mod/PeoplePlaygroundPersonAdapter.cs`: People Playground sensory and motor bridge.
 - `Mod/PersonConnectomeStatusDisplay.cs`: world-space TextMeshPro state label and camera-facing display.
 - `Mod/RuntimeTypes.cs`: game-facing sensory and motor value types.

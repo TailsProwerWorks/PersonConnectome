@@ -101,7 +101,7 @@ internal static class Program
     {
         var f = new Fixture(); var other = SoundObject(out var audio); Physics2D.Hits = [other];
         var frame = f.Adapter.Read(); True(frame.Sound > 0 && frame.Nearby >= 0 && frame.Nearby <= 1); Equal("OBJECT AUDIO", f.Adapter.LiveSignal);
-        True(f.Adapter.LiveAudioSummary.Contains("Radio"));
+        True(f.Adapter.LiveAudioSummary.Contains("external Radio"));
         audio.mute = true; Equal(0, f.Adapter.Read().Sound); audio.mute = false; audio.isActiveAndEnabled = false; Equal(0, f.Adapter.Read().Sound);
         audio.isActiveAndEnabled = true; other.Surface = new Vector2(float.NaN, 0); frame = f.Adapter.Read(); Equal(0, frame.Sound); Equal(0, frame.Nearby);
         var own = f.Limb.gameObject.AddComponent<Collider2D>(); f.Limb.PhysicalBehaviour.MainAudioSource = audio;

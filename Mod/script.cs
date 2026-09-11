@@ -21,7 +21,7 @@ namespace Mod
             {
                 OriginalItem = human,
                 NameOverride = "Person Connectome (Active)",
-                DescriptionOverride = "Active bounded connectome control. F7 shows diagnostics.",
+                DescriptionOverride = "Active bounded connectome control with live overhead telemetry.",
                 CategoryOverride = ModAPI.FindCategory("Entities"),
                 AfterSpawn = instance =>
                 {

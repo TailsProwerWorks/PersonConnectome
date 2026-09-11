@@ -91,9 +91,7 @@ namespace UnityEngine
     }
     public class AudioSource : Component { public bool isPlaying, mute; public bool isActiveAndEnabled = true; public float volume = 1; }
     public class Collision2D { public Collider2D collider; public Vector2 relativeVelocity; }
-    public enum KeyCode { F7 }
     public class RangeAttribute : Attribute { public RangeAttribute(float min, float max) { } }
-    public static class Input { public static bool GetKeyDown(KeyCode key) => false; }
     public static class Time { public static float fixedDeltaTime = .02f, deltaTime = .02f; }
     public static class Debug { public static void Log(string message) { } }
 }
@@ -155,7 +153,6 @@ public class GripBehaviour
     public void Use(ActivationPropagation propagation) { GrabCalls++; isHolding = true; }
     public void DropObject() { DropCalls++; isHolding = false; }
 }
-public static class ModAPI { public static void Notify(string message) { } }
 namespace Mod
 {
     // Lifecycle tests only need a neutral brain; neural-source tests use their own harness.

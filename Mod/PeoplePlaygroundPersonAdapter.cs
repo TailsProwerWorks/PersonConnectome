@@ -590,7 +590,8 @@ namespace Mod
         private void ReadExternalSound(ref SensoryFrame frame, PhysicalBehaviour physical, float distance)
         {
             var audio = physical == null ? null : physical.MainAudioSource;
-            if (audio == null || !audio.isPlaying || audio.mute || !audio.isActiveAndEnabled)
+            if (physical == null || IsOwnTransform(physical.transform) || audio == null || IsOwnTransform(audio.transform) ||
+                !audio.isPlaying || audio.mute || !audio.isActiveAndEnabled)
             {
                 return;
             }
@@ -600,7 +601,7 @@ namespace Mod
             if (signal > frame.Sound)
             {
                 frame.Sound = signal;
-                audioSourceSummary = physical.name + "/" + audio.name + " d=" + distance.ToString("0.00") + " signal=" + signal.ToString("0.00") + " volume=" + Unit(audio.volume).ToString("0.00");
+                audioSourceSummary = "external " + physical.name + "/" + audio.name + " d=" + distance.ToString("0.00") + " signal=" + signal.ToString("0.00") + " volume=" + Unit(audio.volume).ToString("0.00");
             }
         }
 

@@ -8,7 +8,6 @@ namespace Mod
         // Configuration is intentionally exposed in the spawned object's inspector.
         [Range(1f, 60f)] public float TickRateHz = 20f;
         [Range(1f, 30f)] public float VisionRadius = 8f;
-        public KeyCode DebugOverlayKey = KeyCode.F7;
 
         private ConnectomeBrain brain;
         private PeoplePlaygroundPersonAdapter adapter;
@@ -30,15 +29,6 @@ namespace Mod
             }
         }
 
-        private void Update()
-        {
-            if (Input.GetKeyDown(DebugOverlayKey))
-            {
-                var status = brain == null ? "MaleCNS v1.0 unavailable" : brain.Status;
-                ModAPI.Notify("Person Connectome: " + status + " | " + adapter.CapabilitySummary);
-            }
-        }
-
         private void FixedUpdate()
         {
             if (adapter == null || brain == null)
@@ -47,10 +37,11 @@ namespace Mod
             }
 
             var rate = float.IsNaN(TickRateHz) || float.IsInfinity(TickRateHz) ? 20f : Mathf.Clamp(TickRateHz, 1f, 60f);
-            accumulator = Mathf.Min(accumulator + Time.fixedDeltaTime, 4f / rate);
             var interval = 1f / rate;
-            var steps = 0;
-            while (accumulator >= interval && steps++ < 4)
+            // Process at most one tick per physics callback. Dropping excess elapsed
+            // time prevents a slow frame from turning into a catch-up spike.
+            accumulator = Mathf.Min(accumulator + Time.fixedDeltaTime, interval);
+            if (accumulator >= interval)
             {
                 accumulator -= interval;
                 var sensory = adapter.Read();
