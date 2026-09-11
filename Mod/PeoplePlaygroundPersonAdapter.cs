@@ -643,8 +643,8 @@ namespace Mod
         private void ReadExternalSound(ref SensoryFrame frame, PhysicalBehaviour physical, float distance)
         {
             var audio = physical == null ? null : physical.MainAudioSource;
-            if (physical == null || IsOwnPhysical(physical) ||
-                audio == null || IsOwnTransform(audio.transform) ||
+            if (physical == null || IsOwnPhysical(physical) || audio == null || IsLikelySelfRootAudio(physical, audio, distance) ||
+                IsOwnTransform(audio.transform) ||
                 !audio.isPlaying || audio.mute || !audio.isActiveAndEnabled)
             {
                 return;
@@ -687,6 +687,16 @@ namespace Mod
             }
 
             return false;
+        }
+
+        private bool IsLikelySelfRootAudio(PhysicalBehaviour physical, AudioSource audio, float distance)
+        {
+            return distance <= 2f && IsRootName(physical.name) && IsRootName(audio.name);
+        }
+
+        private static bool IsRootName(string value)
+        {
+            return string.Equals(value, "Root", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
