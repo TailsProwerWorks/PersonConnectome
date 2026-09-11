@@ -217,13 +217,18 @@ internal static class Program
         var penetrationPhysical = penetrationOnly.AddComponent<PhysicalBehaviour>(); penetrationPhysical.BulletPenetration = true;
         var penetrationCollider = penetrationOnly.AddComponent<Collider2D>(); penetrationCollider.Surface = new Vector2(1, 0);
         Physics2D.Hits = [penetrationCollider]; Equal(0, f.Adapter.Read().Projectile);
-        var realProjectile = new GameObject("Native projectile"); realProjectile.AddComponent<PhysicalBehaviour>(); realProjectile.AddComponent<ProjectileBehaviour>();
+        var realProjectile = new GameObject("Native projectile"); var realProjectilePhysical = realProjectile.AddComponent<PhysicalBehaviour>(); realProjectile.AddComponent<ProjectileBehaviour>();
+        var realProjectileBody = realProjectile.AddComponent<Rigidbody2D>(); realProjectilePhysical.rigidbody = realProjectileBody;
         var projectileCollider = realProjectile.AddComponent<Collider2D>(); projectileCollider.Surface = new Vector2(1, 0);
-        Physics2D.Hits = [projectileCollider]; True(f.Adapter.Read().Projectile > 0f); Physics2D.Hits = [];
+        Physics2D.Hits = [projectileCollider]; Equal(0, f.Adapter.Read().Projectile);
+        realProjectileBody.velocity = new Vector2(0, 8); RenderSettings.ambientLight = new Color { grayscale = 1f }; Physics2D.LinecastResult = new RaycastHit2D { collider = projectileCollider }; True(f.Adapter.Read().Projectile > 0f); Physics2D.Hits = []; Physics2D.LinecastResult = default; RenderSettings.ambientLight = default;
 
         f.Adapter.RegisterProjectile(0f);
         frame = f.Adapter.Read();
-        Equal(.75f, frame.Projectile);
+        Equal(0f, frame.Projectile);
+        f.Adapter.RegisterProjectile(20f);
+        frame = f.Adapter.Read();
+        Equal(1f, frame.Projectile);
         True(f.Adapter.LiveEnvironmentSummary.Contains("projectile=" + frame.Projectile.ToString("0.00")));
     }
     private static void Falling()

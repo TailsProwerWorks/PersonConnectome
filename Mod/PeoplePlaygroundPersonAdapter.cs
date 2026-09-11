@@ -310,7 +310,7 @@ namespace Mod
 
         public void RegisterProjectile(float magnitude)
         {
-            projectile = Mathf.Max(projectile, Mathf.Max(.75f, Unit(magnitude / 20f)));
+            projectile = Mathf.Max(projectile, Unit(magnitude / 20f));
         }
 
         public SensoryFrame Read()
@@ -696,11 +696,6 @@ namespace Mod
                 var distance = delta.magnitude;
                 if (!IsFinite(distance) || !IsFinite(delta.x)) continue;
                 ReadExternalSound(ref f, physical, distance);
-                var isProjectile = PersonConnectomeProjectileDetection.IsProjectile(hit);
-                if (isProjectile)
-                {
-                    f.Projectile = Mathf.Max(f.Projectile, Mathf.Clamp01(1f - distance / visionRadius));
-                }
                 if (distance < closest)
                 {
                     closest = distance;
@@ -716,7 +711,7 @@ namespace Mod
             {
                 f.Vision = Mathf.Clamp01(f.Nearby * f.Light);
                 visionTargetSummary = ClassifyVisualTarget(closestPhysical, closestCollider);
-                if (PersonConnectomeProjectileDetection.IsProjectile(closestCollider))
+                if (PersonConnectomeProjectileDetection.IsMovingProjectile(closestCollider, closestPhysical))
                 {
                     f.Projectile = Mathf.Max(f.Projectile, f.Vision);
                 }

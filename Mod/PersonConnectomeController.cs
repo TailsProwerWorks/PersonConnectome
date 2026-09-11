@@ -134,6 +134,22 @@ namespace Mod
                  collider.GetComponentInParent<MachineGunProjectileBehaviour>() != null ||
                  collider.GetComponentInParent<LaunchedRocketBehaviour>() != null);
         }
+
+        public static bool IsMovingProjectile(Collider2D collider, PhysicalBehaviour physical)
+        {
+            if (!IsProjectile(collider) || physical == null || physical.rigidbody == null)
+            {
+                return false;
+            }
+
+            var velocity = physical.rigidbody.velocity;
+            return IsFinite(velocity.x) && IsFinite(velocity.y) && velocity.magnitude > 1f;
+        }
+
+        private static bool IsFinite(float value)
+        {
+            return !float.IsNaN(value) && !float.IsInfinity(value);
+        }
     }
 #pragma warning restore CS0612
 }
