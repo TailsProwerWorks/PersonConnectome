@@ -17,7 +17,7 @@ namespace Mod
             var hazard = Mathf.Clamp01(
                 sensory.Fire + sensory.Heat + sensory.Cold + sensory.Shock + sensory.SubmergedHypoxia + oxygenDeficit +
                 sensory.Wetness + sensory.Charge + sensory.Infection + sensory.AcidExposure + sensory.LiquidHazard + sensory.Lava +
-                sensory.BurnProgress + sensory.Disconnected + sensory.Frozen + sensory.Fall + sensory.Projectile + circulationDeficit);
+                sensory.BurnProgress + sensory.Disconnected + sensory.Frozen + sensory.Fall + sensory.Projectile + sensory.AmbientHeat + sensory.AmbientCold + circulationDeficit);
             var bodyMotion = Mathf.Clamp01(
                 sensory.Impact + sensory.Sound * .6f + sensory.Velocity * .6f + sensory.Rotation * .4f +
                 sensory.Balance * .4f + sensory.Numbness + sensory.Paralysis + sensory.Weightless +

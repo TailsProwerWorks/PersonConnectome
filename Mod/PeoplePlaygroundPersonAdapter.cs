@@ -55,7 +55,7 @@ namespace Mod
         {
             get
             {
-                return "ENVIRONMENT:\n  fire=" + lastFrame.Fire.ToString("0.00") + "  lava=" + lastFrame.Lava.ToString("0.00") + "  acid=" + lastFrame.AcidExposure.ToString("0.00") + "  burn=" + lastFrame.BurnProgress.ToString("0.00") + "\n  heat=" + lastFrame.Heat.ToString("0.00") + "  cold=" + lastFrame.Cold.ToString("0.00") + "  light=" + lastFrame.Light.ToString("0.00") + "\n  nearby=" + lastFrame.Nearby.ToString("0.00") + "  direction=" + lastFrame.NearbyDirection.ToString("0.00") + "  vision=" + lastFrame.Vision.ToString("0.00") + "  target=" + visionTargetSummary + "\n  sound=" + lastFrame.Sound.ToString("0.00") + "  impact=" + lastFrame.Impact.ToString("0.00") + "  vibration=" + lastFrame.Vibration.ToString("0.00") + "  projectile=" + lastFrame.Projectile.ToString("0.00") + "\n  touch=" + lastFrame.Touch.ToString("0.00") + "  contact/held=" + lastFrame.PhysicalContact.ToString("0.00") + "  wet=" + lastFrame.Wetness.ToString("0.00") + "\n  underwater=" + lastFrame.UnderWater.ToString("0.00") + "  submerged-hypoxia=" + lastFrame.SubmergedHypoxia.ToString("0.00") + "  liquid=" + lastFrame.LiquidExposure.ToString("0.00") + "\n  hazard=" + lastFrame.LiquidHazard.ToString("0.00") + "  sedation=" + lastFrame.LiquidSedation.ToString("0.00") + "  stimulation=" + lastFrame.LiquidStimulation.ToString("0.00") + "\n  healing=" + lastFrame.LiquidHealing.ToString("0.00") + "  water-liquid=" + lastFrame.LiquidWater.ToString("0.00") + "  charge=" + lastFrame.Charge.ToString("0.00") + "\n  stabbed=" + lastFrame.Stabbed.ToString("0.00") + "  weightless=" + lastFrame.Weightless.ToString("0.00") + "  sliding=" + lastFrame.Sliding.ToString("0.00");
+                return "ENVIRONMENT:\n  fire=" + lastFrame.Fire.ToString("0.00") + "  lava=" + lastFrame.Lava.ToString("0.00") + "  acid=" + lastFrame.AcidExposure.ToString("0.00") + "  burn=" + lastFrame.BurnProgress.ToString("0.00") + "\n  heat=" + lastFrame.Heat.ToString("0.00") + "  cold=" + lastFrame.Cold.ToString("0.00") + "  ambient-heat=" + lastFrame.AmbientHeat.ToString("0.00") + "  ambient-cold=" + lastFrame.AmbientCold.ToString("0.00") + "  light=" + lastFrame.Light.ToString("0.00") + "\n  nearby=" + lastFrame.Nearby.ToString("0.00") + "  direction=" + lastFrame.NearbyDirection.ToString("0.00") + "  vision=" + lastFrame.Vision.ToString("0.00") + "  target=" + visionTargetSummary + "\n  sound=" + lastFrame.Sound.ToString("0.00") + "  impact=" + lastFrame.Impact.ToString("0.00") + "  vibration=" + lastFrame.Vibration.ToString("0.00") + "  projectile=" + lastFrame.Projectile.ToString("0.00") + "\n  touch=" + lastFrame.Touch.ToString("0.00") + "  contact/held=" + lastFrame.PhysicalContact.ToString("0.00") + "  wet=" + lastFrame.Wetness.ToString("0.00") + "\n  underwater=" + lastFrame.UnderWater.ToString("0.00") + "  submerged-hypoxia=" + lastFrame.SubmergedHypoxia.ToString("0.00") + "  liquid=" + lastFrame.LiquidExposure.ToString("0.00") + "\n  hazard=" + lastFrame.LiquidHazard.ToString("0.00") + "  sedation=" + lastFrame.LiquidSedation.ToString("0.00") + "  stimulation=" + lastFrame.LiquidStimulation.ToString("0.00") + "\n  healing=" + lastFrame.LiquidHealing.ToString("0.00") + "  water-liquid=" + lastFrame.LiquidWater.ToString("0.00") + "  charge=" + lastFrame.Charge.ToString("0.00") + "\n  stabbed=" + lastFrame.Stabbed.ToString("0.00") + "  weightless=" + lastFrame.Weightless.ToString("0.00") + "  sliding=" + lastFrame.Sliding.ToString("0.00");
             }
         }
         public string LiveAudioSummary { get { return "AUDIO:\n  " + audioSourceSummary.Replace(" d=", "\n  distance=").Replace(" signal=", "\n  signal=").Replace(" volume=", "\n  volume="); } }
@@ -63,7 +63,7 @@ namespace Mod
         {
             get
             {
-                var summary = "LIMBS: total=" + LimbCount + " driveable=" + DrivenLimbCount + "/" + LimbCount + " applied=" + appliedLimbCount + " walk=" + appliedWalk.ToString("0.00");
+                var summary = "LIMBS: total=" + LimbCount + " driveable=" + DrivenLimbCount + "/" + LimbCount + " lost=" + LostLimbCount + "/" + LimbCount + " applied=" + appliedLimbCount + " walk=" + appliedWalk.ToString("0.00");
                 if (IsTerminal)
                 {
                     return summary + "\nCONTROL: stopped (" + (IsBrainDead ? "brain dead" : "dead") + "; per-limb capability suppressed)";
@@ -87,6 +87,19 @@ namespace Mod
             }
         }
         private int LimbCount { get { var count = 0; foreach (var limb in limbs) { if (limb != null) count++; } return count; } }
+        private int LostLimbCount
+        {
+            get
+            {
+                var count = 0;
+                foreach (var limb in limbs)
+                {
+                    if (IsLostLimb(limb)) count++;
+                }
+
+                return count;
+            }
+        }
         private int DrivenLimbCount
         {
             get
@@ -249,6 +262,10 @@ namespace Mod
             if (fire > .05f) return new LiveReading("FIRE/LAVA", fire);
             if (lastFrame.SubmergedHypoxia > .05f) return new LiveReading("SUBMERGED HYPOXIA", lastFrame.SubmergedHypoxia);
             if (lastFrame.Oxygen < .95f) return new LiveReading("LOW OXYGEN", 1f - lastFrame.Oxygen);
+            if (lastFrame.AmbientHeat > .05f) return new LiveReading("AMBIENT HEAT", lastFrame.AmbientHeat);
+            if (lastFrame.AmbientCold > .05f) return new LiveReading("AMBIENT COLD", lastFrame.AmbientCold);
+            if (lastFrame.Heat > .05f) return new LiveReading("HEAT", lastFrame.Heat);
+            if (lastFrame.Cold > .05f) return new LiveReading("COLD", lastFrame.Cold);
             var shock = Mathf.Max(lastFrame.Shock, lastFrame.Charge);
             if (shock > .05f) return new LiveReading("SHOCK", shock);
             var injury = Mathf.Max(lastFrame.Pain, Mathf.Max(lastFrame.Damage, lastFrame.Bleeding));
@@ -280,7 +297,7 @@ namespace Mod
 
         private float GetLiveThreat()
         {
-            return Mathf.Clamp01(lastFrame.Pain + lastFrame.Damage + lastFrame.Bleeding + lastFrame.Fire + lastFrame.Heat + lastFrame.Cold + lastFrame.Shock + lastFrame.SubmergedHypoxia + lastFrame.AcidExposure + lastFrame.LiquidHazard + lastFrame.Lava + lastFrame.BrainDamage + lastFrame.Seizure + lastFrame.Frozen + lastFrame.LimbLoss + lastFrame.Breakage + lastFrame.Disconnected + lastFrame.Fall + lastFrame.Projectile);
+            return Mathf.Clamp01(lastFrame.Pain + lastFrame.Damage + lastFrame.Bleeding + lastFrame.Fire + lastFrame.Heat + lastFrame.Cold + lastFrame.AmbientHeat + lastFrame.AmbientCold + lastFrame.Shock + lastFrame.SubmergedHypoxia + lastFrame.AcidExposure + lastFrame.LiquidHazard + lastFrame.Lava + lastFrame.BrainDamage + lastFrame.Seizure + lastFrame.Frozen + lastFrame.LimbLoss + lastFrame.Breakage + lastFrame.Disconnected + lastFrame.Fall + lastFrame.Projectile);
         }
 
         private string BrainSummary
@@ -335,6 +352,13 @@ namespace Mod
                 healthCount++;
             }
 
+            var lostLimbCount = 0;
+            foreach (var limb in limbs)
+            {
+                if (IsLostLimb(limb)) lostLimbCount++;
+            }
+
+            frame.LimbLoss = healthCount == 0 ? 0f : (float)lostLimbCount / healthCount;
             frame.Damage = healthCount == 0 ? 0f : 1f - healthSum / healthCount;
             frame.Fall = ReadFalling(frame.Touch > .05f || person.IsTouchingFloor);
             frame.Proprioception = Mathf.Clamp01(frame.Velocity * .35f + frame.Rotation * .25f + frame.Balance * .25f + frame.JointStress * .15f);
@@ -461,7 +485,6 @@ namespace Mod
         private float ReadLimb(ref SensoryFrame frame, LimbBehaviour limb)
         {
             var health = Unit(limb.Health / Mathf.Max(1f, limb.InitialHealth));
-            frame.LimbLoss = Mathf.Max(frame.LimbLoss, limb.IsDismembered ? 1f : 0f);
             frame.Breakage = Mathf.Max(frame.Breakage, limb.Broken || limb.CurrentlyShattered != 0 ? 1f : 0f);
             frame.JointStress = Mathf.Max(frame.JointStress, Unit(limb.JointStress / 100f));
             frame.Heat = Mathf.Max(frame.Heat, TemperatureHeat(limb.BodyTemperature));
@@ -478,6 +501,11 @@ namespace Mod
             ReadPhysical(ref frame, limb.PhysicalBehaviour);
             frame.Infection = Mathf.Max(frame.Infection, limb.IsZombie ? 1f : 0f);
             return health;
+        }
+
+        private static bool IsLostLimb(LimbBehaviour limb)
+        {
+            return limb != null && (limb.IsDismembered || (limb.PhysicalBehaviour != null && limb.PhysicalBehaviour.isDisintegrated));
         }
 
         private void ReadCirculation(ref SensoryFrame frame, CirculationBehaviour circulation)
@@ -618,7 +646,6 @@ namespace Mod
             frame.PhysicalContact = Mathf.Max(frame.PhysicalContact, physical.IsTouchingSomething || physical.beingHeldByGripper ? 1f : 0f);
             frame.Weightless = Mathf.Max(frame.Weightless, physical.IsWeightless ? 1f : 0f);
             frame.Sliding = Mathf.Max(frame.Sliding, physical.isSliding ? 1f : 0f);
-            frame.LimbLoss = Mathf.Max(frame.LimbLoss, physical.isDisintegrated ? 1f : 0f);
         }
 
         private static float GetFireValue(PhysicalBehaviour physical)
@@ -695,6 +722,7 @@ namespace Mod
                 var delta = hit.ClosestPoint(origin) - origin;
                 var distance = delta.magnitude;
                 if (!IsFinite(distance) || !IsFinite(delta.x)) continue;
+                ReadExternalTemperature(ref f, physical, distance);
                 ReadExternalSound(ref f, physical, distance);
                 if (distance < closest)
                 {
@@ -741,6 +769,18 @@ namespace Mod
             }
 
             return "object";
+        }
+
+        private void ReadExternalTemperature(ref SensoryFrame frame, PhysicalBehaviour physical, float distance)
+        {
+            if (physical == null || IsOwnPhysical(physical))
+            {
+                return;
+            }
+
+            var distanceSignal = Mathf.Clamp01(1f - distance / visionRadius);
+            frame.AmbientHeat = Mathf.Max(frame.AmbientHeat, TemperatureHeat(physical.Temperature) * distanceSignal);
+            frame.AmbientCold = Mathf.Max(frame.AmbientCold, TemperatureCold(physical.Temperature) * distanceSignal);
         }
 
         private void ReadExternalSound(ref SensoryFrame frame, PhysicalBehaviour physical, float distance)

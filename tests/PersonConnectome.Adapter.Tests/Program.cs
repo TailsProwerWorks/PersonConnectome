@@ -17,6 +17,7 @@ internal static class Program
             ("paralysis, breakage and limb loss stay distinct", LimbDamageCategories),
             ("blood baseline and vitality fallback", BloodAndVitality),
             ("hypoxia and submersion remain distinct", Oxygen),
+            ("nearby temperatures provide bounded ambient heat and cold", AmbientTemperature),
             ("external audio excludes own limbs, mute and invalid distances", Audio),
             ("visible external objects produce a vision proxy", Vision),
             ("vibration, proprioception and projectile channels stay distinct", AdditionalSenses),
@@ -140,12 +141,25 @@ internal static class Program
         frame = f.Adapter.Read(); Equal(1, frame.Paralysis); Equal(0, frame.LimbLoss);
         f.Limb.IsDismembered = true;
         frame = f.Adapter.Read(); Equal(1, frame.LimbLoss);
+        var second = Fixture.AddLimb(f.Root, "LowerArmBack");
+        f.Person.Limbs = [f.Limb, second];
+        frame = f.Adapter.Read(); Equal(.5f, frame.LimbLoss); True(f.Adapter.LiveLimbSummary.Contains("lost=1/2"));
     }
     private static void Oxygen()
     {
         var f = new Fixture(); f.Person.OxygenLevel = .2f;
         Equal(0, f.Adapter.Read().SubmergedHypoxia); Equal("LOW OXYGEN", f.Adapter.LiveSignal);
         f.Limb.PhysicalBehaviour.IsUnderWater = true; Equal(.8f, f.Adapter.Read().SubmergedHypoxia); Equal("SUBMERGED HYPOXIA", f.Adapter.LiveSignal);
+    }
+    private static void AmbientTemperature()
+    {
+        var f = new Fixture();
+        var hot = new GameObject("Hot object"); var hotPhysical = hot.AddComponent<PhysicalBehaviour>(); hotPhysical.Temperature = 100; var hotCollider = hot.AddComponent<Collider2D>(); hotCollider.Surface = new Vector2(2, 0);
+        Physics2D.Hits = [hotCollider]; var frame = f.Adapter.Read(); True(frame.AmbientHeat > 0f); Equal(0f, frame.AmbientCold); Equal("AMBIENT HEAT", f.Adapter.LiveSignal);
+        hotPhysical.Temperature = 0; frame = f.Adapter.Read(); Equal(0f, frame.AmbientHeat); True(frame.AmbientCold > 0f); Equal("AMBIENT COLD", f.Adapter.LiveSignal);
+        hotCollider.Surface = new Vector2(8, 0); frame = f.Adapter.Read(); Equal(0f, frame.AmbientCold); Physics2D.Hits = [];
+        var detachedOwn = new GameObject("Detached own limb"); var detachedPhysical = detachedOwn.AddComponent<PhysicalBehaviour>(); detachedPhysical.Temperature = 100; var detachedCollider = detachedOwn.AddComponent<Collider2D>(); detachedCollider.Surface = new Vector2(2, 0);
+        f.Limb.PhysicalBehaviour = detachedPhysical; Physics2D.Hits = [detachedCollider]; Equal(0f, f.Adapter.Read().AmbientHeat); Physics2D.Hits = [];
     }
     private static Collider2D SoundObject(out AudioSource audio)
     {

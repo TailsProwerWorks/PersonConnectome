@@ -8,7 +8,7 @@ namespace Mod
         public float Pain, Damage, Bleeding, Health, Fire, Heat, Cold, Shock, Oxygen, SubmergedHypoxia;
         public float Wetness, UnderWater, Blood, Infection, Charge, AcidExposure;
         public float LiquidExposure, LiquidHazard, LiquidSedation, LiquidStimulation, LiquidHealing, LiquidWater;
-        public float Nearby, NearbyDirection, Vision, Light, Touch, Impact, Vibration, Sound, LimbLoss, Breakage, JointStress;
+        public float Nearby, NearbyDirection, Vision, Light, Touch, Impact, Vibration, Sound, AmbientHeat, AmbientCold, LimbLoss, Breakage, JointStress;
         public float Consciousness, Adrenaline, Velocity, Rotation, Proprioception, Fall, Projectile, Unconscious;
         public float Balance, Heartbeat, BrainDamage, Seizure, Frozen, Paralysis, Numbness, Vitality, LungDamage;
         public float InternalBleeding, Circulation, Disconnected, Wounds;
