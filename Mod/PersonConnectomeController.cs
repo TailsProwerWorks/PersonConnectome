@@ -114,11 +114,26 @@ namespace Mod
                 return;
             }
 
-            var physical = collision.collider.GetComponentInParent<PhysicalBehaviour>();
-            if (physical != null && physical.BulletPenetration)
+            if (PersonConnectomeProjectileDetection.IsProjectile(collision.collider))
             {
                 ReportProjectile(collision.relativeVelocity.magnitude);
             }
         }
     }
+
+    // The installed game still exposes this legacy component on compatible projectiles.
+#pragma warning disable CS0612
+    internal static class PersonConnectomeProjectileDetection
+    {
+        public static bool IsProjectile(Collider2D collider)
+        {
+            return collider != null &&
+                (collider.GetComponentInParent<ProjectileBehaviour>() != null ||
+                 collider.GetComponentInParent<GorseProjectileBehaviour>() != null ||
+                 collider.GetComponentInParent<GenericScifiProjectileBehaviour>() != null ||
+                 collider.GetComponentInParent<MachineGunProjectileBehaviour>() != null ||
+                 collider.GetComponentInParent<LaunchedRocketBehaviour>() != null);
+        }
+    }
+#pragma warning restore CS0612
 }

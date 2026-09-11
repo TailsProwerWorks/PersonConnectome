@@ -142,6 +142,7 @@ public class PhysicalBehaviour : UnityEngine.Component
     public bool OnFire, IsUnderWater, IsInLava, IsBeingStabbed, IsTouchingSomething, beingHeldByGripper, IsWeightless, isSliding, isDisintegrated, BulletPenetration;
     public float BurnIntensity, BurnProgress, Wetness, Charge;
     public float Temperature = 37;
+    public UnityEngine.Rigidbody2D rigidbody;
     public UnityEngine.AudioSource MainAudioSource;
 }
 public class Liquid(string identity)
@@ -154,6 +155,11 @@ public class AcidPoolBehaviour : UnityEngine.Component
 {
     public float AcidProgress, PainIntensity;
 }
+public class ProjectileBehaviour : UnityEngine.Component { }
+public class GorseProjectileBehaviour : UnityEngine.Component { }
+public class GenericScifiProjectileBehaviour : UnityEngine.Component { }
+public class MachineGunProjectileBehaviour : UnityEngine.Component { }
+public class LaunchedRocketBehaviour : UnityEngine.Component { }
 public class ActivationPropagation { }
 public class GripBehaviour
 {

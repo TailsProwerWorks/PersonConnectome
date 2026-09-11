@@ -13,7 +13,6 @@ namespace Mod
         private readonly List<LimbBehaviour> limbs = [];
         private readonly List<PersonConnectomeLimbController> limbControllers = [];
         private readonly List<LimbBehaviour> discoveredLimbs = [];
-        private readonly List<Rigidbody2D> discoveredBodies = [];
         private readonly Dictionary<CirculationBehaviour, float> bloodBaselines = [];
         private readonly Action<float> reportCollision;
         private readonly Action<float> reportProjectile;
@@ -357,10 +356,10 @@ namespace Mod
                 return 0f;
             }
 
-            root.GetComponentsInChildren(true, discoveredBodies);
             var maximumDownwardSpeed = 0f;
-            foreach (var body in discoveredBodies)
+            foreach (var limb in limbs)
             {
+                var body = limb == null || limb.PhysicalBehaviour == null ? null : limb.PhysicalBehaviour.rigidbody;
                 if (body == null || !IsFinite(body.velocity.y))
                 {
                     continue;
@@ -697,7 +696,8 @@ namespace Mod
                 var distance = delta.magnitude;
                 if (!IsFinite(distance) || !IsFinite(delta.x)) continue;
                 ReadExternalSound(ref f, physical, distance);
-                if (physical.BulletPenetration)
+                var isProjectile = PersonConnectomeProjectileDetection.IsProjectile(hit);
+                if (isProjectile)
                 {
                     f.Projectile = Mathf.Max(f.Projectile, Mathf.Clamp01(1f - distance / visionRadius));
                 }
@@ -715,22 +715,22 @@ namespace Mod
             if (closestCollider != null && Physics2D.Linecast(origin, closestPoint).collider == closestCollider)
             {
                 f.Vision = Mathf.Clamp01(f.Nearby * f.Light);
-                visionTargetSummary = ClassifyVisualTarget(closestPhysical);
-                if (closestPhysical != null && closestPhysical.BulletPenetration)
+                visionTargetSummary = ClassifyVisualTarget(closestPhysical, closestCollider);
+                if (PersonConnectomeProjectileDetection.IsProjectile(closestCollider))
                 {
                     f.Projectile = Mathf.Max(f.Projectile, f.Vision);
                 }
             }
         }
 
-        private string ClassifyVisualTarget(PhysicalBehaviour physical)
+        private string ClassifyVisualTarget(PhysicalBehaviour physical, Collider2D collider)
         {
             if (physical == null)
             {
                 return "object";
             }
 
-            if (physical.BulletPenetration)
+            if (PersonConnectomeProjectileDetection.IsProjectile(collider))
             {
                 return "projectile";
             }

@@ -213,6 +213,14 @@ internal static class Program
         True(frame.Proprioception > 0f);
         Equal(0f, frame.Projectile);
 
+        var penetrationOnly = new GameObject("Penetration-only object");
+        var penetrationPhysical = penetrationOnly.AddComponent<PhysicalBehaviour>(); penetrationPhysical.BulletPenetration = true;
+        var penetrationCollider = penetrationOnly.AddComponent<Collider2D>(); penetrationCollider.Surface = new Vector2(1, 0);
+        Physics2D.Hits = [penetrationCollider]; Equal(0, f.Adapter.Read().Projectile);
+        var realProjectile = new GameObject("Native projectile"); realProjectile.AddComponent<PhysicalBehaviour>(); realProjectile.AddComponent<ProjectileBehaviour>();
+        var projectileCollider = realProjectile.AddComponent<Collider2D>(); projectileCollider.Surface = new Vector2(1, 0);
+        Physics2D.Hits = [projectileCollider]; True(f.Adapter.Read().Projectile > 0f); Physics2D.Hits = [];
+
         f.Adapter.RegisterProjectile(0f);
         frame = f.Adapter.Read();
         Equal(.75f, frame.Projectile);
@@ -221,7 +229,7 @@ internal static class Program
     private static void Falling()
     {
         var f = new Fixture();
-        var body = f.Limb.gameObject.AddComponent<Rigidbody2D>();
+        var body = f.Limb.gameObject.AddComponent<Rigidbody2D>(); f.Limb.PhysicalBehaviour.rigidbody = body;
         f.Person.IsTouchingFloor = false; f.Limb.IsOnFloor = false; body.velocity = new Vector2(0, -6);
         var frame = f.Adapter.Read(); Equal(.5f, frame.Fall); Equal("FALLING", f.Adapter.LiveSignal);
         body.velocity = new Vector2(4, 0); Equal(0, f.Adapter.Read().Fall);
