@@ -18,6 +18,9 @@ internal static class Program
             ("blood baseline and vitality fallback", BloodAndVitality),
             ("hypoxia and submersion remain distinct", Oxygen),
             ("external audio excludes own limbs, mute and invalid distances", Audio),
+            ("visible external objects produce a vision proxy", Vision),
+            ("vibration, proprioception and projectile channels stay distinct", AdditionalSenses),
+            ("falling is distinct from walking and floor contact", Falling),
             ("contact impacts do not fabricate hearing", Impacts),
             ("regeneration ownership and cleanup", Chemistry),
             ("front-back hierarchy routes separate channels", SideRouting),
@@ -45,6 +48,8 @@ internal static class Program
         f.Limb.MotorSpeed = 10; f.Limb.GripBehaviour.isHolding = true; f.Limb.IsCapable = false;
         f.Person.Braindead = true;
         var frame = f.Adapter.Read(); True(!frame.Alive && frame.BrainDead); Equal("BRAIN DEAD", f.Adapter.LiveState);
+        True(f.Adapter.LiveLimbSummary.Contains("CONTROL: stopped (brain dead; per-limb capability suppressed)"));
+        True(!f.Adapter.LiveLimbSummary.Contains("LowerArmFront:incapable"));
         f.Adapter.Apply(Moving, true); Equal(0, f.Limb.MotorSpeed); Equal(0, f.Person.DesiredWalkingDirection);
         True(!f.Limb.GripBehaviour.isHolding); Equal(0, f.Limb.RegenerationSpeed); Equal(0, f.Limb.CirculationBehaviour.BloodRegenerationPerSecond);
         f.Person.Braindead = false; f.Person.AverageHealth = .0005f; f.Adapter.Read(); Equal("DEAD", f.Adapter.LiveState);
@@ -55,6 +60,7 @@ internal static class Program
         var f = new Fixture(); f.Person.Consciousness = .7f; f.Limb.MotorSpeed = 8; f.Limb.GripBehaviour.isHolding = true;
         f.Adapter.Read(); Equal("UNCONSCIOUS", f.Adapter.LiveState); f.Adapter.Apply(Moving, true); Equal(0, f.Limb.MotorSpeed); True(!f.Limb.GripBehaviour.isHolding);
         f.Person.Consciousness = 1; f.Limb.IsCapable = false; f.Limb.MotorSpeed = 3; f.Adapter.Read(); f.Adapter.Apply(Moving, true); Equal(0, f.Limb.MotorSpeed); Equal(0, f.Limb.RegenerationSpeed);
+        True(f.Adapter.LiveLimbSummary.Contains("LowerArmFront:incapable"));
     }
     private static void BrainInjury()
     {
@@ -177,6 +183,49 @@ internal static class Program
         var frame = f.Adapter.Read(); Equal(.5f, frame.Impact); Equal(0, frame.Sound); Equal("CONTACT IMPACT", f.Adapter.LiveSignal);
         for (var i = 0; i < 30; i++) frame = f.Adapter.Read(); True(frame.Impact < .001f);
         var soft = new Fixture(); soft.Adapter.RegisterCollision(2); frame = soft.Adapter.Read(); Equal(.1f, frame.Impact); Equal("CONTACT", soft.Adapter.LiveSignal); Equal("SENSING", soft.Adapter.LiveState);
+    }
+    private static void Vision()
+    {
+        var f = new Fixture();
+        RenderSettings.ambientLight = new Color { grayscale = 1f };
+        var visible = new GameObject("Visible object");
+        visible.AddComponent<PhysicalBehaviour>();
+        var collider = visible.AddComponent<Collider2D>();
+        collider.Surface = new Vector2(2, 0);
+        Physics2D.Hits = [collider];
+        Physics2D.LinecastResult = new RaycastHit2D { collider = collider };
+        var frame = f.Adapter.Read();
+        True(frame.Vision > .0f && frame.Vision <= 1f);
+        Equal("VISION", f.Adapter.LiveSignal);
+        Physics2D.LinecastResult = default;
+        Equal(0, f.Adapter.Read().Vision);
+        RenderSettings.ambientLight = default;
+    }
+    private static void AdditionalSenses()
+    {
+        var f = new Fixture();
+        f.Person.AngleOffset = 90f;
+        f.Person.BalanceOffset = 5f;
+        f.Limb.JointStress = 100f;
+        f.Adapter.RegisterCollision(10f);
+        var frame = f.Adapter.Read();
+        True(frame.Vibration > 0f);
+        True(frame.Proprioception > 0f);
+        Equal(0f, frame.Projectile);
+
+        f.Adapter.RegisterProjectile(0f);
+        frame = f.Adapter.Read();
+        Equal(.75f, frame.Projectile);
+        True(f.Adapter.LiveEnvironmentSummary.Contains("projectile=" + frame.Projectile.ToString("0.00")));
+    }
+    private static void Falling()
+    {
+        var f = new Fixture();
+        var body = f.Limb.gameObject.AddComponent<Rigidbody2D>();
+        f.Person.IsTouchingFloor = false; f.Limb.IsOnFloor = false; body.velocity = new Vector2(0, -6);
+        var frame = f.Adapter.Read(); Equal(.5f, frame.Fall); Equal("FALLING", f.Adapter.LiveSignal);
+        body.velocity = new Vector2(4, 0); Equal(0, f.Adapter.Read().Fall);
+        body.velocity = new Vector2(0, -12); f.Person.IsTouchingFloor = true; Equal(0, f.Adapter.Read().Fall);
     }
     private static void Chemistry()
     {

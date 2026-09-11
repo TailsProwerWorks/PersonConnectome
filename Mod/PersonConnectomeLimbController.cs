@@ -45,7 +45,7 @@ namespace Mod
             get
             {
                 if (limb == null) return "missing-limb";
-                if (!limb.HasJoint && !limb.IsCapable) return limb.name + ":incapable,no-joint";
+
                 if (!limb.HasJoint) return limb.name + ":no-joint";
                 if (!limb.IsCapable) return limb.name + ":incapable";
                 return null;

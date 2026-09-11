@@ -16,7 +16,7 @@ namespace Mod
 
         private void Awake()
         {
-            adapter = new PeoplePlaygroundPersonAdapter(gameObject, VisionRadius, RegisterCollision);
+            adapter = new PeoplePlaygroundPersonAdapter(gameObject, VisionRadius, RegisterCollision, RegisterProjectile);
             statusDisplay = new PersonConnectomeStatusDisplay(adapter.StatusAnchor);
             brain = ConnectomeBrain.TryCreate(out var loadStatus);
             if (!adapter.IsUsable)
@@ -68,6 +68,7 @@ namespace Mod
         }
 
         private void RegisterCollision(float magnitude) => adapter?.RegisterCollision(magnitude);
+        private void RegisterProjectile(float magnitude) => adapter?.RegisterProjectile(magnitude);
     }
 
     // Collision callbacks arrive on limb GameObjects, so probes forward a bounded
@@ -76,12 +77,14 @@ namespace Mod
     {
         public Transform OwnerRoot;
         public Action<float> Report;
+        public Action<float> ReportProjectile;
 
         private void OnCollisionEnter2D(Collision2D collision)
         {
-            if (IsExternal(collision) && Report != null)
+            if (IsExternal(collision))
             {
-                Report(collision.relativeVelocity.magnitude);
+                Report?.Invoke(collision.relativeVelocity.magnitude);
+                ReportProjectileIfApplicable(collision);
             }
         }
 
@@ -102,6 +105,20 @@ namespace Mod
 
             var other = collision.collider.transform;
             return OwnerRoot == null || (other != OwnerRoot && !other.IsChildOf(OwnerRoot));
+        }
+
+        private void ReportProjectileIfApplicable(Collision2D collision)
+        {
+            if (ReportProjectile == null || collision == null || collision.collider == null)
+            {
+                return;
+            }
+
+            var physical = collision.collider.GetComponentInParent<PhysicalBehaviour>();
+            if (physical != null && physical.BulletPenetration)
+            {
+                ReportProjectile(collision.relativeVelocity.magnitude);
+            }
         }
     }
 }

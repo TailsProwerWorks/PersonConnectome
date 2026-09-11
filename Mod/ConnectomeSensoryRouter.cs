@@ -17,13 +17,13 @@ namespace Mod
             var hazard = Mathf.Clamp01(
                 sensory.Fire + sensory.Heat + sensory.Cold + sensory.Shock + sensory.SubmergedHypoxia + oxygenDeficit +
                 sensory.Wetness + sensory.Charge + sensory.Infection + sensory.AcidExposure + sensory.LiquidHazard + sensory.Lava +
-                sensory.BurnProgress + sensory.Disconnected + sensory.Frozen + circulationDeficit);
+                sensory.BurnProgress + sensory.Disconnected + sensory.Frozen + sensory.Fall + sensory.Projectile + circulationDeficit);
             var bodyMotion = Mathf.Clamp01(
                 sensory.Impact + sensory.Sound * .6f + sensory.Velocity * .6f + sensory.Rotation * .4f +
                 sensory.Balance * .4f + sensory.Numbness + sensory.Paralysis + sensory.Weightless +
-                sensory.Sliding + sensory.PhysicalContact * .15f + sensory.Touch * .15f + sensory.LiquidExposure + sensory.LiquidWater +
-                sensory.Heartbeat * .1f);
-            var visual = Mathf.Clamp01(sensory.Light + sensory.Nearby);
+                sensory.Sliding + sensory.Fall * .6f + sensory.Vibration * .35f + sensory.Proprioception * .4f + sensory.PhysicalContact * .15f +
+                sensory.Touch * .15f + sensory.LiquidExposure + sensory.LiquidWater + sensory.Heartbeat * .1f);
+            var visual = Mathf.Clamp01(sensory.Light + sensory.Vision);
             var arousal = Mathf.Clamp01(
                 sensory.Adrenaline + sensory.Unconscious + consciousnessDeficit + sensory.LiquidStimulation);
             injuryDrive = injury;
@@ -36,6 +36,7 @@ namespace Mod
             // LiquidHealing remains a direct, bounded restorative-output request,
             // and NearbyDirection remains geometry for escape direction; neither
             // has a validated MaleCNS population mapping and is not injected here.
+            // Vision is a bounded line-of-sight/light proxy, not semantic object recognition.
             // UnderWater is retained separately so the adapter can gate SubmergedHypoxia;
             // wetness and liquid-water already provide its exposure drive here.
             Drive("superclass:ol_sensory", LastSensoryDrive, 2048);

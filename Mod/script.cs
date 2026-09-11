@@ -41,14 +41,15 @@ namespace Mod
         private readonly RuntimeAsset asset;
         private readonly float[] potential;
         private readonly long[] refractoryUntil;
-        private readonly Dictionary<int, float> pending = [];
-        private readonly HashSet<int> active = [];
+        private Dictionary<int, float> pending = [];
+        private HashSet<int> active = [];
         private readonly HashSet<int> priority = [];
         private readonly HashSet<int> scheduled = [];
         private readonly List<int> fired = [];
         private readonly HashSet<int> firedIds = [];
-        private readonly Dictionary<int, float> nextPending = [];
-        private readonly HashSet<int> nextActive = [];
+        private Dictionary<int, float> nextPending = [];
+        private HashSet<int> nextActive = [];
+        private readonly List<int> orderedActive = [];
         private MotorCommand lastCommand;
         private bool stopped;
         private long simulationTick;
@@ -66,7 +67,7 @@ namespace Mod
             refractoryUntil = new long[asset.NeuronCount];
         }
         public string Status { get { return "MaleCNS v1.0 " + asset.NeuronCount + " neurons / " + asset.EdgeCount + (stopped ? " STOPPED" : " queued=" + pending.Count + " processed=" + processedThisStep + " deferred=" + deferredThisStep + " fired=" + fired.Count + " input=" + LastSensoryDrive.ToString("0.00") + " request-walk=" + lastCommand.Walk.ToString("0.00")); } }
-        public string DisplaySummary { get { return stopped ? "NEURAL: STOPPED\n  queued=0  processed=0  deferred=0  fired=0" : "NEURAL:\n  input=" + LastSensoryDrive.ToString("0.00") + "  queued=" + pending.Count + "  processed=" + processedThisStep + "\n  deferred=" + deferredThisStep + "  fired=" + fired.Count; } }
+        public string DisplaySummary { get { return stopped ? "NEURAL: STOPPED\n  queued=0  processed=0  deferred=0  fired=0" : "NEURAL:\n  input=" + LastSensoryDrive.ToString("0.00") + "  queued=" + pending.Count + "  active=" + active.Count + "\n  processed=" + processedThisStep + "/" + MaxActivePerStep + "  deferred=" + deferredThisStep + "\n  fired=" + fired.Count + "  scheduler=" + (deferredThisStep > 0 ? "BACKLOG" : "STEADY"); } }
         public string DisplayInputSummary { get { return stopped ? "INPUT: STOPPED" : "INPUT:\n  injury=" + injuryDrive.ToString("0.00") + "  hazard=" + hazardDrive.ToString("0.00") + "  motion=" + motionDrive.ToString("0.00") + "\n  arousal=" + arousalDrive.ToString("0.00") + "  total=" + LastSensoryDrive.ToString("0.00"); } }
         public string DisplayMotorSummary { get { return stopped ? "REQUEST: STOPPED\n  arms=0.00/0.00  legs=0.00/0.00\n  head=0.00  core=0.00  grips=0.00/0.00" : "REQUEST:\n  arms=" + lastCommand.LeftArm.ToString("0.00") + "/" + lastCommand.RightArm.ToString("0.00") + "  legs=" + lastCommand.LeftLeg.ToString("0.00") + "/" + lastCommand.RightLeg.ToString("0.00") + "\n  head=" + lastCommand.Head.ToString("0.00") + "  core=" + lastCommand.Core.ToString("0.00") + "  grips=" + lastCommand.LeftGrip.ToString("0.00") + "/" + lastCommand.RightGrip.ToString("0.00"); } }
 
@@ -110,7 +111,7 @@ namespace Mod
             DriveSensoryPopulations(sensory);
 
             ProcessActiveNeurons(nextPending, nextActive);
-            ReplacePendingState(nextPending, nextActive);
+            SwapPendingState();
             priority.Clear();
 
             return BuildMotorCommand(sensory);
@@ -130,6 +131,7 @@ namespace Mod
                 firedIds.Clear();
                 nextPending.Clear();
                 nextActive.Clear();
+                orderedActive.Clear();
                 simulationTick = 0;
                 backlogCursor = 0;
                 stopped = true;
@@ -163,7 +165,13 @@ namespace Mod
 
         private void ProcessFairBacklog(Dictionary<int, float> next, HashSet<int> nextActive)
         {
-            var ordered = new List<int>(active);
+            orderedActive.Clear();
+            foreach (var id in active)
+            {
+                orderedActive.Add(id);
+            }
+
+            var ordered = orderedActive;
             ordered.Sort();
             var start = (int)(backlogCursor % ordered.Count);
             scheduled.Clear();
@@ -274,19 +282,17 @@ namespace Mod
             destination[id] = Mathf.Clamp(queued + amount, -4f, 4f);
         }
 
-        private void ReplacePendingState(Dictionary<int, float> next, HashSet<int> nextActive)
+        private void SwapPendingState()
         {
-            pending.Clear();
-            foreach (var pair in next)
-            {
-                pending[pair.Key] = pair.Value;
-            }
+            var previousPending = pending;
+            pending = nextPending;
+            nextPending = previousPending;
+            nextPending.Clear();
 
-            active.Clear();
-            foreach (var id in nextActive)
-            {
-                active.Add(id);
-            }
+            var previousActive = active;
+            active = nextActive;
+            nextActive = previousActive;
+            nextActive.Clear();
         }
 
         private MotorCommand BuildMotorCommand(SensoryFrame sensory)
@@ -329,7 +335,7 @@ namespace Mod
 
         private bool IsDangerous(SensoryFrame sensory)
         {
-            return sensory.Pain + sensory.Fire + sensory.Shock + sensory.SubmergedHypoxia > .5f || Fired("type:DNp01");
+            return sensory.Pain + sensory.Fire + sensory.Shock + sensory.SubmergedHypoxia + sensory.Projectile > .5f || Fired("type:DNp01");
         }
 
         private static float EscapeDirection(float nearbyDirection)

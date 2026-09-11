@@ -83,11 +83,15 @@ namespace UnityEngine
         public Vector2 Surface;
         public Vector2 ClosestPoint(Vector2 origin) => Surface;
     }
+    public class Rigidbody2D : Component { public Vector2 velocity; }
+    public struct RaycastHit2D { public Collider2D collider; }
     public static class Physics2D
     {
         public static Collider2D[] Hits = [];
+        public static RaycastHit2D LinecastResult;
         public static int OverlapCircleNonAlloc(Vector2 position, float radius, Collider2D[] buffer)
         { var count = Math.Min(Hits.Length, buffer.Length); Array.Copy(Hits, buffer, count); return count; }
+        public static RaycastHit2D Linecast(Vector2 start, Vector2 end) => LinecastResult;
     }
     public class AudioSource : Component { public bool isPlaying, mute; public bool isActiveAndEnabled = true; public float volume = 1; }
     public class Collision2D { public Collider2D collider; public Vector2 relativeVelocity; }
@@ -135,7 +139,7 @@ public class CirculationBehaviour : UnityEngine.Component
 }
 public class PhysicalBehaviour : UnityEngine.Component
 {
-    public bool OnFire, IsUnderWater, IsInLava, IsBeingStabbed, IsTouchingSomething, beingHeldByGripper, IsWeightless, isSliding, isDisintegrated;
+    public bool OnFire, IsUnderWater, IsInLava, IsBeingStabbed, IsTouchingSomething, beingHeldByGripper, IsWeightless, isSliding, isDisintegrated, BulletPenetration;
     public float BurnIntensity, BurnProgress, Wetness, Charge;
     public float Temperature = 37;
     public UnityEngine.AudioSource MainAudioSource;
