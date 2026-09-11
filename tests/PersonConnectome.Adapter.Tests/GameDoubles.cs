@@ -162,6 +162,10 @@ public class AcidPoolBehaviour : UnityEngine.Component
 {
     public float AcidProgress, PainIntensity;
 }
+public class LavaBehaviour : UnityEngine.Component
+{
+    public float LavaTemperature = 100;
+}
 public class ProjectileBehaviour : UnityEngine.Component { }
 public class GorseProjectileBehaviour : UnityEngine.Component { }
 public class GenericScifiProjectileBehaviour : UnityEngine.Component { }

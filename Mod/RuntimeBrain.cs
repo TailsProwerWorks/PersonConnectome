@@ -266,6 +266,11 @@ namespace Mod
 
         private MotorCommand BuildMotorCommand(SensoryFrame sensory)
         {
+            if (sensory.UnderWater > .5f)
+            {
+                return BuildWaterSurvivalCommand(sensory);
+            }
+
             var danger = IsDangerous(sensory);
             var left = FiredOnSide("L");
             var right = FiredOnSide("R");
@@ -291,6 +296,31 @@ namespace Mod
                 Freeze = Unit(sensory.Unconscious + sensory.LiquidSedation),
                 Heal = Unit(sensory.Damage + sensory.Bleeding + sensory.LiquidHealing),
                 Stimulate = Unit(sensory.Adrenaline + sensory.LiquidStimulation),
+                Calm = Unit(sensory.Shock + sensory.Pain + sensory.LiquidSedation),
+                Extinguish = Unit(sensory.Fire)
+            };
+            return lastCommand;
+        }
+
+        private MotorCommand BuildWaterSurvivalCommand(SensoryFrame sensory)
+        {
+            var stroke = simulationTick % 8 < 4 ? 1f : -1f;
+            lastCommand = new MotorCommand
+            {
+                Walk = 0f,
+                LeftArm = stroke,
+                RightArm = -stroke,
+                LeftLeg = -stroke,
+                RightLeg = stroke,
+                Core = .35f,
+                Head = -.2f,
+                ReachGrab = 0f,
+                LeftGrip = 0f,
+                RightGrip = 0f,
+                Avoid = 1f,
+                Freeze = Unit(sensory.Unconscious + sensory.LiquidSedation),
+                Heal = Unit(sensory.Damage + sensory.Bleeding + sensory.LiquidHealing),
+                Stimulate = Unit(sensory.Adrenaline + sensory.LiquidStimulation + sensory.SubmergedHypoxia),
                 Calm = Unit(sensory.Shock + sensory.Pain + sensory.LiquidSedation),
                 Extinguish = Unit(sensory.Fire)
             };

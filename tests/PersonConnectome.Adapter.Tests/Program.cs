@@ -17,9 +17,10 @@ internal static class Program
             ("acid pools produce an explicit acid signal", AcidPools),
             ("paralysis, breakage and limb loss stay distinct", LimbDamageCategories),
             ("blood baseline and vitality fallback", BloodAndVitality),
-            ("hypoxia and submersion remain distinct", Oxygen),
-            ("nearby temperatures provide bounded ambient heat and cold", AmbientTemperature),
-            ("external audio excludes own limbs, mute and invalid distances", Audio),
+        ("hypoxia and submersion remain distinct", Oxygen),
+        ("nearby temperatures provide bounded ambient heat and cold", AmbientTemperature),
+        ("nearby lava provides heat and hazard", NearbyLava),
+        ("external audio excludes own limbs, mute and invalid distances", Audio),
             ("visible external objects produce a vision proxy", Vision),
             ("vibration, proprioception and projectile channels stay distinct", AdditionalSenses),
             ("falling is distinct from walking and floor contact", Falling),
@@ -180,6 +181,14 @@ internal static class Program
         hotCollider.Surface = new Vector2(8, 0); frame = f.Adapter.Read(); Equal(0f, frame.AmbientCold); Physics2D.Hits = [];
         var detachedOwn = new GameObject("Detached own limb"); var detachedPhysical = detachedOwn.AddComponent<PhysicalBehaviour>(); detachedPhysical.Temperature = 100; detachedPhysical.rigidbody = detachedOwn.AddComponent<Rigidbody2D>(); var detachedCollider = detachedOwn.AddComponent<Collider2D>(); detachedCollider.Surface = new Vector2(2, 0);
         f.Limb.PhysicalBehaviour = detachedPhysical; Physics2D.Hits = [detachedCollider]; Equal(0f, f.Adapter.Read().AmbientHeat); Physics2D.Hits = []; AmbientTemperatureGridBehaviour.Instance = null;
+    }
+    private static void NearbyLava()
+    {
+        var f = new Fixture();
+        AmbientTemperatureGridBehaviour.Instance = new AmbientTemperatureGridBehaviour { Temperature = 20 };
+        var lava = new GameObject("Lava"); var lavaBehaviour = lava.AddComponent<LavaBehaviour>(); lavaBehaviour.LavaTemperature = 100; var collider = lava.AddComponent<Collider2D>(); collider.Surface = new Vector2(2, 0);
+        Physics2D.Hits = [collider]; var frame = f.Adapter.Read(); True(frame.Lava > 0f); True(frame.AmbientHeat > 0f); Equal("FIRE/LAVA", f.Adapter.LiveSignal);
+        Physics2D.Hits = []; AmbientTemperatureGridBehaviour.Instance = null;
     }
     private static Collider2D SoundObject(out AudioSource audio)
     {

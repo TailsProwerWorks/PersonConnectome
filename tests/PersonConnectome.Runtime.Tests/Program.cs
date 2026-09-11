@@ -11,6 +11,7 @@ var tests = new (string Name, Action Run)[]
     ("terminal reset clears state and recovers", TerminalResetClearsStateAndRecovers),
     ("healthy standing leaves sensory headroom", HealthyStateLeavesSensoryHeadroom),
     ("normalized blood and vitality drive injury", NormalizedBloodAndVitalityDriveInjury),
+    ("submersion triggers survival paddling", SubmersionTriggersSurvivalPaddling),
     ("nearby stimulus does not force escape walking", NearbyStimulusDoesNotForceEscapeWalking),
     ("R7 R8 variants receive light drive", RetinaVariantsReceiveLightDrive),
     ("bundled payload identity", BundledPayloadIdentity),
@@ -148,6 +149,34 @@ static void NearbyStimulusDoesNotForceEscapeWalking()
         NearbyDirection = 1f
     });
     Equal(0f, command.Walk);
+}
+
+static void SubmersionTriggersSurvivalPaddling()
+{
+    var brain = OneNeuronBrain();
+    var sensory = new SensoryFrame
+    {
+        Alive = true,
+        Health = 1f,
+        Oxygen = .93f,
+        Consciousness = 1f,
+        Vitality = 1f,
+        Circulation = 1f,
+        UnderWater = 1f,
+        SubmergedHypoxia = .07f
+    };
+
+    var first = brain.Step(sensory);
+    brain.Step(sensory);
+    brain.Step(sensory);
+    brain.Step(sensory);
+    var second = brain.Step(sensory);
+    Equal(0f, first.Walk);
+    Equal(1f, first.Avoid);
+    True(first.LeftArm != 0f && first.LeftArm == -first.RightArm, "water response must paddle with alternating arms");
+    True(first.LeftLeg == -first.RightLeg, "water response must alternate the legs");
+    True(first.LeftArm == -second.LeftArm, "water response must alternate strokes");
+    True(first.Stimulate > 0f, "water response must raise arousal from hypoxia");
 }
 
 static void FreshSensoryInputsBypassRecurrentBacklog()

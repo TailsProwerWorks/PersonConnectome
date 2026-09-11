@@ -724,15 +724,24 @@ namespace Mod
                     f.AcidExposure = Mathf.Max(f.AcidExposure, acid);
                 }
 
+                var delta = hit.ClosestPoint(origin) - origin;
+                var distance = delta.magnitude;
+                if (!IsFinite(distance) || !IsFinite(delta.x)) continue;
+
+                var lava = hit.GetComponentInParent<LavaBehaviour>();
+                if (lava != null && !IsOwnTransform(lava.transform))
+                {
+                    var distanceSignal = Mathf.Clamp01(1f - distance / visionRadius);
+                    f.Lava = Mathf.Max(f.Lava, distanceSignal);
+                    f.AmbientHeat = Mathf.Max(f.AmbientHeat, AmbientTemperatureHeat(lava.LavaTemperature) * distanceSignal);
+                }
+
                 var physical = hit.GetComponentInParent<PhysicalBehaviour>();
                 if (physical == null)
                 {
                     continue;
                 }
 
-                var delta = hit.ClosestPoint(origin) - origin;
-                var distance = delta.magnitude;
-                if (!IsFinite(distance) || !IsFinite(delta.x)) continue;
                 ReadExternalTemperature(ref f, physical, distance);
                 ReadExternalSound(ref f, physical, distance);
                 if (distance < closest)
