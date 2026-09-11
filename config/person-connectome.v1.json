@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "enabled": false,
+  "observeOnly": true,
+  "tickRateHz": 20,
+  "maximumNeurons": 512,
+  "maximumSynapses": 4096,
+  "smoothing": 0.2,
+  "aliases": { "acid": "corrosion", "poison": "toxicity", "anesthetic": "sedation", "zombie": "infection" }
+}

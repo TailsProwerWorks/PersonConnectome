@@ -1,0 +1,7 @@
+{
+  "Name": "Person Connectome",
+  "Author": "ShadowNineX",
+  "Version": "0.2.0",
+  "Description": "An observe-only, bounded neural-control demonstration for people.",
+  "Scripts": [ "script.cs" ]
+}
