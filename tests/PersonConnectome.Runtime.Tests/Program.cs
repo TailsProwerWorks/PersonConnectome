@@ -5,8 +5,8 @@ using UnityEngine;
 var tests = new (string Name, Action Run)[]
 {
     ("refractory expires after silent ticks", RefractoryExpiresAfterSilentTicks),
-    ("deferred backlog preserves propagated input", DeferredBacklogPreservesPropagatedInput),
-    ("overload scheduling advances fairly", OverloadSchedulingAdvancesFairly),
+    ("overload preserves fresh propagated input", OverloadPreservesFreshPropagatedInput),
+    ("overload drops stale work for realtime control", OverloadDropsStaleWorkForRealtimeControl),
     ("fresh sensory inputs bypass recurrent backlog", FreshSensoryInputsBypassRecurrentBacklog),
     ("terminal reset clears state and recovers", TerminalResetClearsStateAndRecovers),
     ("healthy standing leaves sensory headroom", HealthyStateLeavesSensoryHeadroom),
@@ -15,7 +15,7 @@ var tests = new (string Name, Action Run)[]
     ("nearby stimulus does not force escape walking", NearbyStimulusDoesNotForceEscapeWalking),
     ("R7 R8 variants receive light drive", RetinaVariantsReceiveLightDrive),
     ("bundled payload identity", BundledPayloadIdentity),
-    ("sustained full-payload load reports backlog", SustainedFullPayloadLoadReportsBacklog),
+    ("sustained full-payload load stays realtime bounded", SustainedFullPayloadLoadStaysRealtimeBounded),
     ("portable SHA-256 vectors and padding boundaries", PayloadChecksumVectors),
     ("malformed dataset and counts reject", MalformedDatasetAndCountsReject)
 };
@@ -54,7 +54,7 @@ static void RefractoryExpiresAfterSilentTicks()
     Equal(1, brain.TestFiredCount);
 }
 
-static void DeferredBacklogPreservesPropagatedInput()
+static void OverloadPreservesFreshPropagatedInput()
 {
     const int count = 24001;
     var rows = new int[count + 1];
@@ -64,21 +64,21 @@ static void DeferredBacklogPreservesPropagatedInput()
     brain.SetTestPending(0, 1f);
     brain.SetTestPending(count - 1, .25f);
     brain.Step(Healthy());
-    Equal(.75f, brain.TestPendingValue(count - 1));
+    Equal(.5f, brain.TestPendingValue(count - 1));
 }
 
-static void OverloadSchedulingAdvancesFairly()
+static void OverloadDropsStaleWorkForRealtimeControl()
 {
     const int count = 24001;
     var brain = ConnectomeBrain.CreateForTest(count, new int[count + 1], [], []);
     brain.SetTestActiveRange(count, .1f);
     brain.Step(Healthy());
-    Equal(1, brain.TestDeferredCount);
+    Equal(1, brain.TestDroppedCount);
     Equal(0f, brain.TestPotentialValue(count - 1));
 
     brain.Step(Healthy());
-    Equal(1, brain.TestDeferredCount);
-    Equal(.1f, brain.TestPotentialValue(count - 1));
+    Equal(0, brain.TestDroppedCount);
+    Equal(0f, brain.TestPotentialValue(count - 1));
 }
 
 static void TerminalResetClearsStateAndRecovers()
@@ -186,10 +186,10 @@ static void FreshSensoryInputsBypassRecurrentBacklog()
     brain.SetTestActiveRange(count, .1f);
     brain.SetTestPopulation("superclass:ol_sensory", count - 1);
     brain.Step(Healthy(touch: 1f));
-    True(brain.TestPotentialValue(count - 1) > .1f, "fresh sensory input was deferred behind the recurrent backlog");
+    True(brain.TestPotentialValue(count - 1) > .1f, "fresh sensory input was dropped behind the recurrent load");
 }
 
-static void SustainedFullPayloadLoadReportsBacklog()
+static void SustainedFullPayloadLoadStaysRealtimeBounded()
 {
     var brain = ConnectomeBrain.TryCreate(out var status);
     True(brain is not null, status);
@@ -197,7 +197,7 @@ static void SustainedFullPayloadLoadReportsBacklog()
     {
         var stopwatch = Stopwatch.StartNew();
         brain.Step(Healthy(velocity: 1f, light: 1f, sound: 1f, touch: 1f, physicalContact: 1f, heartbeat: 1f));
-        Console.WriteLine("LOAD step=" + (i + 1) + " ms=" + stopwatch.Elapsed.TotalMilliseconds.ToString("0.0") + " active=" + brain.TestActiveCount + " pending=" + brain.TestPendingCount + " processed=" + brain.TestProcessedCount + " deferred=" + brain.TestDeferredCount + " fired=" + brain.TestFiredCount);
+        Console.WriteLine("LOAD step=" + (i + 1) + " ms=" + stopwatch.Elapsed.TotalMilliseconds.ToString("0.0") + " active=" + brain.TestActiveCount + " pending=" + brain.TestPendingCount + " processed=" + brain.TestProcessedCount + " dropped=" + brain.TestDroppedCount + " fired=" + brain.TestFiredCount);
     }
     True(brain.TestProcessedCount <= 24000, "processed work exceeded the configured cap");
 }

@@ -43,7 +43,7 @@ namespace Mod
         private long simulationTick;
         private long backlogCursor;
         private int processedThisStep;
-        private int deferredThisStep;
+        private int droppedThisStep;
         private float injuryDrive, hazardDrive, motionDrive, arousalDrive;
         private const int MaxActivePerStep = 24000;
         private const int RefractoryTicks = 5;
@@ -57,7 +57,7 @@ namespace Mod
 
         public string Status => "MaleCNS v1.0 " + asset.NeuronCount + " neurons / " + asset.EdgeCount +
             (stopped ? " STOPPED" : " queued=" + pending.Count + " processed=" + processedThisStep +
-            " deferred=" + deferredThisStep + " fired=" + fired.Count + " input=" + Format(LastSensoryDrive) +
+            " dropped=" + droppedThisStep + " fired=" + fired.Count + " input=" + Format(LastSensoryDrive) +
             " request-walk=" + Format(lastCommand.Walk));
 
         public string DisplaySummary
@@ -66,12 +66,12 @@ namespace Mod
             {
                 if (stopped)
                 {
-                    return "NEURAL: STOPPED\n  queued=0  processed=0  deferred=0  fired=0";
+                    return "NEURAL: STOPPED\n  queued=0  processed=0  dropped=0  fired=0";
                 }
 
-                var scheduler = deferredThisStep > 0 ? "BACKLOG" : "STEADY";
+                var scheduler = droppedThisStep > 0 ? "REALTIME" : "STEADY";
                 return "NEURAL:\n  input=" + Format(LastSensoryDrive) + "  queued=" + pending.Count + "  active=" + active.Count +
-                    "\n  processed=" + processedThisStep + "/" + MaxActivePerStep + "  deferred=" + deferredThisStep +
+                    "\n  processed=" + processedThisStep + "/" + MaxActivePerStep + "  dropped=" + droppedThisStep +
                     "\n  fired=" + fired.Count + "  scheduler=" + scheduler;
             }
         }
@@ -101,7 +101,7 @@ namespace Mod
 
             simulationTick++;
             processedThisStep = 0;
-            deferredThisStep = 0;
+            droppedThisStep = 0;
             injuryDrive = 0f;
             hazardDrive = 0f;
             motionDrive = 0f;
@@ -142,7 +142,6 @@ namespace Mod
 
             LastSensoryDrive = 0f;
             processedThisStep = 0;
-            deferredThisStep = 0;
             lastCommand = new MotorCommand();
             return lastCommand;
         }
@@ -190,7 +189,7 @@ namespace Mod
 
             foreach (var id in orderedActive)
             {
-                if (!scheduled.Contains(id)) DeferNeuron(id, next, nextActiveState);
+                if (!scheduled.Contains(id)) DropNeuron(id);
             }
 
             backlogCursor = (start + generalProcessed) % orderedActive.Count;
@@ -208,11 +207,10 @@ namespace Mod
             ProcessNeuron(id, next, nextActiveState);
         }
 
-        private void DeferNeuron(int id, Dictionary<int, float> next, HashSet<int> nextActiveState)
+        private void DropNeuron(int id)
         {
-            deferredThisStep++;
-            nextActiveState.Add(id);
-            if (pending.TryGetValue(id, out var queued)) MergePending(next, id, queued);
+            droppedThisStep++;
+            potential[id] = 0f;
         }
 
         private void ProcessNeuron(int id, Dictionary<int, float> next, HashSet<int> nextActiveState)

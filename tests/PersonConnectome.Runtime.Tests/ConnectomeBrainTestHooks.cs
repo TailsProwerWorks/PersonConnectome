@@ -49,7 +49,7 @@ namespace Mod
         internal float TestSensoryDrive => LastSensoryDrive;
         internal long TestSimulationTick => simulationTick;
         internal long TestBacklogCursor => backlogCursor;
-        internal int TestDeferredCount => deferredThisStep;
+        internal int TestDroppedCount => droppedThisStep;
         internal static string PayloadDigestForTest(byte[] data) => RuntimeAsset.ComputePayloadSha256(data);
         internal static byte[] DecodePayloadForTest(UnityEngine.Texture2D texture) => RuntimeAsset.ReadTexturePayload(texture);
         internal static void ReadAssetForTest(Stream stream)
