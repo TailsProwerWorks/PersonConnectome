@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AnalysisLevel>none</AnalysisLevel>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <NoWarn>$(NoWarn);CS0649;CS7022;CS8632</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../Mod/script.cs" Link="Mod/script.cs" />
+    <Compile Include="../../Mod/ConnectomeSensoryRouter.cs" Link="Mod/ConnectomeSensoryRouter.cs" />
+    <Compile Include="../../Mod/ConnectomeRuntimeAsset.cs" Link="Mod/ConnectomeRuntimeAsset.cs" />
+    <Compile Include="../../Mod/ConnectomeRuntimeAssetReader.cs" Link="Mod/ConnectomeRuntimeAssetReader.cs" />
+    <Compile Include="../../Mod/RuntimeTypes.cs" Link="Mod/RuntimeTypes.cs" />
+  </ItemGroup>
+</Project>

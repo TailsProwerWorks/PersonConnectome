@@ -54,18 +54,34 @@ public sealed class SensoryFrame
     public float Novelty { get; init; }
     public float Internal { get; init; }
 
-    public float[] ToChannels() => new[] { Alive ? 1f : 0f, Balance, Grounded, Contact, Damage, Pain, Fire, Shock, Impact, Drowning, Hunger, Thirst, Energy, Fatigue, NearbyEntity, LineOfSight, Light, Wetness, Blood, Toxicity, Corrosion, Sedation, Healing, Stimulation, Infection, Reward, Aversive, Novelty, Internal };
+    public float[] ToChannels() => [Alive ? 1f : 0f, Balance, Grounded, Contact, Damage, Pain, Fire, Shock, Impact, Drowning, Hunger, Thirst, Energy, Fatigue, NearbyEntity, LineOfSight, Light, Wetness, Blood, Toxicity, Corrosion, Sedation, Healing, Stimulation, Infection, Reward, Aversive, Novelty, Internal];
 }
 
 public sealed class EffectAliasRegistry
 {
+    private const string StimulationChannel = "stimulation";
     private readonly Dictionary<string, string> _aliases = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["water"] = "wetness", ["wet"] = "wetness", ["blood"] = "blood", ["acid"] = "corrosion", ["corrosive"] = "corrosion",
-        ["poison"] = "toxicity", ["toxin"] = "toxicity", ["knockout"] = "sedation", ["anesthetic"] = "sedation", ["anaesthetic"] = "sedation",
-        ["syringe"] = "stimulation", ["serum"] = "stimulation", ["zombie"] = "infection", ["infection"] = "infection",
-        ["regeneration"] = "healing", ["healing"] = "healing", ["adrenaline"] = "stimulation", ["stimulant"] = "stimulation",
-        ["immortality"] = "immortality", ["death prevention"] = "immortality"
+        ["water"] = "wetness",
+        ["wet"] = "wetness",
+        ["blood"] = "blood",
+        ["acid"] = "corrosion",
+        ["corrosive"] = "corrosion",
+        ["poison"] = "toxicity",
+        ["toxin"] = "toxicity",
+        ["knockout"] = "sedation",
+        ["anesthetic"] = "sedation",
+        ["anaesthetic"] = "sedation",
+        ["syringe"] = StimulationChannel,
+        ["serum"] = StimulationChannel,
+        ["zombie"] = "infection",
+        ["infection"] = "infection",
+        ["regeneration"] = "healing",
+        ["healing"] = "healing",
+        ["adrenaline"] = StimulationChannel,
+        ["stimulant"] = StimulationChannel,
+        ["immortality"] = "immortality",
+        ["death prevention"] = "immortality"
     };
     public IReadOnlyCollection<string> UnknownEffects => _unknown;
     private readonly SortedSet<string> _unknown = new(StringComparer.OrdinalIgnoreCase);

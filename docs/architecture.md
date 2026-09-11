@@ -1,14 +1,14 @@
 # Architecture
 
-```
-optional game capabilities -> SensoryFrame -> input neurons -> LifSimulator
-                                                    |             |
-                                         versioned bounded state   v
-game supported-action callback <- SafeMotorGate <- MotorCommand <- controller
-```
+There are two implementations with an explicit boundary:
 
-`ReflectionPersonCapabilities` accesses only public instance fields/properties by name and is null-safe. It invokes no game methods and uses no People Playground type at compile time, so a changed/missing capability is represented as zero. Its explicit read-only probes cover body position/velocity/orientation, balance/contact/grounded/touch/pressure, injury/bleeding/pain/dismemberment, fire/heat/cold, shock/stun/knockout, impact/fall/acceleration, drowning/air, needs, sound/vibration, nearby direction/LOS/light, projectile/material hazard, and every listed liquid/status category. Public `Effects` entries are mapped through `EffectAliasRegistry`; unrecognised names are retained case-insensitively (64-character maximum) as local telemetry. Values are finite-clamped to `[0,1]` and vectors to `[-1,1]`. These names are candidates, not a claim about the game API.
+- `src/PersonConnectome` is the reusable .NET 10 graph/simulator/controller library, including optional reflection capabilities and JSON state. It is not referenced or deployed by the game mod.
+- `Mod` is the standalone net48 game-facing source set. `script.cs` owns its sparse brain; the adapter directly samples and commands installed game APIs. Runtime and adapter tests link these exact source files with narrow game/Unity doubles.
 
-The graph remaps arbitrary external IDs to deterministic compact indexes. Inputs and synapses are sorted; delays are bounded to 32 ticks, weights to `[-4,4]`, potentials to `[-8,8]`, and graph sizes by caller-provided maxima. The LIF update is leaky, thresholded and refractory. State JSON is version 2, refuses malformed/oversized content (64 KiB), checks vector lengths, and persists bounded delayed synapse events so restore is deterministic.
+The shipped asset is a thresholded MaleCNS v1.0 derivative: 176,422 neurons, 6,287,749 retained connections (weight >=5, self-edges excluded). It is not the full released connection graph. The PNG carries the exact compressed FLYB bytes. Runtime verifies SHA-256, dataset identity, exact counts, CSR structure, target and used metadata indexes before caching shared graph arrays. Each person has independent dynamic neural state.
 
-The scheduler caps catch-up at four ticks. The motor gate clamps/smooths all values, is active by default, and provides a latched emergency shutdown. The loadable game script mirrors this separation with a pure bounded `ConnectomeBrain` and a `PeoplePlaygroundPersonAdapter`; target-build game references do not enter the reusable `src/` engine.
+At each control tick, the adapter reconciles surviving/new limbs and builds a fresh bounded sensory frame. Heuristic sensory populations receive weighted game signals; nearby direction and liquid healing feed the command decoder only. Sparse LIF processing caps work at 24,000 active neurons, rotates overloaded work, merges carried input with new propagation and expires refractory periods by neural tick. Telemetry exposes queued input targets, processed/deferred work and spikes. This bounds neuron work, not a guaranteed wall-clock budget or biological fidelity.
+
+Terminal/invalid frames clear neural state and stop commands. Motor cleanup sets joint influence to one even for incapable limbs, drops grips and restores only owned regeneration boosts. Nonterminal unconsciousness is sampled but motor/chemistry commands are suppressed. Recovery from terminal state starts from cleared state. The scheduler allows at most four catch-up ticks.
+
+The independent overhead label displays requested versus applied commands and follows the current head/root without inheriting ragdoll mirroring. It has no physics/control responsibility. No game persistence is implemented; reusable-library state tests do not establish Unity save compatibility.

@@ -1,0 +1,174 @@
+// Test doubles model only the public surface used by the linked production adapter.
+// They establish command/sensor contracts, not Unity physics or rendering behavior.
+namespace UnityEngine
+{
+    public class Object
+    {
+        public bool Destroyed;
+        public static bool operator ==(Object a, Object b) =>
+            (ReferenceEquals(a, null) || a.Destroyed) ? ReferenceEquals(b, null) || b.Destroyed : ReferenceEquals(a, b);
+        public static bool operator !=(Object a, Object b) => !(a == b);
+        public override bool Equals(object obj) => ReferenceEquals(this, obj);
+        public override int GetHashCode() => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(this);
+    }
+    public class Component : Object
+    {
+        public GameObject gameObject;
+        public Transform transform => gameObject.transform;
+        public string name => gameObject.name;
+        public T GetComponent<T>() where T : Component => gameObject.GetComponent<T>();
+        public T GetComponentInParent<T>() where T : Component
+        {
+            for (var t = transform; t != null; t = t.parent)
+            {
+                var c = t.GetComponent<T>();
+                if (c != null) return c;
+            }
+            return null;
+        }
+    }
+    public class MonoBehaviour : Component { }
+    public class GameObject : Object
+    {
+        public string name;
+        public bool activeSelf = true;
+        public readonly Transform transform;
+        private readonly List<Component> components = [];
+        public GameObject(string name = "") { this.name = name; transform = new Transform { gameObject = this }; components.Add(transform); }
+        public T AddComponent<T>() where T : Component, new() { var c = new T { gameObject = this }; components.Add(c); return c; }
+        public T GetComponent<T>() where T : Component => components.OfType<T>().FirstOrDefault(c => c != null);
+        public void GetComponentsInChildren<T>(bool includeInactive, List<T> result) where T : Component
+        {
+            result.Clear(); Collect(this, includeInactive, result);
+        }
+        private static void Collect<T>(GameObject go, bool includeInactive, List<T> result) where T : Component
+        {
+            if (go == null || (!includeInactive && !go.activeSelf)) return;
+            result.AddRange(go.components.OfType<T>().Where(c => c != null));
+            foreach (var child in go.transform.Children) Collect(child.gameObject, includeInactive, result);
+        }
+    }
+    public class Transform : Component
+    {
+        public Transform parent;
+        public readonly List<Transform> Children = [];
+        public Vector3 position;
+        public void SetParent(Transform value) { parent?.Children.Remove(this); parent = value; value?.Children.Add(this); }
+        public bool IsChildOf(Transform root) { for (var t = this; t != null; t = t.parent) if (t == root) return true; return false; }
+    }
+    public struct Vector2(float x, float y)
+    {
+        public float x = x, y = y;
+        public float magnitude => MathF.Sqrt(x * x + y * y);
+        public static Vector2 operator -(Vector2 a, Vector2 b) => new(a.x - b.x, a.y - b.y);
+    }
+    public struct Vector3(float x, float y, float z)
+    {
+        public float x = x, y = y, z = z;
+        public static explicit operator Vector2(Vector3 v) => new(v.x, v.y);
+    }
+    public struct Color { public float grayscale; }
+    public static class RenderSettings { public static Color ambientLight; }
+    public static class Mathf
+    {
+        public static float Min(float a, float b) => MathF.Min(a, b);
+        public static float Max(float a, float b) => MathF.Max(a, b);
+        public static float Clamp(float v, float min, float max) => Math.Clamp(v, min, max);
+        public static float Clamp01(float v) => Clamp(v, 0, 1);
+        public static float Abs(float v) => MathF.Abs(v);
+        public static float Sign(float v) => v >= 0 ? 1 : -1;
+    }
+    public class Collider2D : Component
+    {
+        public Vector2 Surface;
+        public Vector2 ClosestPoint(Vector2 origin) => Surface;
+    }
+    public static class Physics2D
+    {
+        public static Collider2D[] Hits = [];
+        public static int OverlapCircleNonAlloc(Vector2 position, float radius, Collider2D[] buffer)
+        { var count = Math.Min(Hits.Length, buffer.Length); Array.Copy(Hits, buffer, count); return count; }
+    }
+    public class AudioSource : Component { public bool isPlaying, mute; public bool isActiveAndEnabled = true; public float volume = 1; }
+    public class Collision2D { public Collider2D collider; public Vector2 relativeVelocity; }
+    public enum KeyCode { F7 }
+    public class RangeAttribute : Attribute { public RangeAttribute(float min, float max) { } }
+    public static class Input { public static bool GetKeyDown(KeyCode key) => false; }
+    public static class Time { public static float fixedDeltaTime = .02f, deltaTime = .02f; }
+    public static class Debug { public static void Log(string message) { } }
+}
+public class PersonBehaviour : UnityEngine.Component
+{
+    public LimbBehaviour[] Limbs = [];
+    public bool Braindead, BrainDamaged, IsTouchingFloor;
+    public float AverageHealth = 1, Consciousness = 1, OxygenLevel = 1;
+    public float PainLevel, ShockLevel, AdrenalineLevel, AverageFireIntensity, AverageWetness, AverageSpeed, AngleOffset, BalanceOffset, Heartbeat, SeizureTime, BrainDamagedTime, DesiredWalkingDirection;
+}
+public class LimbBehaviour : UnityEngine.Component
+{
+    public bool IsCapable = true, HasJoint = true;
+    public bool HasBrain, IsDismembered, Broken, Frozen, IsParalysed, HasLungs, LungsPunctured, IsOnFloor, IsZombie;
+    public int CurrentlyShattered;
+    public float Health = 100, InitialHealth = 100, Vitality = 1, BodyTemperature = 37, InternalTemperature = 37;
+    public float JointStress, Numbness, RegenerationSpeed, MotorSpeed;
+    public int MotorCalls;
+    public GripBehaviour GripBehaviour;
+    public CirculationBehaviour CirculationBehaviour;
+    public PhysicalBehaviour PhysicalBehaviour;
+    public void InfluenceMotorSpeed(float speed, float influence)
+    {
+        if (!HasJoint) return;
+        MotorCalls++;
+        // Mirrors the interpolation confirmed in installed game IL.
+        MotorSpeed += (speed - MotorSpeed) * UnityEngine.Mathf.Clamp01(influence);
+    }
+}
+public class CirculationBehaviour : UnityEngine.Component
+{
+    public class RefFloat { public float Raw; }
+    public Dictionary<Liquid, RefFloat> LiquidDistribution = [];
+    public float TotalLiquidAmount = 1, BloodFlow = 1, BloodAmount = 1;
+    public bool HasBloodFlow = true, HasCirculation = true, IsDisconnected;
+    public float BleedingRate, InternalBleedingIntensity, BloodRegenerationPerSecond;
+    public int StabWoundCount, GunshotWoundCount, BleedingPointCount;
+    public float GetHeartRate() => 0;
+    public float GetAmountOfBlood() => BloodAmount;
+}
+public class PhysicalBehaviour : UnityEngine.Component
+{
+    public bool OnFire, IsUnderWater, IsInLava, IsBeingStabbed, IsTouchingSomething, beingHeldByGripper, IsWeightless, isSliding, isDisintegrated;
+    public float BurnIntensity, BurnProgress, Wetness, Charge;
+    public float Temperature = 37;
+    public UnityEngine.AudioSource MainAudioSource;
+}
+public class Liquid(string identity)
+{
+    public readonly string Identity = identity;
+    public static string GetIdentity(Liquid liquid) => liquid.Identity;
+    public string GetDisplayName() => Identity;
+}
+public class ActivationPropagation { }
+public class GripBehaviour
+{
+    public bool isHolding;
+    public int GrabCalls, DropCalls;
+    public void Use(ActivationPropagation propagation) { GrabCalls++; isHolding = true; }
+    public void DropObject() { DropCalls++; isHolding = false; }
+}
+public static class ModAPI { public static void Notify(string message) { } }
+namespace Mod
+{
+    // Lifecycle tests only need a neutral brain; neural-source tests use their own harness.
+    internal class ConnectomeBrain
+    {
+        public string Status => "test";
+        public static ConnectomeBrain TryCreate(out string status) { status = "test"; return new(); }
+        public MotorCommand Step(SensoryFrame frame) => default;
+    }
+    internal class PersonConnectomeStatusDisplay
+    {
+        public PersonConnectomeStatusDisplay(UnityEngine.Transform anchor) { }
+        public void Update(float elapsed, ConnectomeBrain brain, PeoplePlaygroundPersonAdapter adapter) { }
+        public void Dispose() { }
+    }
+}

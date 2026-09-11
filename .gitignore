@@ -4,3 +4,10 @@ obj/
 *.user
 *.suo
 state/*.json
+
+# Keep only the canonical connectome build input and game carrier. Other files
+# under this directory are generated scratch artifacts and should not be staged.
+Mod/connectome/*
+!Mod/connectome/
+!Mod/connectome/malecns-v1.0.flyb.gz
+!Mod/connectome/malecns-v1.0.png

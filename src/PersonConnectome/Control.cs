@@ -1,14 +1,29 @@
 namespace PersonConnectome;
 
-public sealed class FixedRateScheduler
+public sealed class FixedRateScheduler(float hertz = 20f)
 {
-    private readonly double _periodSeconds;
+    private readonly double _periodSeconds = 1d / NormalizeHertz(hertz);
     private double _accumulator;
-    public FixedRateScheduler(float hertz = 20f) { _periodSeconds = 1d / Math.Clamp(hertz, 1f, 120f); }
+
+    private static float NormalizeHertz(float hertz) => float.IsFinite(hertz) ? Math.Clamp(hertz, 1f, 120f) : 20f;
+
     public int Advance(double elapsedSeconds, int maximumSteps = 4)
     {
-        _accumulator = Math.Min(Math.Max(0, elapsedSeconds) + _accumulator, _periodSeconds * maximumSteps);
-        var steps = 0; while (_accumulator >= _periodSeconds && steps < maximumSteps) { _accumulator -= _periodSeconds; steps++; } return steps;
+        if (maximumSteps <= 0)
+        {
+            return 0;
+        }
+
+        var elapsed = double.IsNaN(elapsedSeconds) || elapsedSeconds < 0d ? 0d : elapsedSeconds;
+        _accumulator = Math.Min(elapsed + _accumulator, _periodSeconds * maximumSteps);
+        var steps = 0;
+        while (_accumulator >= _periodSeconds && steps < maximumSteps)
+        {
+            _accumulator -= _periodSeconds;
+            steps++;
+        }
+
+        return steps;
     }
 }
 
@@ -31,23 +46,6 @@ public sealed class MotorCommand
     public float Calm { get; init; }
     public float Extinguish { get; init; }
 }
-public sealed class SafeMotorGate
-{
-    private MotorCommand _previous = new();
-    // Active control is the shipped default; observe-only is an explicit opt-in
-    // for diagnostics and tests, not the runtime startup mode.
-    public bool ObserveOnly { get; set; } = false;
-    public bool EmergencyDisabled { get; private set; }
-    public void EmergencyDisable() => EmergencyDisabled = true;
-    public void ResetEmergency() { EmergencyDisabled = false; _previous = new(); }
-    public MotorCommand Filter(MotorCommand? desired, float smoothing = .2f)
-    {
-        if (ObserveOnly || EmergencyDisabled || desired is null) return _previous = new();
-        var a = Numbers.Clamp(smoothing, .01f, 1f);
-        return _previous = new MotorCommand { Attention = Numbers.Smooth(_previous.Attention, Vec2.Clamp01(desired.Attention), a), Approach = Numbers.Smooth(_previous.Approach, Vec2.Clamp01(desired.Approach), a), Avoid = Numbers.Smooth(_previous.Avoid, Vec2.Clamp01(desired.Avoid), a), LeftRight = Numbers.Smooth(_previous.LeftRight, Vec2.Signed(desired.LeftRight), a), Locomotion = Numbers.Smooth(_previous.Locomotion, Vec2.Signed(desired.Locomotion), a), ReachGrab = Numbers.Smooth(_previous.ReachGrab, Vec2.Clamp01(desired.ReachGrab), a), Flee = Numbers.Smooth(_previous.Flee, Vec2.Clamp01(desired.Flee), a), Freeze = Numbers.Smooth(_previous.Freeze, Vec2.Clamp01(desired.Freeze), a), SeekEnergy = Numbers.Smooth(_previous.SeekEnergy, Vec2.Clamp01(desired.SeekEnergy), a), Rest = Numbers.Smooth(_previous.Rest, Vec2.Clamp01(desired.Rest), a), Heal = Numbers.Smooth(_previous.Heal, Vec2.Clamp01(desired.Heal), a), Stimulate = Numbers.Smooth(_previous.Stimulate, Vec2.Clamp01(desired.Stimulate), a), Calm = Numbers.Smooth(_previous.Calm, Vec2.Clamp01(desired.Calm), a), Extinguish = Numbers.Smooth(_previous.Extinguish, Vec2.Clamp01(desired.Extinguish), a) };
-    }
-}
-
 public interface IGameCapabilities
 {
     SensoryFrame Read();
@@ -55,24 +53,134 @@ public interface IGameCapabilities
     void ApplySupported(MotorCommand command);
 }
 
-public sealed class PersonConnectomeController
+public sealed class PersonConnectomeController(IConnectomeGraph graph, float hertz = 20f)
 {
-    private readonly LifSimulator _simulator;
-    private readonly FixedRateScheduler _scheduler;
-    private readonly SafeMotorGate _gate;
-    public PersonConnectomeController(SparseGraph? graph = null, float hertz = 20f) { _simulator = new LifSimulator(graph ?? DemoCircuit.Create()); _scheduler = new FixedRateScheduler(hertz); _gate = new SafeMotorGate(); }
-    public SafeMotorGate Safety => _gate;
+    private readonly LifSimulator _simulator = new(graph);
+    private readonly FixedRateScheduler _scheduler = new(hertz);
+
+
     public void Update(IGameCapabilities game, double elapsedSeconds)
     {
         ArgumentNullException.ThrowIfNull(game);
-        foreach (var _ in Enumerable.Range(0, _scheduler.Advance(elapsedSeconds)))
+        var steps = _scheduler.Advance(elapsedSeconds);
+        for (var step = 0; step < steps; step++)
         {
-            var s = game.Read(); var input = new Dictionary<int, float> { [10] = s.Pain + s.Damage + s.Bleeding + s.Fire + s.Shock + s.Drowning + s.Aversive, [50] = s.Knockout + s.Sedation, [20] = s.NearbyEntity + s.Light + s.Sound + s.Touch };
-            var fired = _simulator.Step(input);
-            var danger = fired.Contains(30) || s.Pain + s.Fire + s.Drowning + s.Shock > .5f;
-            var desired = new MotorCommand { Attention = s.Novelty + s.NearbyEntity, Approach = s.NearbyEntity * (1f - s.Aversive), Avoid = danger ? 1 : 0, LeftRight = s.NearbyDirection.X < 0 ? 1 : -1, Locomotion = danger ? -1 : s.NearbyEntity, ReachGrab = s.NearbyEntity * (1f - s.Aversive), Flee = danger ? 1 : 0, Freeze = Math.Max(s.Sedation, s.Knockout), Rest = s.Fatigue, Heal = s.Damage + s.Bleeding, Stimulate = s.Sedation + s.Knockout, Calm = s.Shock + s.Pain, Extinguish = s.Fire };
-            var command = _gate.Filter(desired);
-            if (!_gate.ObserveOnly && !_gate.EmergencyDisabled && game.CanApplySupported) game.ApplySupported(command);
+            var sensory = game.Read();
+            if (sensory.Exists && !sensory.Alive)
+            {
+                continue;
+            }
+
+            _simulator.StepCompact(BuildInput(sensory));
+            var desired = BuildCommand(sensory);
+            if (game.CanApplySupported) game.ApplySupported(desired);
         }
+    }
+
+    private Dictionary<int, float> BuildInput(SensoryFrame sensory)
+    {
+        Dictionary<int, float> input = [];
+        var threat = ThreatSignal(sensory);
+        var body = BodySignal(sensory);
+        var visual = sensory.Light + sensory.NearbyEntity + sensory.LineOfSight;
+        AddPopulationInput(input, "superclass:ol_sensory", threat + body, 512);
+        AddPopulationInput(input, "type:R1-R6", visual, 256);
+        AddPopulationInput(input, "type:LC4", threat + sensory.NearbyEntity, 128);
+        AddPopulationInput(input, "type:LPLC2", threat + sensory.NearbyEntity, 128);
+        AddPopulationInput(input, "type:MDN", sensory.Pain + sensory.Damage + sensory.Drowning + sensory.Knockout + sensory.Stun + sensory.Impact, 128);
+        AddPopulationInput(input, "type:DNp09", sensory.NearbyEntity * (1f - sensory.Aversive) + sensory.LineOfSight + sensory.Novelty, 128);
+        return input;
+    }
+
+    private MotorCommand BuildCommand(SensoryFrame sensory)
+    {
+        var danger = IsDangerous(sensory);
+        return new MotorCommand
+        {
+            Attention = Numbers.Clamp(sensory.Novelty + sensory.NearbyEntity + sensory.LineOfSight + sensory.Sound, 0f, 1f),
+            Approach = Numbers.Clamp(sensory.NearbyEntity * (1f - sensory.Aversive), 0f, 1f),
+            Avoid = danger ? 1f : 0f,
+            LeftRight = Numbers.Clamp(sensory.NearbyDirection.X, -1f, 1f),
+            Locomotion = danger ? -1f : NeuralWalk(),
+            ReachGrab = Fired("type:MN9") && !danger ? sensory.NearbyEntity : 0f,
+            Flee = danger ? 1f : 0f,
+            Freeze = Numbers.Clamp(Math.Max(sensory.Sedation, sensory.Knockout), 0f, 1f),
+            Rest = Numbers.Clamp(sensory.Fatigue, 0f, 1f),
+            Heal = Numbers.Clamp(sensory.Damage + sensory.Bleeding + sensory.Healing, 0f, 1f),
+            Stimulate = Numbers.Clamp(sensory.Stimulation + sensory.Reward, 0f, 1f),
+            Calm = Numbers.Clamp(sensory.Shock + sensory.Pain, 0f, 1f),
+            Extinguish = Numbers.Clamp(sensory.Fire, 0f, 1f)
+        };
+    }
+
+    private bool IsDangerous(SensoryFrame sensory)
+    {
+        return ThreatSignal(sensory) > .5f || Fired("type:LC4") || Fired("type:LPLC2");
+    }
+
+    private static float ThreatSignal(SensoryFrame sensory)
+    {
+        var terminal = sensory.Exists && !sensory.Alive ? 1f : 0f;
+        return sensory.Pain + sensory.Damage + sensory.Bleeding + sensory.Fire + sensory.Heat + sensory.Cold + sensory.Shock + sensory.Stun + sensory.Knockout + sensory.Impact + sensory.Fall + sensory.Drowning + sensory.Projectile + sensory.MaterialHazard + sensory.Toxicity + sensory.Corrosion + sensory.Infection + sensory.Dismemberment + sensory.Aversive + terminal;
+    }
+
+    private static float BodySignal(SensoryFrame sensory)
+    {
+        return sensory.Grounded + sensory.Contact + sensory.Touch + sensory.Pressure + sensory.Sound + sensory.Vibration + sensory.NearbyEntity + sensory.Orientation + sensory.Balance + sensory.Velocity.Length + sensory.Acceleration.Length + sensory.Hunger + sensory.Thirst + sensory.Energy + sensory.Fatigue + sensory.Air;
+    }
+
+    private void AddPopulationInput(Dictionary<int, float> input, string name, float value, int maximum)
+    {
+        value = Numbers.Clamp(value, 0f, 4f);
+        if (value <= .001f)
+        {
+            return;
+        }
+
+        var ids = _simulator.Graph.FindPopulation(name);
+        for (var i = 0; i < Math.Min(maximum, ids.Count); i++)
+        {
+            input[ids[i]] = input.TryGetValue(ids[i], out var current) ? Numbers.Clamp(current + value, -4f, 4f) : value;
+        }
+    }
+
+    private bool Fired(string name)
+    {
+        var ids = _simulator.Graph.FindPopulation(name);
+        for (var i = 0; i < ids.Count; i++)
+        {
+            if (_simulator.LastFiredCompactIds.Contains(ids[i]))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private float NeuralWalk()
+    {
+        var left = 0;
+        var right = 0;
+        foreach (var id in _simulator.LastFiredCompactIds)
+        {
+            var metadata = _simulator.Graph.GetMetadata(id);
+            if (!metadata.Superclass.Contains("descending", StringComparison.OrdinalIgnoreCase) && !metadata.Superclass.Contains("motor", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (metadata.Side.Contains('L', StringComparison.OrdinalIgnoreCase))
+            {
+                left++;
+            }
+
+            if (metadata.Side.Contains('R', StringComparison.OrdinalIgnoreCase))
+            {
+                right++;
+            }
+        }
+
+        return Numbers.Clamp((right - left) * .25f, -1f, 1f);
     }
 }
