@@ -37,7 +37,7 @@ namespace Mod
     {
         // Configuration is intentionally exposed in the spawned object's inspector.
         public bool ActiveControl = true;
-        public bool EnableChemicalOutputs;
+        public bool EnableChemicalOutputs = true;
         [Range(1f, 60f)] public float TickRateHz = 20f;
         [Range(.01f, 1f)] public float Smoothing = .2f;
         [Range(1f, 30f)] public float VisionRadius = 8f;

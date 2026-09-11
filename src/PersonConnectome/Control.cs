@@ -34,7 +34,9 @@ public sealed class MotorCommand
 public sealed class SafeMotorGate
 {
     private MotorCommand _previous = new();
-    public bool ObserveOnly { get; set; }
+    // Active control is the shipped default; observe-only is an explicit opt-in
+    // for diagnostics and tests, not the runtime startup mode.
+    public bool ObserveOnly { get; set; } = false;
     public bool EmergencyDisabled { get; private set; }
     public void EmergencyDisable() => EmergencyDisabled = true;
     public void ResetEmergency() { EmergencyDisabled = false; _previous = new(); }

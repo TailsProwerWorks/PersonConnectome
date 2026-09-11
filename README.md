@@ -9,7 +9,7 @@
 3. From **Entities**, spawn **Person Connectome (Active)**. This variation is the explicit attachment mechanism: it is a normal Human with `PersonConnectomeController` attached on spawn. Existing stock Humans are never silently modified.
 4. The controller is active by default. Press **F7** for its runtime overlay. Press **F8** at any time to latch the emergency stop; it immediately clears walking. Remove and re-spawn the variation to re-arm it.
 
-The public component fields on the spawned variation are configuration: `ActiveControl` is the normal safe-mode toggle, `EnableChemicalOutputs` is independently off by default, and tick rate, smoothing, vision radius, and keybinds are visible in the inspector. No persistence is attempted: saved game object/component serialization is game-version-dependent, and preserving an emergency latch across saves would be surprising.
+The public component fields on the spawned variation are configuration: active control and restorative/chemical outputs are enabled by default, while `ActiveControl = false` and `EnableChemicalOutputs = false` remain explicit diagnostic opt-outs. Tick rate, smoothing, vision radius, and keybinds are visible in the inspector. No persistence is attempted: saved game object/component serialization is game-version-dependent, and preserving an emergency latch across saves would be surprising.
 
 ## Active control
 
@@ -18,7 +18,7 @@ The engine takes bounded sensory values on a capped fixed tick (default 20 Hz, m
 - `PersonBehaviour.DesiredWalkingDirection` for left/right locomotion;
 - `LimbBehaviour.InfluenceMotorSpeed` for per-limb motor control/reaching posture;
 - `GripBehaviour` for grab/drop, probed independently so its absence never disables locomotion;
-- optional restorative outputs only (`BloodRegenerationPerSecond`, `RegenerationSpeed`, adrenaline and lower fire intensity) when `EnableChemicalOutputs` is explicitly enabled.
+- bounded restorative outputs (`BloodRegenerationPerSecond`, `RegenerationSpeed`, adrenaline and lower fire intensity) are enabled by default; set `EnableChemicalOutputs = false` for the explicit diagnostic opt-out.
 
 It does **not** add force, damage, spawn, delete, use networking/shells/native interop, or inject harmful chemicals. The emergency stop and `ActiveControl = false` prevent game mutation. Optional capabilities fail closed independently; a grip or chemistry mismatch leaves documented walking/limb control available.
 
