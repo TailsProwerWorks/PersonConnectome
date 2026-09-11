@@ -106,6 +106,7 @@ public class LimbBehaviour : UnityEngine.Component
 {
     public bool IsCapable = true, HasJoint = true;
     public bool HasBrain, IsDismembered, Broken, Frozen, IsParalysed, HasLungs, LungsPunctured, IsOnFloor, IsZombie;
+    public PersonBehaviour Person;
     public int CurrentlyShattered;
     public float Health = 100, InitialHealth = 100, Vitality = 1, BodyTemperature = 37, InternalTemperature = 37;
     public float JointStress, Numbness, RegenerationSpeed, MotorSpeed;
@@ -144,6 +145,10 @@ public class Liquid(string identity)
     public readonly string Identity = identity;
     public static string GetIdentity(Liquid liquid) => liquid.Identity;
     public string GetDisplayName() => Identity;
+}
+public class AcidPoolBehaviour : UnityEngine.Component
+{
+    public float AcidProgress, PainIntensity;
 }
 public class ActivationPropagation { }
 public class GripBehaviour

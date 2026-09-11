@@ -6,7 +6,7 @@ namespace Mod
 {
     internal sealed class PersonConnectomeStatusDisplay
     {
-        private const float LabelScale = .3f;
+        private const float LabelScale = .24f;
         private Transform anchor;
         private readonly GameObject labelObject;
         private readonly TextMeshPro label;
@@ -28,9 +28,10 @@ namespace Mod
 
             label = labelObject.AddComponent<TextMeshPro>();
             label.alignment = TextAlignmentOptions.Center;
-            label.fontSize = 3.5f;
+            label.fontSize = 2.8f;
             label.enableWordWrapping = false;
             label.autoSizeTextContainer = true;
+            label.rectTransform.pivot = new Vector2(.5f, 0f);
             label.richText = false;
             label.outlineWidth = .2f;
             label.outlineColor = Color.black;
@@ -102,7 +103,7 @@ namespace Mod
             var neural = brain == null ? "NEURAL: OFFLINE" : brain.DisplaySummary;
             var motor = brain == null ? "REQUEST: OFFLINE" : brain.DisplayMotorSummary;
             var input = brain == null ? "INPUT: OFFLINE" : brain.DisplayInputSummary;
-            return "STATE: " + adapter.LiveState + "\nSENSE: " + adapter.LiveSignal + " " + adapter.LiveSignalValue.ToString("0.00") + "\n" + adapter.LiveBodySummary + "\n" + adapter.LiveEnvironmentSummary + "\n" + adapter.LiveAudioSummary + "\n" + adapter.LiveLimbSummary + "\n" + input + "\n" + motor + "\n" + neural;
+            return "PERSON CONNECTOME\nSTATE: " + adapter.LiveState + "\nSENSE: " + adapter.LiveSignal + " " + adapter.LiveSignalValue.ToString("0.00") + "\n" + adapter.LiveBodySummary + "\n" + adapter.LiveInjurySummary + "\n" + adapter.LiveEnvironmentSummary + "\n" + adapter.LiveAudioSummary + "\n" + adapter.LiveLimbSummary + "\n" + input + "\n" + motor + "\n" + neural;
         }
 
         private void PositionLabel()

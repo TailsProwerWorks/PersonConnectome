@@ -53,6 +53,15 @@ if (-not (Test-Path -LiteralPath $carrierPath -PathType Leaf)) {
 
 $files += Get-Item -LiteralPath $carrierPath
 
+if (-not [String]::IsNullOrWhiteSpace($manifest.ThumbnailPath)) {
+    $thumbnailPath = Join-Path $modSource $manifest.ThumbnailPath
+    if (-not (Test-Path -LiteralPath $thumbnailPath -PathType Leaf)) {
+        throw "Manifest thumbnail was not found: $thumbnailPath"
+    }
+
+    $files += Get-Item -LiteralPath $thumbnailPath
+}
+
 if ($PSCmdlet.ShouldProcess($targetDirectory, 'deploy Person Connectome mod files')) {
     New-Item -ItemType Directory -Path $targetDirectory -Force | Out-Null
     $targetConnectomeDirectory = Join-Path $targetDirectory 'connectome'

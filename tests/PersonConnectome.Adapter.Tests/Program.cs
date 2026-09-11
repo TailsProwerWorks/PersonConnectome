@@ -13,6 +13,8 @@ internal static class Program
             ("invalid health stops control without inventing death", InvalidHealth),
             ("destroyed and newly added inactive limbs", LimbLifecycle),
             ("normal blood, gorse blood and knockout identities", Liquids),
+            ("acid pools produce an explicit acid signal", AcidPools),
+            ("paralysis, breakage and limb loss stay distinct", LimbDamageCategories),
             ("blood baseline and vitality fallback", BloodAndVitality),
             ("hypoxia and submersion remain distinct", Oxygen),
             ("external audio excludes own limbs, mute and invalid distances", Audio),
@@ -72,7 +74,7 @@ internal static class Program
     {
         var f = new Fixture(); f.Limb.Destroyed = true; f.Adapter.Read(); f.Adapter.Apply(Moving, true); Equal("OFFLINE", f.Adapter.LiveState);
         var extra = Fixture.AddLimb(f.Root, "FootBack"); extra.gameObject.activeSelf = false;
-        True(f.Adapter.Read().Alive); f.Adapter.Apply(Moving, false); True(extra.MotorSpeed < 0); True(f.Adapter.LiveLimbSummary.Contains("LIMBS: 1"));
+        True(f.Adapter.Read().Alive); f.Adapter.Apply(Moving, false); True(extra.MotorSpeed < 0); True(f.Adapter.LiveLimbSummary.Contains("LIMBS: total=1"));
     }
     private static void Liquids()
     {
@@ -115,6 +117,24 @@ internal static class Program
         frame = f.Adapter.Read();
         Equal(.4f, frame.Vitality);
     }
+    private static void AcidPools()
+    {
+        var f = new Fixture(); var acidObject = new GameObject("Acid Spider Pool"); var acid = acidObject.AddComponent<AcidPoolBehaviour>(); acid.AcidProgress = .8f; acid.PainIntensity = .2f;
+        Physics2D.Hits = [acidObject.AddComponent<Collider2D>()];
+        var frame = f.Adapter.Read(); Equal(.8f, frame.AcidExposure); Equal("ACID", f.Adapter.LiveSignal); Equal(.8f, f.Adapter.LiveSignalValue);
+    }
+    private static void LimbDamageCategories()
+    {
+        var f = new Fixture();
+        f.Limb.IsCapable = false;
+        var frame = f.Adapter.Read(); Equal(0, frame.Paralysis); Equal(0, frame.Breakage); Equal(0, frame.LimbLoss);
+        f.Limb.Broken = true;
+        frame = f.Adapter.Read(); Equal(0, frame.Paralysis); Equal(1, frame.Breakage); Equal(0, frame.LimbLoss);
+        f.Limb.Broken = false; f.Limb.IsParalysed = true;
+        frame = f.Adapter.Read(); Equal(1, frame.Paralysis); Equal(0, frame.LimbLoss);
+        f.Limb.IsDismembered = true;
+        frame = f.Adapter.Read(); Equal(1, frame.LimbLoss);
+    }
     private static void Oxygen()
     {
         var f = new Fixture(); f.Person.OxygenLevel = .2f;
@@ -131,7 +151,7 @@ internal static class Program
     {
         var f = new Fixture(); var other = SoundObject(out var audio); Physics2D.Hits = [other];
         var frame = f.Adapter.Read(); True(frame.Sound > 0 && frame.Nearby >= 0 && frame.Nearby <= 1); Equal("OBJECT AUDIO", f.Adapter.LiveSignal);
-        True(f.Adapter.LiveAudioSummary.Contains("external Radio"));
+        True(f.Adapter.LiveAudioSummary.Contains("external object Radio"));
         audio.mute = true; Equal(0, f.Adapter.Read().Sound); Equal("SENSING", f.Adapter.LiveState); audio.mute = false; audio.isActiveAndEnabled = false; Equal(0, f.Adapter.Read().Sound);
         audio.isActiveAndEnabled = true; other.Surface = new Vector2(float.NaN, 0); frame = f.Adapter.Read(); Equal(0, frame.Sound); Equal(0, frame.Nearby);
         var own = f.Limb.gameObject.AddComponent<Collider2D>(); f.Limb.PhysicalBehaviour.MainAudioSource = audio;
@@ -141,6 +161,9 @@ internal static class Program
         var ownRootPhysical = f.Root.AddComponent<PhysicalBehaviour>(); var ownRootAudio = f.Root.AddComponent<AudioSource>();
         ownRootAudio.isPlaying = true; ownRootPhysical.MainAudioSource = ownRootAudio;
         Physics2D.Hits = [f.Root.AddComponent<Collider2D>()]; Equal(0, f.Adapter.Read().Sound);
+        var detachedOwnPhysicalObject = new GameObject("DetachedOwnRoot"); var detachedOwnPhysical = detachedOwnPhysicalObject.AddComponent<PhysicalBehaviour>(); var detachedOwnAudio = detachedOwnPhysicalObject.AddComponent<AudioSource>();
+        detachedOwnAudio.isPlaying = true; detachedOwnPhysical.MainAudioSource = detachedOwnAudio; f.Limb.PhysicalBehaviour = detachedOwnPhysical;
+        Physics2D.Hits = [detachedOwnPhysicalObject.AddComponent<Collider2D>()]; Equal(0, f.Adapter.Read().Sound);
     }
     private static void Impacts()
     {
@@ -210,13 +233,13 @@ internal static class Program
         public readonly PeoplePlaygroundPersonAdapter Adapter;
         public Fixture()
         {
-            Person = Root.AddComponent<PersonBehaviour>(); Limb = AddLimb(Root, "LowerArmFront"); Person.Limbs = [Limb];
+            Person = Root.AddComponent<PersonBehaviour>(); Limb = AddLimb(Root, "LowerArmFront"); Limb.Person = Person; Person.Limbs = [Limb];
             Adapter = new PeoplePlaygroundPersonAdapter(Root, 8, value => Adapter.RegisterCollision(value));
         }
         public static LimbBehaviour AddLimb(GameObject parent, string name)
         {
             var go = new GameObject(name); go.transform.SetParent(parent.transform);
-            var limb = go.AddComponent<LimbBehaviour>(); limb.CirculationBehaviour = go.AddComponent<CirculationBehaviour>();
+            var limb = go.AddComponent<LimbBehaviour>(); limb.Person = parent.transform.GetComponentInParent<PersonBehaviour>(); limb.CirculationBehaviour = go.AddComponent<CirculationBehaviour>();
             limb.PhysicalBehaviour = go.AddComponent<PhysicalBehaviour>(); limb.GripBehaviour = new(); return limb;
         }
     }

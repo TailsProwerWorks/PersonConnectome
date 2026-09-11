@@ -11,12 +11,12 @@ namespace Mod
             var consciousnessDeficit = 1f - sensory.Consciousness;
             var injury = Mathf.Clamp01(
                 sensory.Pain + sensory.Damage + sensory.Bleeding + healthDeficit + sensory.Blood +
-                sensory.LimbLoss + sensory.JointStress + sensory.BrainDamage + sensory.InternalBleeding +
+                sensory.LimbLoss + sensory.Breakage + sensory.JointStress + sensory.BrainDamage + sensory.InternalBleeding +
                 sensory.Wounds + sensory.LungDamage + (1f - sensory.Vitality) + sensory.Stabbed + sensory.Seizure);
             var circulationDeficit = 1f - sensory.Circulation;
             var hazard = Mathf.Clamp01(
                 sensory.Fire + sensory.Heat + sensory.Cold + sensory.Shock + sensory.SubmergedHypoxia + oxygenDeficit +
-                sensory.Wetness + sensory.Charge + sensory.Infection + sensory.LiquidHazard + sensory.Lava +
+                sensory.Wetness + sensory.Charge + sensory.Infection + sensory.AcidExposure + sensory.LiquidHazard + sensory.Lava +
                 sensory.BurnProgress + sensory.Disconnected + sensory.Frozen + circulationDeficit);
             var bodyMotion = Mathf.Clamp01(
                 sensory.Impact + sensory.Sound * .6f + sensory.Velocity * .6f + sensory.Rotation * .4f +
