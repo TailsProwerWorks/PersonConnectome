@@ -7,6 +7,7 @@ namespace Mod
     internal sealed class PeoplePlaygroundPersonAdapter
     {
         private const float DeathHealthThreshold = .001f;
+        private const float ContactImpactAlertThreshold = .15f;
         private readonly GameObject root;
         private readonly PersonBehaviour person;
         private readonly List<LimbBehaviour> limbs = [];
@@ -199,7 +200,7 @@ namespace Mod
                 return "THREAT";
             }
 
-            if (lastFrame.Sound > .05f || lastFrame.Impact > .05f)
+            if (lastFrame.Sound > .05f || lastFrame.Impact > ContactImpactAlertThreshold)
             {
                 return "ALERT";
             }
@@ -239,7 +240,7 @@ namespace Mod
             if (stimulation > .05f) return new LiveReading("STIMULATION", stimulation);
             if (lastFrame.LiquidHealing > .05f) return new LiveReading("HEALING", lastFrame.LiquidHealing);
             if (lastFrame.Sound > .05f) return new LiveReading("OBJECT AUDIO", lastFrame.Sound);
-            if (lastFrame.Impact > .05f) return new LiveReading("CONTACT IMPACT", lastFrame.Impact);
+            if (lastFrame.Impact > ContactImpactAlertThreshold) return new LiveReading("CONTACT IMPACT", lastFrame.Impact);
             if (lastFrame.Nearby > .05f) return new LiveReading("NEARBY", lastFrame.Nearby);
             var contact = Mathf.Max(lastFrame.Touch, lastFrame.PhysicalContact);
             if (contact > .05f) return new LiveReading("CONTACT", contact);
