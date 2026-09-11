@@ -1,39 +1,51 @@
 # Person Connectome
 
-`Person Connectome` is a **small, deterministic, safety-first neural-control demonstration** for People Playground. It is not a biological connectome and does not claim whole-brain fidelity. Default configuration is disabled and observe-only.
+`Person Connectome` is a small, deterministic neural-control demonstration for People Playground. It is not a biological connectome and does not claim whole-brain fidelity.
 
-## Layout
+## Install and attach
 
-- `Mod/`: People Playground metadata and a loadable `Mod.Mod.Main` registration. It adds a separate **Person Connectome Observer** Human variation and attaches only an inert marker component.
-- `src/PersonConnectome/`: pure C# simulator, controller, persistence, safety and optional adapters.
-- `tests/PersonConnectome.Tests/`: dependency-free offline console tests with a game-facing stub.
-- `config/`: versioned sample configuration.
-- `docs/`: architecture and manual game verification checklist.
+1. In a disposable People Playground install, copy this repository's `Mod/` directory to `People Playground/Mods/PersonConnectome`.
+2. Start the game and enable **Person Connectome** in the mod list.
+3. From **Entities**, spawn **Person Connectome (Active)**. This variation is the explicit attachment mechanism: it is a normal Human with `PersonConnectomeController` attached on spawn. Existing stock Humans are never silently modified.
+4. The controller is active by default. Press **F7** for its runtime overlay. Press **F8** at any time to latch the emergency stop; it immediately clears walking. Remove and re-spawn the variation to re-arm it.
 
-## Safety model
+The public component fields on the spawned variation are configuration: `ActiveControl` is the normal safe-mode toggle, `EnableChemicalOutputs` is independently off by default, and tick rate, smoothing, vision radius, and keybinds are visible in the inspector. No persistence is attempted: saved game object/component serialization is game-version-dependent, and preserving an emergency latch across saves would be surprising.
 
-The controller is disabled by configuration; `SafeMotorGate.ObserveOnly` is true by default; `EmergencyDisable()` zeroes every command. Outputs are smoothed and finite-clamped. The controller invokes an explicit `Action<MotorCommand>` only when observe-only is disabled, the emergency latch is clear, and a reviewed adapter reports a capability. The shipped People Playground script reports no motor capability. It never reflects into mutating APIs, applies force, damages, spawns, deletes, uses networking, shells, or saves outside the caller's chosen local state path.
+## Active control
 
-Supported abstract outputs are attention, approach/avoid, left/right, locomotion, reach/grab, flee, freeze, seek energy, and rest. A game bridge must translate only reviewed, supported operations; this release ships no forceful bridge.
+The engine takes bounded sensory values on a capped fixed tick (default 20 Hz, maximum four catch-up ticks), feeds a five-neuron leaky integrate-and-fire demonstration, then decodes bounded motor commands. The game adapter uses documented People Playground members for its primary control path:
 
-## Sensors and effects
+- `PersonBehaviour.DesiredWalkingDirection` for left/right locomotion;
+- `LimbBehaviour.InfluenceMotorSpeed` for per-limb motor control/reaching posture;
+- `GripBehaviour` for grab/drop, probed independently so its absence never disables locomotion;
+- optional restorative outputs only (`BloodRegenerationPerSecond`, `RegenerationSpeed`, adrenaline and lower fire intensity) when `EnableChemicalOutputs` is explicitly enabled.
 
-`SensoryFrame` reserves bounded channels for existence/alive, body motion/orientation/balance/contact/grounded, nearby direction/LOS/light, touch/pressure, injury and dismemberment, thermal/fire, electric/stun/knockout, impact/fall/acceleration, air/drowning, need/fatigue, sound/vibration, material/projectile context, and reward/aversive/novel/internal signals.
+It does **not** add force, damage, spawn, delete, use networking/shells/native interop, or inject harmful chemicals. The emergency stop and `ActiveControl = false` prevent game mutation. Optional capabilities fail closed independently; a grip or chemistry mismatch leaves documented walking/limb control available.
 
-Chemical/status channels are distinct: wetness/water, blood, toxicity/poison, corrosion/acid, sedation/knockout/anesthetic, healing/regeneration, stimulation/adrenaline/syringe/serum, infection/zombie, and immortality/death prevention. These are **approximations**, not medical or API guarantees. `EffectAliasRegistry` is extensible and records bounded unknown names from a public `Effects` collection for local telemetry. Missing or changed game members become zero rather than errors.
+## Sensory and status mapping
 
-## Build and test
+The adapter samples Person/Limb/Circulation/Physical state and per-limb collision probes: health/damage, blood loss, pain, shock/electric charge, oxygen/suffocation, consciousness/unconsciousness, adrenaline, limbs/dismemberment/joint stress, movement/rotation, contact/touch/impact/vibration, nearby entities/line direction, ambient light, active audio, fire, temperature/hot/cold, wetness/water, blood, liquid identity (acid/corrosion, poison/toxin, sedation/anesthetic, healing/regeneration, stimulation/adrenaline, and unknown materials), and zombie/infection. Missing optional material names become bounded telemetry rather than exceptions.
 
-Requires .NET 8 SDK; no NuGet packages are required:
+The API does not provide a stable public general-purpose vision raycast/line-of-sight, disease severity, drug concentration, or selected-stock-Human attachment API. Nearby detection is a bounded `Physics2D.OverlapCircleAll` approximation; light is Unity ambient light; audio is physical-object audio playback; liquid/drug mappings use documented liquid identity strings. See [API compatibility](docs/api-compatibility.md) for exact limitations.
+
+## Build and offline verification
+
+Requires .NET 8; no NuGet packages are needed:
 
 ```sh
 dotnet format PersonConnectome.sln --verify-no-changes
 dotnet build PersonConnectome.sln -c Release
 dotnet run --project tests/PersonConnectome.Tests -c Release
+git diff --check
 ```
 
-The game was not launched in this sandbox. Before distributing, follow [the manual checklist](docs/manual-game-test.md) and [the API compatibility notes](docs/api-compatibility.md). The package is loadable only after the target People Playground build accepts the documented `ModAPI.Register`/`Modification` registration shown in `Mod/script.cs`; this must be verified in-game.
+The game script compiles inside People Playground, not this .NET project. Offline tests cover the pure engine, fixed scheduler, safety latch, persistence validation, capability-style reflection, and a source contract for the active game bridge. Follow [the manual game checklist](docs/manual-game-test.md) before release.
 
-## Future data
+## Layout
 
-The demo graph is five labelled nodes only. Future datasets must be separately licensed, documented, normalized into `Neuron`/`Synapse`, bounded by the config maxima, and validated offline. Do not represent a dataset import as full-connectome fidelity.
+- `Mod/script.cs`: loadable People Playground entrypoint, attachment component, bounded runtime brain, and game adapter.
+- `src/PersonConnectome/`: game-independent engine, controller, persistence, and capability-reference adapter.
+- `tests/PersonConnectome.Tests/`: dependency-free offline/contract tests.
+- `config/`: versioned example settings; game-facing fields are configured on the spawned component.
+
+The demo graph is five labelled nodes only. Any future data source must be separately licensed, bounded, and must not be represented as a whole connectome.

@@ -1,10 +1,13 @@
 {
   "version": 2,
-  "enabled": false,
-  "observeOnly": true,
+  "enabled": true,
+  "observeOnly": false,
   "tickRateHz": 20,
   "maximumNeurons": 512,
   "maximumSynapses": 4096,
   "smoothing": 0.2,
+  "emergencyDisableKey": "F8",
+  "debugOverlayKey": "F7",
+  "chemicalOutputs": false,
   "aliases": { "acid": "corrosion", "poison": "toxicity", "anesthetic": "sedation", "zombie": "infection" }
 }

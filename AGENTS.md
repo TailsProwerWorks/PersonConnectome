@@ -1,6 +1,6 @@
 # Person Connectome contributor instructions
 
-Use C# only. Preserve observe-only defaults and never introduce network, shell, remote download, unmanaged runtime, Rust, WASM, or irreversible game actions. Keep adapters optional, null-safe, bounded, and capability-based; prefer zero/telemetry for unknown APIs.
+Use C# only. Preserve the explicit active Human variation's emergency stop and bounded, fail-safe behavior; never introduce network, shell, remote download, unmanaged runtime, Rust, WASM, or irreversible game actions. Keep adapters optional, null-safe, bounded, and capability-based; prefer zero/telemetry for unknown APIs.
 
 Verified intended commands (requires a local .NET 8 SDK):
 

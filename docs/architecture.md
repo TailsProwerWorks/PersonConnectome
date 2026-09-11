@@ -11,4 +11,4 @@ game supported-action callback <- SafeMotorGate <- MotorCommand <- controller
 
 The graph remaps arbitrary external IDs to deterministic compact indexes. Inputs and synapses are sorted; delays are bounded to 32 ticks, weights to `[-4,4]`, potentials to `[-8,8]`, and graph sizes by caller-provided maxima. The LIF update is leaky, thresholded and refractory. State JSON is version 2, refuses malformed/oversized content (64 KiB), checks vector lengths, and persists bounded delayed synapse events so restore is deterministic.
 
-The scheduler caps catch-up at four ticks. The motor gate clamps/smooths all values, starts observe-only, and provides a latched emergency shutdown.
+The scheduler caps catch-up at four ticks. The motor gate clamps/smooths all values, is active by default, and provides a latched emergency shutdown. The loadable game script mirrors this separation with a pure bounded `ConnectomeBrain` and a `PeoplePlaygroundPersonAdapter`; target-build game references do not enter the reusable `src/` engine.

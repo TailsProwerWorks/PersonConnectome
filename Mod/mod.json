@@ -1,7 +1,7 @@
 {
   "Name": "Person Connectome",
   "Author": "ShadowNineX",
-  "Version": "0.2.0",
-  "Description": "An observe-only, bounded neural-control demonstration for people.",
+  "Version": "0.3.0",
+  "Description": "An active, bounded neural-control demonstration for Human variations. F8 is an emergency stop.",
   "Scripts": [ "script.cs" ]
 }

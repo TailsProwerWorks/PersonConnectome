@@ -1,10 +1,15 @@
-# Manual People Playground checklist
+# Manual People Playground test checklist
 
-1. In a disposable game install, copy `Mod/` to the game's `Mods/PersonConnectome` directory; confirm the mod list detects `mod.json` and compiles `script.cs` with no error.
-2. Spawn **Person Connectome Observer** (not the stock Human) and confirm it is a normal Human with only the inert marker attached. Confirm loading/spawning neither alters, spawns, damages, moves, nor deletes any unrelated object.
-3. Confirm `ModAPI.FindSpawnable("Human")`, `ModAPI.Register`, `Modification.AfterSpawn`, and `GameObject.AddComponent` are supported by the exact target build. If any differs, update only the isolated registration block in `Mod/script.cs`; do not add a speculative fallback.
-4. On the exact target build, implement a reviewed capability bridge one sensor at a time. Verify a missing property gives zero and no exception.
-5. Exercise alive/death, limb/body movement, contact, damage/bleeding, fire/temperature, electricity, drowning, impact/fall, nearby objects/light/LOS and sound only when their target-build APIs are known.
-6. Exercise water, blood, acid, poison, anesthetic/knockout, syringe/serum, zombie/infection, regeneration, adrenaline and immortality independently. Confirm channel values remain `[0,1]`; record unknown API/effect names locally rather than guessing.
-7. Confirm observe-only mode produces no game action. Test emergency disable before enabling any supported command.
-8. If a supported bridge is enabled, test smoothing, finite clamping and maximum tick catch-up at slow frame rates. Do not bind force, damage, spawning, deletion, or persistence without a new review.
+Use a disposable game install. The offline test suite does not have People Playground assemblies, so this is required before claiming an in-game verification.
+
+1. Copy `Mod/` to `Mods/PersonConnectome`; start the game and confirm `mod.json` detects and compiles `script.cs` without error.
+2. Spawn **Person Connectome (Active)** from **Entities**. Confirm it is a Human variation and that a stock Human remains unmodified.
+3. Press **F7**; verify the overlay says `ACTIVE CONTROL`. Press **F8** before any other test; verify motion stops, the overlay says emergency disabled, and removing/re-spawning is required to re-arm.
+4. In a clear area, re-spawn it and verify locomotion and limb motion occur from `DesiredWalkingDirection`/`InfluenceMotorSpeed`. Toggle `ActiveControl` off in the component inspector and verify no subsequent motor mutation. Re-enable it and verify active control resumes.
+5. Test nearby object direction (place objects left/right), light/darkness, collision/touch, motion/vibration, and playing physical-object sound. Verify F7 values stay finite and no missing optional feature produces an exception.
+6. Independently test health/damage/pain, bleeding/blood loss, limb break/dismemberment/joint stress, fire/temperature, electric charge/shock, water/drowning/oxygen, unconsciousness, infection/zombie, and liquid identities (blood, acid, poison, anesthetic, regeneration/adrenaline when available). Record target-build member/scale differences in `docs/api-compatibility.md`.
+7. Test grabbing near a grippable object. If the current build rejects the optional reflected `GripBehaviour.Use` invocation, confirm walking/limb movement continues and document the failure; do not replace it with force or object spawning.
+8. With `EnableChemicalOutputs` still false, confirm no regeneration/adrenaline/fire output is written. Then test the option in isolation: bounded healing/regeneration, stimulation/adrenaline, and extinguishing must work only when the public member is available. Do not enable this for destructive effects.
+9. Simulate slow frames and confirm at most four control ticks are caught up. Check the game log for only clear compatibility notices, not repeated exceptions.
+
+Do not claim successful in-game verification until every applicable step has actually been run on the target build.
