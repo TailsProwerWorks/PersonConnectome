@@ -13,6 +13,15 @@ $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $modSource = Join-Path $repositoryRoot 'Mod'
 $modProject = Join-Path $modSource 'PersonConnectome.Mod.csproj'
 
+function Assert-GameReadmeSize([string] $Content) {
+    # ModLoader.LoadModAt ignores README.txt above 5000 bytes (not 5 KiB).
+    # Match the UTF-8 without BOM encoding used for the deployed file.
+    $byteCount = [Text.Encoding]::UTF8.GetByteCount($Content)
+    if ($byteCount -gt 5000) {
+        throw "The generated mod README is $byteCount UTF-8 bytes; People Playground ignores README.txt above 5000 bytes. Shorten Mod/README.txt before deploying."
+    }
+}
+
 function Add-UniquePath([System.Collections.Generic.List[string]] $Paths, [string] $Path) {
     if ([String]::IsNullOrWhiteSpace($Path)) {
         return
@@ -148,12 +157,13 @@ if ($LASTEXITCODE -ne 0 -or [String]::IsNullOrWhiteSpace($gitCommit)) {
 elseif ($WhatIfPreference -and -not $NoBuild) { Write-Host "WhatIf: would build the mod with PeoplePlaygroundInstall=$GameInstall" }
 
 $manifest = Get-Content -LiteralPath $manifestSourcePath -Raw | ConvertFrom-Json
-$readmeContent = Get-Content -LiteralPath $readmeSourcePath -Raw
+$readmeContent = Get-Content -LiteralPath $readmeSourcePath -Raw -Encoding UTF8
 if (-not $readmeContent.Contains('{{GIT_COMMIT}}')) {
     throw "The mod README does not contain the {{GIT_COMMIT}} build marker."
 }
 
 $readmeContent = $readmeContent.Replace('{{GIT_COMMIT}}', $gitCommit)
+Assert-GameReadmeSize $readmeContent
 $generatedReadmePath = Join-Path ([IO.Path]::GetTempPath()) ('person-connectome-readme-' + [guid]::NewGuid().ToString('N') + '.txt')
 [IO.File]::WriteAllText($generatedReadmePath, $readmeContent, [Text.UTF8Encoding]::new($false))
 $files = @(

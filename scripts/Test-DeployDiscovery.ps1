@@ -6,13 +6,22 @@ $scriptPath = Join-Path $PSScriptRoot 'Deploy-Mod.ps1'
 $tokens = $parseErrors = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile($scriptPath, [ref]$tokens, [ref]$parseErrors)
 if ($parseErrors.Count -ne 0) { throw "Deploy-Mod.ps1 parse errors: $($parseErrors -join '; ')" }
-$names = @('Add-UniquePath','Get-SteamRoots','ConvertFrom-SteamVdfPath','Get-SteamLibraryPaths','Test-PeoplePlaygroundInstall','Resolve-PeoplePlaygroundInstall')
+$names = @('Assert-GameReadmeSize','Add-UniquePath','Get-SteamRoots','ConvertFrom-SteamVdfPath','Get-SteamLibraryPaths','Test-PeoplePlaygroundInstall','Resolve-PeoplePlaygroundInstall')
 $defs = foreach ($name in $names) {
     $found = $ast.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
     if ($null -eq $found) { throw "Function not found: $name" }
     $found.Extent.Text
 }
 Invoke-Expression ($defs -join "`n")
+Assert-GameReadmeSize ('a' * 5000)
+Assert-GameReadmeSize (([string][char]0x00E9) * 2500)
+foreach ($oversize in @(('a' * 5001), (([string][char]0x00E9) * 2501))) {
+    try { Assert-GameReadmeSize $oversize; throw 'Oversize README was accepted.' }
+    catch { if ($_.Exception.Message -notmatch 'ignores README.txt above 5000 bytes') { throw } }
+}
+$shippedReadme = Get-Content (Join-Path $PSScriptRoot '../Mod/README.txt') -Raw -Encoding UTF8
+Assert-GameReadmeSize ($shippedReadme.Replace('{{GIT_COMMIT}}', '0123456789ab'))
+Write-Host 'README byte-limit tests passed (5000-byte boundary, UTF-8, shipped text).'
 $fixtureParent = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
 $root = Join-Path $fixtureParent ('person-connectome-deploy-test-' + [guid]::NewGuid().ToString('N'))
 try {
