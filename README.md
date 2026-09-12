@@ -11,6 +11,46 @@
 
 The public component fields on the spawned variation expose bounded timing and sensing settings. There is no fallback or observe-only runtime mode. The bundled graph is a thresholded derivative, not the full released connection graph. No persistence is attempted: saved game object/component serialization is game-version-dependent.
 
+## How it works
+
+In simple terms: the game provides the information, the connectome runtime processes it, and the resulting motor signals are sent back to the same Human. It is not a real fly mind and it does not make a claim of consciousness. It is a game controller inspired by a real fly nervous-system wiring diagram.
+
+```mermaid
+flowchart LR
+    G[People Playground Human] --> S[Native game state]
+    S --> A["Sensory adapter<br/>health, motion, water, heat, audio, etc."]
+    A --> B[MaleCNS-derived neural runtime]
+    B --> D[Motor decoder]
+    D --> C[Walking, limb motors, and grips]
+    C --> G
+    A --> T[Live telemetry]
+    B --> T
+    D --> T
+```
+
+The loop runs during the game's physics updates:
+
+1. The adapter reads native People Playground state from the Human, its limbs, nearby colliders, audio sources, liquids, and the ambient-temperature grid.
+2. Those values are normalized into bounded signals. A value such as `0.80` means “strong signal for this controller,” not 80 degrees, 80 health points, or a biological measurement.
+3. The MaleCNS-derived sparse neural graph integrates the signals and produces activity in its motor-related populations.
+4. The decoder turns that activity into a walking direction, per-limb motor requests, and optional grip/restorative requests. The game applies those requests through its existing movement and joint APIs.
+5. The label shows the latest sensed state, the neural scheduler, and the requested outputs. `REQUEST` means what the brain asked for; it is not a measurement of how far a joint actually moved.
+
+What is directly game-driven:
+
+- Health, pain, shock, oxygen, consciousness, bleeding, wounds, limb damage, water, temperature, fire, liquids, motion, falling, contact, and native projectile collisions.
+- Walking and joint control through the game's own `DesiredWalkingDirection` and `InfluenceMotorSpeed` APIs.
+- The displayed neural counts and sensory values collected on the current control cycle.
+
+What is an approximation:
+
+- `VISION` is a nearest-target line-of-sight and ambient-light proxy, not semantic eyesight or object recognition.
+- `AUDIO` is active playback from nearby external physical objects, not a biological hearing model.
+- Heat and cold are normalized game-temperature signals. Nearby dynamic objects and lava contribute distance-attenuated cues; walls are not treated as thermal radiation sources.
+- Falling, vibration, proprioception, and projectile awareness are bounded signals derived from native physics state and collision/projectile components.
+
+The runtime does not invent readings when the game exposes no stable signal. Unknown liquids remain unknown exposure, and unsupported senses such as smell are not fabricated.
+
 ## Active control
 
 The shipped runtime loads the downloaded MaleCNS FLYB payload through the allowed `ModAPI.LoadTexture("connectome/malecns-v1.0.png")` mod-asset API. The texture carrier contains the exact bytes of `malecns-v1.0.flyb.gz`; the raw payload is a repository/build input and is not copied into the deployed mod. The runtime verifies the compressed payload SHA-256, dataset identity and exact counts, and rejects missing, malformed or incompatible data. It uses a deterministic sparse leaky integrate-and-fire simulation with a capped fixed tick (default 20 Hz, at most one neural tick per physics callback), drives real sensory populations by stable MaleCNS metadata, and decodes activity from real descending/motor populations into bounded commands. The game adapter uses documented People Playground members for its primary control path:
@@ -89,3 +129,15 @@ The solution also compiles the game-facing sources against the installed assembl
 - `Mod/connectome/malecns-v1.0.png`: game-facing texture carrier loaded through `ModAPI.LoadTexture`.
 
 The asset is a thresholded derivative of the public MaleCNS v1.0 connectome: 176,422 neurons and 6,287,749 connections retained at synapse weight >= 5. See [provenance](docs/PROVENANCE.md) for the exact source, transformations, checksum, and limitations.
+
+## Research and references
+
+These links explain the source connectome, the way large connectomes are explored, and the People Playground mod format. The mod uses a prepared, thresholded derivative of the MaleCNS data; it does not ship or claim to run the complete biological model.
+
+- [Male CNS Connectome project](https://male-cns.janelia.org/) — project overview, cell types, connectivity, and dataset context.
+- [MaleCNS v1.0 downloads](https://male-cns.janelia.org/download/) — source data, annotations, connectivity files, and license information.
+- [Codex Connectome Data Explorer](https://codex.flywire.ai/) — interactive exploration of connectomes and network connections.
+- [FlyWire / Codex about page](https://codex.flywire.ai/about_flywire) — background on proofreading, annotation, and connectome data stewardship.
+- [People Playground: creating a mod](https://www.studiominus.nl/ppg-modding/tutorials/tutorialCreatingMod.html) — official mod folder, `mod.json`, and script entry-point basics.
+- [People Playground: script files](https://www.studiominus.nl/ppg-modding/details/scriptFiles.html) — official `Scripts` and `EntryPoint` behavior.
+- [Person Connectome source repository](https://github.com/TailsProwerWorks/PersonConnectome) — this mod's code, asset provenance, tests, and deployment scripts.
