@@ -60,7 +60,7 @@ To build and deploy the mod to that default install, run PowerShell as an admini
 .\scripts\Deploy-Mod.ps1
 ```
 
-For another install, use `-GameInstall 'D:\Games\People Playground'`. Use `-NoBuild` only when the mod has already been built, or `-WhatIf` to preview the copy without changing the game directory. The script copies the manifest-listed `.cs` sources, `mod.json`, and only the PNG connectome carrier, then verifies every deployed file with SHA-256. If an older deployment contains the raw `.flyb.gz` build input, the script removes that exact stale file.
+For another install, use `-GameInstall 'D:\Games\People Playground'`. Use `-NoBuild` only when the mod has already been built, or `-WhatIf` to preview the copy without changing the game directory. The script replaces the `{{GIT_COMMIT}}` token in the deployed manifest description with the current short Git commit, copies the manifest-listed `.cs` sources and only the PNG connectome carrier, then verifies every deployed file with SHA-256. If an older deployment contains the raw `.flyb.gz` build input, the script removes that exact stale file.
 
 To rebuild the game-safe PNG carrier from the pinned FLYB/GZip CNS payload, run this from the repository root:
 

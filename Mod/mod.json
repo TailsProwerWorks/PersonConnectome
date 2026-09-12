@@ -2,7 +2,7 @@
   "Name": "Person Connectome",
   "Author": "ShadowNineX",
   "Version": "0.5.0",
-  "Description": "An active, bounded MaleCNS v1.0 Human controller with per-limb motor routing and expanded live head telemetry.",
+  "Description": "An active, bounded MaleCNS v1.0 Human controller with per-limb motor routing and expanded live head telemetry. Build {{GIT_COMMIT}}.",
   "ThumbnailPath": "thumb.png",
   "EntryPoint": "Mod.Mod",
   "Scripts": [

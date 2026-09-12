@@ -14,6 +14,7 @@ $modSource = Join-Path $repositoryRoot 'Mod'
 $modProject = Join-Path $modSource 'PersonConnectome.Mod.csproj'
 $managedDirectory = Join-Path $GameInstall 'People Playground_Data\Managed'
 $targetDirectory = Join-Path $GameInstall 'Mods\PersonConnectome'
+$manifestSourcePath = Join-Path $modSource 'mod.json'
 
 if (-not (Test-Path -LiteralPath $modProject -PathType Leaf)) {
     throw "Mod project was not found: $modProject"
@@ -31,9 +32,22 @@ if (-not $NoBuild) {
     }
 }
 
-$manifest = Get-Content -LiteralPath (Join-Path $modSource 'mod.json') -Raw | ConvertFrom-Json
+$gitCommit = (& git -C $repositoryRoot rev-parse --short=12 HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or [String]::IsNullOrWhiteSpace($gitCommit)) {
+    throw "Could not determine the current Git commit for the deployed build."
+}
+
+$manifestJson = Get-Content -LiteralPath $manifestSourcePath -Raw
+if (-not $manifestJson.Contains('{{GIT_COMMIT}}')) {
+    throw "The mod manifest does not contain the {{GIT_COMMIT}} build marker."
+}
+
+$manifestJson = $manifestJson.Replace('{{GIT_COMMIT}}', $gitCommit)
+$manifest = $manifestJson | ConvertFrom-Json
+$generatedManifestPath = Join-Path ([IO.Path]::GetTempPath()) ('person-connectome-mod-' + [guid]::NewGuid().ToString('N') + '.json')
+[IO.File]::WriteAllText($generatedManifestPath, $manifestJson, [Text.UTF8Encoding]::new($false))
 $files = @(
-    Get-Item -LiteralPath (Join-Path $modSource 'mod.json')
+    [pscustomobject]@{ SourcePath = $generatedManifestPath; RelativePath = 'mod.json' }
 )
 foreach ($script in $manifest.Scripts) {
     $scriptPath = Join-Path $modSource $script
@@ -41,7 +55,7 @@ foreach ($script in $manifest.Scripts) {
         throw "Manifest script was not found: $scriptPath"
     }
 
-    $files += Get-Item -LiteralPath $scriptPath
+    $files += [pscustomobject]@{ SourcePath = $scriptPath; RelativePath = $script }
 }
 
 # The game-side loader consumes only the PNG through ModAPI.LoadTexture. The
@@ -51,7 +65,7 @@ if (-not (Test-Path -LiteralPath $carrierPath -PathType Leaf)) {
     throw "Connectome carrier was not found: $carrierPath"
 }
 
-$files += Get-Item -LiteralPath $carrierPath
+$files += [pscustomobject]@{ SourcePath = $carrierPath; RelativePath = 'connectome\malecns-v1.0.png' }
 
 if (-not [String]::IsNullOrWhiteSpace($manifest.ThumbnailPath)) {
     $thumbnailPath = Join-Path $modSource $manifest.ThumbnailPath
@@ -59,7 +73,7 @@ if (-not [String]::IsNullOrWhiteSpace($manifest.ThumbnailPath)) {
         throw "Manifest thumbnail was not found: $thumbnailPath"
     }
 
-    $files += Get-Item -LiteralPath $thumbnailPath
+    $files += [pscustomobject]@{ SourcePath = $thumbnailPath; RelativePath = $manifest.ThumbnailPath }
 }
 
 if ($PSCmdlet.ShouldProcess($targetDirectory, 'deploy Person Connectome mod files')) {
@@ -68,11 +82,10 @@ if ($PSCmdlet.ShouldProcess($targetDirectory, 'deploy Person Connectome mod file
     New-Item -ItemType Directory -Path $targetConnectomeDirectory -Force | Out-Null
 
     foreach ($file in $files) {
-        $relativePath = $file.FullName.Substring($modSource.Length).TrimStart('\', '/')
-        $destination = Join-Path $targetDirectory $relativePath
+        $destination = Join-Path $targetDirectory $file.RelativePath
         $destinationDirectory = Split-Path -Parent $destination
         New-Item -ItemType Directory -Path $destinationDirectory -Force | Out-Null
-        Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
+        Copy-Item -LiteralPath $file.SourcePath -Destination $destination -Force
     }
 
     $staleRawPayload = Join-Path $targetDirectory 'connectome\malecns-v1.0.flyb.gz'
@@ -86,14 +99,14 @@ if ($PSCmdlet.ShouldProcess($targetDirectory, 'deploy Person Connectome mod file
     for ($attempt = 1; $attempt -le 3; $attempt++) {
         $verificationFailures = @()
         foreach ($file in $files) {
-            $relativePath = $file.FullName.Substring($modSource.Length).TrimStart('\', '/')
+            $relativePath = $file.RelativePath
             $destination = Join-Path $targetDirectory $relativePath
             if (-not (Test-Path -LiteralPath $destination -PathType Leaf)) {
                 $verificationFailures += "$relativePath (missing)"
                 continue
             }
 
-            $sourceHash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
+            $sourceHash = (Get-FileHash -LiteralPath $file.SourcePath -Algorithm SHA256).Hash
             $targetHash = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash
             if ($sourceHash -ne $targetHash) {
                 $verificationFailures += "$relativePath (source $sourceHash; target $targetHash)"
@@ -107,9 +120,8 @@ if ($PSCmdlet.ShouldProcess($targetDirectory, 'deploy Person Connectome mod file
         if ($attempt -lt 3) {
             Write-Host "Deployment verification found $($verificationFailures.Count) mismatch(es); retrying copy ($attempt/3)..."
             foreach ($file in $files) {
-                $relativePath = $file.FullName.Substring($modSource.Length).TrimStart('\', '/')
-                $destination = Join-Path $targetDirectory $relativePath
-                Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
+                $destination = Join-Path $targetDirectory $file.RelativePath
+                Copy-Item -LiteralPath $file.SourcePath -Destination $destination -Force
             }
             Start-Sleep -Milliseconds 100
         }
@@ -120,6 +132,11 @@ if ($PSCmdlet.ShouldProcess($targetDirectory, 'deploy Person Connectome mod file
     }
 
     Write-Host "Deployed $($files.Count) used files to: $targetDirectory"
+    Write-Host "Embedded Git commit: $gitCommit"
     Write-Host "Verified all $($files.Count) deployed files against their source hashes."
     Write-Host 'The deployed connectome carrier was verified byte-for-byte; the raw build input was not deployed.'
+}
+
+if (Test-Path -LiteralPath $generatedManifestPath -PathType Leaf) {
+    Remove-Item -LiteralPath $generatedManifestPath -Force
 }
