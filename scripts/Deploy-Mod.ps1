@@ -1,6 +1,6 @@
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [string] $GameInstall = 'C:\Program Files (x86)\Steam\steamapps\common\People Playground',
+    [string] $GameInstall,
     [ValidateSet('Debug', 'Release')]
     [string] $Configuration = 'Release',
     [switch] $NoBuild
@@ -12,6 +12,110 @@ $ErrorActionPreference = 'Stop'
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $modSource = Join-Path $repositoryRoot 'Mod'
 $modProject = Join-Path $modSource 'PersonConnectome.Mod.csproj'
+
+function Add-UniquePath([System.Collections.Generic.List[string]] $Paths, [string] $Path) {
+    if ([String]::IsNullOrWhiteSpace($Path)) {
+        return
+    }
+
+    try {
+        $normalized = [IO.Path]::GetFullPath($Path)
+    } catch {
+        return
+    }
+
+    if (-not $Paths.Contains($normalized) -and (Test-Path -LiteralPath $normalized -PathType Container)) {
+        [void]$Paths.Add($normalized)
+    }
+}
+
+function Get-SteamRoots {
+    $roots = [System.Collections.Generic.List[string]]::new()
+    $registryKeys = @(
+        'HKCU:\Software\Valve\Steam',
+        'HKLM:\SOFTWARE\Valve\Steam',
+        'HKLM:\SOFTWARE\WOW6432Node\Valve\Steam',
+        'HKCU:\Software\WOW6432Node\Valve\Steam'
+    )
+
+    foreach ($registryKey in $registryKeys) {
+        try {
+            $properties = Get-ItemProperty -LiteralPath $registryKey -ErrorAction Stop
+            foreach ($propertyName in @('InstallPath', 'SteamPath')) {
+                Add-UniquePath $roots ([string]$properties.$propertyName)
+            }
+        } catch {
+            # Registry keys are optional; Steam may be installed through another view.
+        }
+    }
+
+    foreach ($programFilesRoot in @(
+        [Environment]::GetFolderPath('ProgramFilesX86'),
+        [Environment]::GetFolderPath('ProgramFiles')
+    )) {
+        Add-UniquePath $roots (Join-Path $programFilesRoot 'Steam')
+    }
+
+    return $roots.ToArray()
+}
+
+function ConvertFrom-SteamVdfPath([string] $Value) {
+    return $Value.Replace('\\', '\').Replace('\"', '"')
+}
+
+function Get-SteamLibraryPaths {
+    $libraries = [System.Collections.Generic.List[string]]::new()
+    $steamRoots = @(Get-SteamRoots)
+
+    foreach ($steamRoot in $steamRoots) {
+        Add-UniquePath $libraries $steamRoot
+        $libraryFile = Join-Path $steamRoot 'steamapps\libraryfolders.vdf'
+        if (-not (Test-Path -LiteralPath $libraryFile -PathType Leaf)) {
+            continue
+        }
+
+        try {
+            $vdf = [IO.File]::ReadAllText($libraryFile)
+            foreach ($match in [regex]::Matches($vdf, '(?im)"path"\s+"((?:\\.|[^"])*)"')) {
+                Add-UniquePath $libraries (ConvertFrom-SteamVdfPath $match.Groups[1].Value)
+            }
+        } catch {
+            Write-Warning "Could not read Steam library file '$libraryFile': $($_.Exception.Message)"
+        }
+    }
+
+    return $libraries.ToArray()
+}
+
+function Test-PeoplePlaygroundInstall([string] $Path) {
+    $assemblyPath = Join-Path $Path 'People Playground_Data\Managed\Assembly-CSharp.dll'
+    return Test-Path -LiteralPath $assemblyPath -PathType Leaf
+}
+
+function Resolve-PeoplePlaygroundInstall([string] $RequestedPath) {
+    if (-not [String]::IsNullOrWhiteSpace($RequestedPath)) {
+        $explicitPath = [IO.Path]::GetFullPath($RequestedPath)
+        if (Test-PeoplePlaygroundInstall $explicitPath) {
+            return $explicitPath
+        }
+
+        throw "People Playground references were not found under '$explicitPath'. Expected People Playground_Data\Managed\Assembly-CSharp.dll."
+    }
+
+    $libraries = @(Get-SteamLibraryPaths)
+    foreach ($library in $libraries) {
+        $candidate = Join-Path $library 'steamapps\common\People Playground'
+        if (Test-PeoplePlaygroundInstall $candidate) {
+            Write-Host "Auto-detected People Playground at: $candidate"
+            return $candidate
+        }
+    }
+
+    $searched = if ($libraries.Count -gt 0) { $libraries -join '; ' } else { 'no Steam libraries were found' }
+    throw "Could not find a People Playground installation through Steam ($searched). Pass -GameInstall with the game's install directory."
+}
+
+$GameInstall = Resolve-PeoplePlaygroundInstall $GameInstall
 $managedDirectory = Join-Path $GameInstall 'People Playground_Data\Managed'
 $targetDirectory = Join-Path $GameInstall 'Mods\PersonConnectome'
 $manifestSourcePath = Join-Path $modSource 'mod.json'
@@ -27,7 +131,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $managedDirectory 'Assembly-CSharp.d
 
 if (-not $NoBuild) {
     Write-Host "Building the mod against the installed People Playground references..."
-    & dotnet build $modProject --configuration $Configuration
+    & dotnet build $modProject --configuration $Configuration "-p:PeoplePlaygroundInstall=$GameInstall"
     if ($LASTEXITCODE -ne 0) {
         throw "The mod build failed with exit code $LASTEXITCODE."
     }

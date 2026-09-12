@@ -92,15 +92,15 @@ The game-facing project intentionally targets `net48`. The installed game ships 
 dotnet build Mod/PersonConnectome.Mod.csproj -c Release
 ```
 
-Set `PeoplePlaygroundInstall` when the game is installed elsewhere. The default is `C:\Program Files (x86)\Steam\steamapps\common\People Playground`.
+The deployment script discovers People Playground through Steam's registered install locations and `steamapps/libraryfolders.vdf`. For a direct game-facing build, set `PeoplePlaygroundInstall` to the game's install directory when it is not at the project-file default.
 
-To build and deploy the mod to that default install, run PowerShell as an administrator and use:
+To build and deploy the mod to the detected install, run PowerShell as an administrator and use:
 
 ```powershell
 .\scripts\Deploy-Mod.ps1
 ```
 
-For another install, use `-GameInstall 'D:\Games\People Playground'`. Use `-NoBuild` only when the mod has already been built, or `-WhatIf` to preview the copy without changing the game directory. The script replaces the `{{GIT_COMMIT}}` token in the deployed `README.txt` with the current short Git commit, copies the manifest-listed `.cs` sources, `mod.json`, `README.txt`, `thumb.png`, and only the PNG connectome carrier, then verifies every deployed file with SHA-256. If an older deployment contains the raw `.flyb.gz` build input, the script removes that exact stale file.
+For a manually selected install, use `-GameInstall 'D:\Games\People Playground'`. Use `-NoBuild` only when the mod has already been built, or `-WhatIf` to preview the copy without changing the game directory. The script replaces the `{{GIT_COMMIT}}` token in the deployed `README.txt` with the current short Git commit, copies the manifest-listed `.cs` sources, `mod.json`, `README.txt`, `thumb.png`, and only the PNG connectome carrier, then verifies every deployed file with SHA-256. If an older deployment contains the raw `.flyb.gz` build input, the script removes that exact stale file.
 
 To rebuild the game-safe PNG carrier from the pinned FLYB/GZip CNS payload, run this from the repository root:
 
