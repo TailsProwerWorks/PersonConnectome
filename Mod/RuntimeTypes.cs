@@ -11,9 +11,12 @@ namespace Mod
         public float Wetness, UnderWater, Blood, Infection, Charge, AcidExposure;
         // Liquid channels are exposure fractions. LiquidWater is reserved: no plain water is registered in stock 1.27.17.
         public float LiquidExposure, LiquidHazard, LiquidSedation, LiquidStimulation, LiquidHealing, LiquidWater;
-        public float Nearby, NearbyDirection, Vision, Light, Touch, Impact, Vibration, Sound, AmbientHeat, AmbientCold, LimbLoss, Breakage, JointStress;
+        public float Nearby, NearbyDirection, Vision, Light, Touch, Impact, Vibration, Sound, AmbientHeat, AmbientCold, LimbLoss, Breakage, JointStress, NeuralJointLoad;
         public float Consciousness, Adrenaline, Velocity, Rotation, Proprioception, Fall, Projectile, Unconscious;
         public float Balance, Heartbeat, BrainDamage, Seizure, Frozen, Paralysis, Numbness, Vitality, LungDamage;
+        // Geometry is a 2D world-axis projection, not biological ear/eye localization.
+        public float SoundDirection, VisionDirection, VisualApproach, SignedTilt, JointPosition, JointMotion, VelocityX, VelocityY;
+        public bool SoundDirectionValid, VisionDirectionValid, TiltValid, JointSensingValid, VelocityValid, LightValid;
         public float InternalBleeding, Circulation, Disconnected, Wounds;
         public float Lava, BurnProgress, Stabbed, PhysicalContact, Weightless, Sliding;
     }

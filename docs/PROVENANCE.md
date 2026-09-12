@@ -54,3 +54,9 @@ The [Minecraft brain view](https://github.com/blendi-remade/fly-brain-minecraft/
 ## Game liquid mapping provenance
 
 The adapter's 41 stock liquid IDs come from static inspection of `Global.Awake` registration calls in the locally installed People Playground 1.27.17 assembly. Selected liquid effect methods were inspected to separate exposure from observed native effects, as recorded in api-compatibility.md. This is game integration metadata, not MaleCNS chemical-sense data. It does not change the connectome, source attribution, payload checksum or PNG carrier.
+
+## Sensory and motor reference adaptation
+
+The current C# encoders adapt named population choices and global luminance ON/OFF entry points from [SensoryEncoders.java](https://github.com/blendi-remade/fly-brain-minecraft/blob/main/src/main/java/com/fruitfly/brain/SensoryEncoders.java). Locomotor choices/weights refer to [MotorMap.java](https://github.com/blendi-remade/fly-brain-minecraft/blob/main/src/main/java/com/fruitfly/brain/MotorMap.java) and [MotorDecoder.java](https://github.com/blendi-remade/fly-brain-minecraft/blob/main/src/main/java/com/fruitfly/brain/MotorDecoder.java). Reviewed on 2026-09-12. The reference is [MIT licensed](https://github.com/blendi-remade/fly-brain-minecraft/blob/main/LICENSE), copyright 2026 Blendi Remade / fal.ai; the notice is preserved in THIRD_PARTY_NOTICES and shipped README.txt.
+
+[Exact mapping and measured limits](sensory-mapping.md) separates source annotation, primary biological evidence and local engineering projection. New class/subclass indexes read existing asset columns; no neurons, edges, soma positions, compressed bytes or carrier pixels were changed. Internal liquid identity is game telemetry, not connectome chemical-receptor data. The existing tick integrator is retained; the reference's millisecond dynamics, flight/reflex controllers and validation results are not claimed for this mod.

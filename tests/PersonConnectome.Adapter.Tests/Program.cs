@@ -27,8 +27,10 @@ internal static class Program
         ("nearby temperatures provide bounded ambient heat and cold", AmbientTemperature),
         ("nearby lava provides heat and hazard", NearbyLava),
         ("external audio excludes own limbs, mute and invalid distances", Audio),
+        ("numbered and cloned Root audio remains conservatively filtered", NumberedRootAudio),
         ("last-heard audio persists without stimulating stale sound", AudioHistory),
             ("visible external objects produce a vision proxy", Vision),
+            ("directional native sensory readings clear and stay source-bound", DirectionalSensors),
             ("vibration, proprioception and projectile channels stay distinct", AdditionalSenses),
             ("falling is distinct from walking and floor contact", Falling),
             ("contact impacts do not fabricate hearing", Impacts),
@@ -313,6 +315,7 @@ internal static class Program
     {
         var go = new GameObject("Radio"); var physical = go.AddComponent<PhysicalBehaviour>();
         audio = go.AddComponent<AudioSource>(); audio.isPlaying = true; physical.MainAudioSource = audio;
+        go.transform.position = new Vector3(1, 0, 0);
         var collider = go.AddComponent<Collider2D>(); collider.Surface = new Vector2(1, 0); return collider;
     }
     private static void Audio()
@@ -335,6 +338,36 @@ internal static class Program
         var generatedRoot = new GameObject("Root"); var generatedPhysical = generatedRoot.AddComponent<PhysicalBehaviour>(); var generatedAudio = generatedRoot.AddComponent<AudioSource>();
         generatedAudio.isPlaying = true; generatedPhysical.MainAudioSource = generatedAudio; var generatedCollider = generatedRoot.AddComponent<Collider2D>(); generatedCollider.Surface = new Vector2(2.14f, 0);
         Physics2D.Hits = [generatedCollider]; Equal(0, f.Adapter.Read().Sound); Equal("SENSING", f.Adapter.LiveState);
+    }
+    private static void NumberedRootAudio()
+    {
+        var f = new Fixture(); var source = SoundObject(out var audio);
+        source.Surface = new Vector2(2.19f, 0); Physics2D.Hits = [source];
+        foreach (var name in new[] { "Root", "Root (3)", "Root (123)", "Root(Clone)", "Root (3)(Clone)", "Root(Clone) (3)", "root (3)" })
+        {
+            source.gameObject.name = name;
+            Equal(0f, f.Adapter.Read().Sound);
+            True(f.Adapter.LiveAudioSummary.Contains("No external audio detected yet"));
+        }
+        foreach (var name in new[] { "Radio", "Root beer radio", "Rooted", "Root3", "Root ()", "Root (music)", "Root (3) radio" })
+        {
+            source.gameObject.name = name;
+            True(f.Adapter.Read().Sound > 0f);
+        }
+        // The physical and audio objects can have different generated suffixes.
+        source.gameObject.name = "Root (3)";
+        var separateAudio = new GameObject("Root(Clone)").AddComponent<AudioSource>();
+        separateAudio.isPlaying = true;
+        source.GetComponent<PhysicalBehaviour>().MainAudioSource = separateAudio;
+        Equal(0f, f.Adapter.Read().Sound);
+        // Another identifiable person remains audible, even with a generic root name.
+        var otherPerson = new GameObject("Other human"); otherPerson.AddComponent<PersonBehaviour>();
+        source.transform.SetParent(otherPerson.transform);
+        True(f.Adapter.Read().Sound > 0f);
+        True(f.Adapter.LiveAudioSummary.Contains("external person Root (3)"));
+        source.transform.SetParent(f.Root.transform);
+        Equal(0f, f.Adapter.Read().Sound);
+        Physics2D.Hits = [];
     }
     private static void AudioHistory()
     {
@@ -451,6 +484,67 @@ internal static class Program
         Physics2D.LinecastResult = default;
         Equal(0, f.Adapter.Read().Vision);
         RenderSettings.ambientLight = default;
+    }
+    private static void DirectionalSensors()
+    {
+        var f = new Fixture();
+        f.Limb.HasBrain = true;
+        var anchorBody = f.Limb.gameObject.AddComponent<Rigidbody2D>();
+        anchorBody.velocity = new Vector2(4, -5);
+        f.Person.AngleOffset = -90f;
+
+        var loud = SoundObject(out var loudAudio);
+        loud.Surface = new Vector2(6, 0); // Collider geometry is not the sound bearing.
+        loud.transform.position = new Vector3(-2, 0, 0);
+        loudAudio.volume = 1f;
+        var quiet = SoundObject(out var quietAudio);
+        quiet.Surface = new Vector2(-6, 0);
+        quiet.transform.position = new Vector3(2, 0, 0);
+        quietAudio.volume = .1f;
+        Physics2D.Hits = [quiet, loud];
+        var frame = f.Adapter.Read();
+        True(frame.Sound > 0f && frame.SoundDirectionValid); Equal(-1f, frame.SoundDirection);
+        True(frame.VelocityValid); Equal(.4f, frame.VelocityX); Equal(-.5f, frame.VelocityY);
+        True(frame.TiltValid); Equal(-.5f, frame.SignedTilt);
+
+        var visible = new GameObject("Closing target");
+        var physical = visible.AddComponent<PhysicalBehaviour>();
+        var targetBody = visible.AddComponent<Rigidbody2D>(); physical.rigidbody = targetBody;
+        targetBody.velocity = new Vector2(-5, 0);
+        var target = visible.AddComponent<Collider2D>(); target.Surface = new Vector2(2, 0);
+        visible.transform.position = new Vector3(2, 0, 0);
+        RenderSettings.ambientLight = new Color { grayscale = 1f };
+        Physics2D.Hits = [target]; Physics2D.LinecastResult = new RaycastHit2D { collider = target };
+        frame = f.Adapter.Read();
+        True(frame.VisionDirectionValid); Equal(1f, frame.VisionDirection); True(frame.VisualApproach > 0f);
+        target.Surface = new Vector2(-2, 0); // Vision direction follows the current LOS point.
+        frame = f.Adapter.Read(); Equal(-1f, frame.VisionDirection);
+        target.Surface = new Vector2(2, 0); targetBody.velocity = new Vector2(5, 0); frame = f.Adapter.Read(); Equal(0f, frame.VisualApproach);
+        Physics2D.LinecastResult = default; frame = f.Adapter.Read(); Equal(0f, frame.Vision); True(!frame.VisionDirectionValid); Equal(0f, frame.VisualApproach);
+
+        var joint = f.Limb.gameObject.AddComponent<HingeJoint2D>();
+        joint.connectedBody = new GameObject("Joint body").AddComponent<Rigidbody2D>(); joint.jointAngle = -90f; joint.jointSpeed = -45f; f.Limb.Joint = joint;
+        frame = f.Adapter.Read(); True(frame.JointSensingValid); Equal(.5f, frame.JointPosition); Equal(.25f, frame.JointMotion);
+        joint.jointAngle = float.NaN; frame = f.Adapter.Read(); True(!frame.JointSensingValid); Equal(0f, frame.JointPosition); Equal(0f, frame.JointMotion);
+        f.Limb.Joint = null; frame = f.Adapter.Read(); True(!frame.JointSensingValid);
+
+        var secondLimb = Fixture.AddLimb(f.Root, "LowerArmBack"); f.Person.Limbs = [f.Limb, secondLimb];
+        f.Limb.JointStress = 0f; joint.jointAngle = 0f; joint.jointSpeed = 0f; f.Limb.Joint = joint;
+        secondLimb.JointStress = 100f; // Injury telemetry remains visible, but this limb has no readable local joint.
+        frame = f.Adapter.Read(); True(frame.JointSensingValid); Equal(1f, frame.JointStress); Equal(0f, frame.NeuralJointLoad);
+        f.Limb.JointStress = float.NaN; frame = f.Adapter.Read(); True(frame.JointSensingValid); Equal(0f, frame.NeuralJointLoad);
+        f.Limb.Joint = null;
+        var disconnectedJoint = secondLimb.gameObject.AddComponent<HingeJoint2D>();
+        disconnectedJoint.connectedBody = new GameObject("Disconnected joint body").AddComponent<Rigidbody2D>(); disconnectedJoint.jointAngle = 90f; disconnectedJoint.jointSpeed = 90f; secondLimb.Joint = disconnectedJoint;
+        secondLimb.IsDismembered = true; secondLimb.CirculationBehaviour.IsDisconnected = true;
+        frame = f.Adapter.Read(); True(!frame.JointSensingValid); Equal(0f, frame.NeuralJointLoad); Equal(1f, frame.JointStress);
+
+        RenderSettings.ambientLight = new Color { grayscale = float.NaN };
+        frame = f.Adapter.Read(); True(!frame.LightValid); Equal(0f, frame.Light); Equal(0f, frame.VisualApproach);
+        Physics2D.Hits = []; Physics2D.LinecastResult = default; RenderSettings.ambientLight = default;
+        frame = f.Adapter.Read(); True(frame.LightValid); Equal(0f, frame.Sound); True(!frame.SoundDirectionValid);
+        loud.transform.position = new Vector3(); Physics2D.Hits = [loud]; frame = f.Adapter.Read();
+        True(frame.Sound > 0f && !frame.SoundDirectionValid); Equal(0f, frame.SoundDirection);
     }
     private static void AdditionalSenses()
     {

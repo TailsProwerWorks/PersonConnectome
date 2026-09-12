@@ -50,7 +50,7 @@ namespace Mod
         {
             get
             {
-                return "BODY:\n  native-hp=" + (lastFrame.HealthValid ? lastFrame.Health.ToString("0.00") : "unknown") + "  limb-damage=" + (lastFrame.DamageValid ? lastFrame.Damage.ToString("0.00") : "unknown") + "  pain=" + lastFrame.Pain.ToString("0.00") + "  shock=" + lastFrame.Shock.ToString("0.00") + "\n  oxygen=" + (lastFrame.OxygenValid ? lastFrame.Oxygen.ToString("0.00") : "unknown") + "  conscious=" + (lastFrame.ConsciousnessValid ? lastFrame.Consciousness.ToString("0.00") : "unknown") + "  unconscious=" + (lastFrame.ConsciousnessValid ? lastFrame.Unconscious.ToString("0.00") : "unknown") + "  adrenaline(raw)=" + (IsFinite(nativeAdrenaline) ? nativeAdrenaline.ToString("0.00") : "unknown") + "  adrenaline-drive=" + lastFrame.Adrenaline.ToString("0.00") + "\n  heartbeat=" + lastFrame.Heartbeat.ToString("0.00") + "  velocity=" + lastFrame.Velocity.ToString("0.00") + "  falling=" + lastFrame.Fall.ToString("0.00") + "  rotation=" + lastFrame.Rotation.ToString("0.00") + "  balance=" + lastFrame.Balance.ToString("0.00") + "  proprioception=" + lastFrame.Proprioception.ToString("0.00") + "  brain=" + BrainSummary;
+                return "BODY:\n  native-hp=" + (lastFrame.HealthValid ? lastFrame.Health.ToString("0.00") : "unknown") + "  limb-damage=" + (lastFrame.DamageValid ? lastFrame.Damage.ToString("0.00") : "unknown") + "  pain=" + lastFrame.Pain.ToString("0.00") + "  shock=" + lastFrame.Shock.ToString("0.00") + "\n  oxygen=" + (lastFrame.OxygenValid ? lastFrame.Oxygen.ToString("0.00") : "unknown") + "  conscious=" + (lastFrame.ConsciousnessValid ? lastFrame.Consciousness.ToString("0.00") : "unknown") + "  unconscious=" + (lastFrame.ConsciousnessValid ? lastFrame.Unconscious.ToString("0.00") : "unknown") + "  adrenaline(raw)=" + (IsFinite(nativeAdrenaline) ? nativeAdrenaline.ToString("0.00") : "unknown") + "  adrenaline(normalized)=" + lastFrame.Adrenaline.ToString("0.00") + "\n  heartbeat=" + lastFrame.Heartbeat.ToString("0.00") + "  velocity=" + lastFrame.Velocity.ToString("0.00") + "  velocity-xy(native rigidbody)=" + (lastFrame.VelocityValid ? lastFrame.VelocityX.ToString("0.00") + "," + lastFrame.VelocityY.ToString("0.00") : "unknown") + "  falling=" + lastFrame.Fall.ToString("0.00") + "\n  rotation=" + lastFrame.Rotation.ToString("0.00") + "  tilt(native angle proxy)=" + (lastFrame.TiltValid ? lastFrame.SignedTilt.ToString("0.00") : "unknown") + "  balance=" + lastFrame.Balance.ToString("0.00") + "  proprioception(proxy)=" + lastFrame.Proprioception.ToString("0.00") + "\n  joint-reading position=" + (lastFrame.JointSensingValid ? lastFrame.JointPosition.ToString("0.00") : "unknown") + "  motion=" + (lastFrame.JointSensingValid ? lastFrame.JointMotion.ToString("0.00") : "unknown") + "  brain=" + BrainSummary;
             }
         }
         public string LiveInjurySummary
@@ -64,7 +64,7 @@ namespace Mod
         {
             get
             {
-                return "ENVIRONMENT:\n  fire=" + lastFrame.Fire.ToString("0.00") + "  lava=" + lastFrame.Lava.ToString("0.00") + "  acid=" + lastFrame.AcidExposure.ToString("0.00") + "  burn=" + lastFrame.BurnProgress.ToString("0.00") + "\n  heat=" + lastFrame.Heat.ToString("0.00") + "  cold=" + lastFrame.Cold.ToString("0.00") + "  ambient-heat=" + lastFrame.AmbientHeat.ToString("0.00") + "  ambient-cold=" + lastFrame.AmbientCold.ToString("0.00") + "  light=" + lastFrame.Light.ToString("0.00") + "\n  nearby=" + lastFrame.Nearby.ToString("0.00") + "  direction=" + lastFrame.NearbyDirection.ToString("0.00") + "  vision=" + lastFrame.Vision.ToString("0.00") + "  target=" + visionTargetSummary + "\n  sound=" + lastFrame.Sound.ToString("0.00") + "  impact=" + lastFrame.Impact.ToString("0.00") + "  vibration=" + lastFrame.Vibration.ToString("0.00") + "  projectile=" + lastFrame.Projectile.ToString("0.00") + "\n  touch=" + lastFrame.Touch.ToString("0.00") + "  contact/held=" + lastFrame.PhysicalContact.ToString("0.00") + "  wet=" + lastFrame.Wetness.ToString("0.00") + "\n  underwater=" + lastFrame.UnderWater.ToString("0.00") + "  submerged-hypoxia=" + lastFrame.SubmergedHypoxia.ToString("0.00") + "  liquid=" + lastFrame.LiquidExposure.ToString("0.00") + "\n  hazard-exposure=" + lastFrame.LiquidHazard.ToString("0.00") + "  sedative-exposure=" + lastFrame.LiquidSedation.ToString("0.00") + "  stimulant-exposure=" + lastFrame.LiquidStimulation.ToString("0.00") + "\n  restorative-exposure=" + lastFrame.LiquidHealing.ToString("0.00") + "  water-liquid=" + lastFrame.LiquidWater.ToString("0.00") + "  charge=" + lastFrame.Charge.ToString("0.00") + "\n  stabbed=" + lastFrame.Stabbed.ToString("0.00") + "  weightless=" + lastFrame.Weightless.ToString("0.00") + "  sliding=" + lastFrame.Sliding.ToString("0.00");
+                return "ENVIRONMENT:\n  fire=" + lastFrame.Fire.ToString("0.00") + "  lava=" + lastFrame.Lava.ToString("0.00") + "  acid=" + lastFrame.AcidExposure.ToString("0.00") + "  burn=" + lastFrame.BurnProgress.ToString("0.00") + "\n  heat=" + lastFrame.Heat.ToString("0.00") + "  cold=" + lastFrame.Cold.ToString("0.00") + "  ambient-heat=" + lastFrame.AmbientHeat.ToString("0.00") + "  ambient-cold=" + lastFrame.AmbientCold.ToString("0.00") + "  light=" + lastFrame.Light.ToString("0.00") + "\n  nearby=" + lastFrame.Nearby.ToString("0.00") + "  direction=" + lastFrame.NearbyDirection.ToString("0.00") + "  vision=" + lastFrame.Vision.ToString("0.00") + "  direction-world-x=" + (lastFrame.VisionDirectionValid ? lastFrame.VisionDirection.ToString("0.00") : "unknown") + "  approach proxy=" + lastFrame.VisualApproach.ToString("0.00") + "  target=" + visionTargetSummary + "\n  sound=" + lastFrame.Sound.ToString("0.00") + "  direction-world-x=" + (lastFrame.SoundDirectionValid ? lastFrame.SoundDirection.ToString("0.00") : "unknown") + "  impact=" + lastFrame.Impact.ToString("0.00") + "  vibration=" + lastFrame.Vibration.ToString("0.00") + "  projectile=" + lastFrame.Projectile.ToString("0.00") + "\n  touch=" + lastFrame.Touch.ToString("0.00") + "  contact/held=" + lastFrame.PhysicalContact.ToString("0.00") + "  wet=" + lastFrame.Wetness.ToString("0.00") + "\n  underwater=" + lastFrame.UnderWater.ToString("0.00") + "  submerged-hypoxia=" + lastFrame.SubmergedHypoxia.ToString("0.00") + "  liquid=" + lastFrame.LiquidExposure.ToString("0.00") + "\n  hazard-exposure=" + lastFrame.LiquidHazard.ToString("0.00") + "  sedative-exposure=" + lastFrame.LiquidSedation.ToString("0.00") + "  stimulant-exposure=" + lastFrame.LiquidStimulation.ToString("0.00") + "\n  restorative-exposure=" + lastFrame.LiquidHealing.ToString("0.00") + "  water-liquid=" + lastFrame.LiquidWater.ToString("0.00") + "  charge=" + lastFrame.Charge.ToString("0.00") + "\n  stabbed=" + lastFrame.Stabbed.ToString("0.00") + "  weightless=" + lastFrame.Weightless.ToString("0.00") + "  sliding=" + lastFrame.Sliding.ToString("0.00");
             }
         }
         public string LiveLiquidSummary
@@ -549,7 +549,10 @@ namespace Mod
                 Velocity = Unit(person.AverageSpeed / 10f),
                 Touch = person.IsTouchingFloor ? 1f : 0f,
                 Light = Unit(RenderSettings.ambientLight.grayscale),
+                LightValid = IsFinite(RenderSettings.ambientLight.grayscale),
                 Rotation = Unit(Mathf.Abs(person.AngleOffset) / 180f),
+                TiltValid = IsFinite(person.AngleOffset),
+                SignedTilt = IsFinite(person.AngleOffset) ? Mathf.Clamp(person.AngleOffset / 180f, -1f, 1f) : 0f,
                 Balance = Unit(Mathf.Abs(person.BalanceOffset) / 10f),
                 Heartbeat = Unit(person.Heartbeat),
                 BrainDamage = person.BrainDamaged ? 1f : 0f,
@@ -557,6 +560,14 @@ namespace Mod
                 Vitality = 0f,
                 Circulation = 0f
             };
+            var anchor = FindStatusAnchor();
+            var body = anchor == null ? null : anchor.GetComponent<Rigidbody2D>();
+            frame.VelocityValid = body != null && IsFinite(body.velocity.x) && IsFinite(body.velocity.y);
+            if (frame.VelocityValid)
+            {
+                frame.VelocityX = Mathf.Clamp(body.velocity.x / 10f, -1f, 1f);
+                frame.VelocityY = Mathf.Clamp(body.velocity.y / 10f, -1f, 1f);
+            }
             frame.BrainDamage = Mathf.Max(frame.BrainDamage, person.Braindead ? 1f : 0f);
             if (IsFinite(person.BrainDamagedTime))
             {
@@ -578,6 +589,17 @@ namespace Mod
 
         private float ReadLimb(ref SensoryFrame frame, LimbBehaviour limb, out bool healthValid)
         {
+            var joint = limb.Joint;
+            if (joint != null && joint.transform == limb.transform && joint.connectedBody != null && !IsLostLimb(limb) && limb.CirculationBehaviour != null && !limb.CirculationBehaviour.IsDisconnected && IsFinite(joint.jointAngle) && IsFinite(joint.jointSpeed))
+            {
+                frame.JointSensingValid = true;
+                frame.JointPosition = Mathf.Max(frame.JointPosition, Unit(Mathf.Abs(joint.jointAngle) / 180f));
+                frame.JointMotion = Mathf.Max(frame.JointMotion, Unit(Mathf.Abs(joint.jointSpeed) / 180f));
+                if (IsFinite(limb.JointStress))
+                {
+                    frame.NeuralJointLoad = Mathf.Max(frame.NeuralJointLoad, Unit(limb.JointStress / 100f));
+                }
+            }
             healthValid = IsFinite(limb.Health) && IsFinite(limb.InitialHealth) && limb.InitialHealth > 0f;
             var health = healthValid ? Unit(limb.Health / Mathf.Max(1f, limb.InitialHealth)) : 0f;
             frame.Breakage = Mathf.Max(frame.Breakage, limb.Broken || limb.CurrentlyShattered != 0 ? 1f : 0f);
@@ -899,7 +921,7 @@ namespace Mod
                 }
 
                 ReadExternalTemperature(ref f, physical, distance);
-                ReadExternalSound(ref f, physical, distance);
+                ReadExternalSound(ref f, physical, origin);
                 if (distance < closest)
                 {
                     closest = distance;
@@ -914,7 +936,22 @@ namespace Mod
             if (closestCollider != null && Physics2D.Linecast(origin, closestPoint).collider == closestCollider)
             {
                 f.Vision = Mathf.Clamp01(f.Nearby * f.Light);
+                f.VisionDirection = WorldHorizontalBearing(closestPoint - origin, out var visionDirectionValid);
+                f.VisionDirectionValid = visionDirectionValid;
                 visionTargetSummary = ClassifyVisualTarget(closestPhysical, closestCollider);
+                var targetBody = closestPhysical == null ? null : closestPhysical.rigidbody;
+                var anchorBody = FindStatusAnchor() == null ? null : FindStatusAnchor().GetComponent<Rigidbody2D>();
+                if (f.Vision > 0f && targetBody != null && anchorBody != null &&
+                    IsFinite(targetBody.velocity.x) && IsFinite(targetBody.velocity.y) && IsFinite(anchorBody.velocity.x) && IsFinite(anchorBody.velocity.y))
+                {
+                    var delta = closestPoint - origin;
+                    var distance = delta.magnitude;
+                    if (IsFinite(distance) && distance > .001f && IsFinite(delta.x) && IsFinite(delta.y))
+                    {
+                        var closing = -((targetBody.velocity.x - anchorBody.velocity.x) * delta.x + (targetBody.velocity.y - anchorBody.velocity.y) * delta.y) / distance;
+                        f.VisualApproach = Unit(closing / 10f) * f.Vision;
+                    }
+                }
                 if (PersonConnectomeProjectileDetection.IsMovingProjectile(closestCollider, closestPhysical))
                 {
                     f.Projectile = Mathf.Max(f.Projectile, f.Vision);
@@ -977,24 +1014,35 @@ namespace Mod
             frame.AmbientCold = Mathf.Max(frame.AmbientCold, AmbientTemperatureCold(temperature));
         }
 
-        private void ReadExternalSound(ref SensoryFrame frame, PhysicalBehaviour physical, float distance)
+        private void ReadExternalSound(ref SensoryFrame frame, PhysicalBehaviour physical, Vector2 origin)
         {
             var audio = physical == null ? null : physical.MainAudioSource;
-            if (physical == null || IsOwnPhysical(physical) || audio == null || IsLikelySelfRootAudio(physical, audio, distance) ||
+            var sourceDelta = audio == null ? new Vector2() : (Vector2)audio.transform.position - origin;
+            var sourceDistance = sourceDelta.magnitude;
+            if (physical == null || IsOwnPhysical(physical) || audio == null || !IsFinite(sourceDistance) || IsLikelySelfRootAudio(physical, audio, sourceDistance) ||
                 IsOwnTransform(audio.transform) ||
                 !audio.isPlaying || audio.mute || !audio.isActiveAndEnabled)
             {
                 return;
             }
 
-            var distanceSignal = Mathf.Clamp01(1f - distance / visionRadius);
+            var distanceSignal = Mathf.Clamp01(1f - sourceDistance / visionRadius);
             var signal = Unit(audio.volume) * distanceSignal;
             if (signal > frame.Sound)
             {
                 frame.Sound = signal;
+                frame.SoundDirection = WorldHorizontalBearing(sourceDelta, out var soundDirectionValid);
+                frame.SoundDirectionValid = soundDirectionValid;
                 var sourceKind = physical.GetComponentInParent<PersonBehaviour>() == null ? "object" : "person";
-                audioSourceSummary = "external " + sourceKind + " " + physical.name + "/" + audio.name + " d=" + distance.ToString("0.00") + " signal=" + signal.ToString("0.00") + " volume=" + Unit(audio.volume).ToString("0.00");
+                audioSourceSummary = "external " + sourceKind + " " + physical.name + "/" + audio.name + " d=" + sourceDistance.ToString("0.00") + " signal=" + signal.ToString("0.00") + " volume=" + Unit(audio.volume).ToString("0.00");
             }
+        }
+
+        private static float WorldHorizontalBearing(Vector2 delta, out bool valid)
+        {
+            var distance = delta.magnitude;
+            valid = IsFinite(delta.x) && IsFinite(delta.y) && IsFinite(distance) && distance > .001f;
+            return valid ? Mathf.Clamp(delta.x / distance, -1f, 1f) : 0f;
         }
 
         private bool IsOwnPhysical(PhysicalBehaviour physical)
@@ -1033,16 +1081,30 @@ namespace Mod
                 return false;
             }
 
-            // Root/Root sources without a PersonBehaviour are the game's
-            // generated self-audio artifact. Use the configured sensor radius,
-            // not a magic two-unit cutoff, so nearby self audio cannot reappear
-            // just beyond the old boundary.
+            // Generic Root/Root sources without a PersonBehaviour have ambiguous
+            // ownership. Conservatively exclude these possible self-audio artifacts
+            // throughout the sensor radius; a name alone cannot prove ownership.
             return physical.GetComponentInParent<PersonBehaviour>() == null && distance <= visionRadius;
         }
 
         private static bool IsRootName(string value)
         {
-            return string.Equals(value, "Root", StringComparison.OrdinalIgnoreCase);
+            if (value == null || !value.StartsWith("Root", StringComparison.OrdinalIgnoreCase)) return false;
+            var index = 4;
+            while (index < value.Length)
+            {
+                if (value[index] == ' ') { index++; continue; }
+                if (value[index] != '(') return false;
+                var end = value.IndexOf(')', index + 1);
+                if (end < 0 || end == index + 1) return false;
+                var suffix = value.Substring(index + 1, end - index - 1);
+                if (!string.Equals(suffix, "Clone", StringComparison.OrdinalIgnoreCase))
+                {
+                    foreach (var digit in suffix) if (digit < '0' || digit > '9') return false;
+                }
+                index = end + 1;
+            }
+            return true;
         }
 
         private static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);

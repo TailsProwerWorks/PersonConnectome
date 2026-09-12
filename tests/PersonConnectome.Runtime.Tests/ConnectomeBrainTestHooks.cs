@@ -54,6 +54,17 @@ namespace Mod
         internal int TestProcessedCount => processedThisStep;
         internal int TestFiredCount => fired.Count;
         internal float TestSensoryDrive => LastSensoryDrive;
+        internal (int Edges, int NonzeroSignMembers) TestPopulationConnectivity(string name)
+        {
+            var edges = 0;
+            var signed = 0;
+            foreach (var id in asset.Population(name))
+            {
+                edges += asset.OutgoingEnd(id) - asset.OutgoingStart(id);
+                if (asset.SignAt(id) != 0) signed++;
+            }
+            return (edges, signed);
+        }
         internal long TestSimulationTick => simulationTick;
         internal long TestBacklogCursor => backlogCursor;
         internal int TestDroppedCount => droppedThisStep;

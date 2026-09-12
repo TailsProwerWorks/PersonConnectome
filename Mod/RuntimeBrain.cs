@@ -44,7 +44,10 @@ namespace Mod
         private long backlogCursor;
         private int processedThisStep;
         private int droppedThisStep;
-        private float injuryDrive, hazardDrive, motionDrive, arousalDrive;
+        private float lightDrive, audioDrive, touchDrive, gravityDrive, jointDrive, hotDrive, coldDrive, approachDrive;
+        private int sensoryQueued;
+        private bool hasPreviousLight;
+        private float previousLight, lightOnDrive, lightOffDrive;
         private const int MaxActivePerStep = 24000;
         private const int RefractoryTicks = 5;
         private const float DefaultStepSeconds = .05f;
@@ -83,8 +86,12 @@ namespace Mod
         }
 
         public string DisplayInputSummary => stopped ? "INPUT: STOPPED" :
-            "INPUT:\n  injury=" + Format(injuryDrive) + "  hazard=" + Format(hazardDrive) + "  motion=" + Format(motionDrive) +
-            "\n  arousal=" + Format(arousalDrive) + "  total=" + Format(LastSensoryDrive);
+            "ENCODER REQUESTS (normalized amplitudes, not Hz):\n  light=" + Format(lightDrive) + "  audio=" + Format(audioDrive) +
+            "  touch=" + Format(touchDrive) + "\n  gravity-proxy=" + Format(gravityDrive) + "  joints=" + Format(jointDrive) +
+            "\n  global light-change ON=" + Format(lightOnDrive) + "  OFF=" + Format(lightOffDrive) +
+            "\n  warm=" + Format(hotDrive) + "  cool=" + Format(coldDrive) + "  approach-proxy=" + Format(approachDrive) +
+            "\n  input neurons queued this tick=" + sensoryQueued +
+            "\nBody health/chemistry are telemetry and control constraints; no validated receptor mapping.\nDirections use world horizontal as an engineering L/R projection.";
 
         public string DisplayMotorSummary => stopped ?
             "REQUEST: STOPPED\n  arms=0.00/0.00  legs=0.00/0.00\n  head=0.00  core=0.00  grips=0.00/0.00" :
@@ -132,10 +139,8 @@ namespace Mod
             simulationTick++;
             processedThisStep = 0;
             droppedThisStep = 0;
-            injuryDrive = 0f;
-            hazardDrive = 0f;
-            motionDrive = 0f;
-            arousalDrive = 0f;
+            lightDrive = audioDrive = touchDrive = gravityDrive = jointDrive = hotDrive = coldDrive = approachDrive = 0f;
+            sensoryQueued = 0;
             fired.Clear();
             firedIds.Clear();
             nextPending.Clear();
@@ -178,9 +183,12 @@ namespace Mod
             }
 
             LastSensoryDrive = 0f;
+            hasPreviousLight = false;
+            previousLight = lightOnDrive = lightOffDrive = 0f;
             processedThisStep = 0;
             droppedThisStep = 0;
-            injuryDrive = hazardDrive = motionDrive = arousalDrive = 0f;
+            lightDrive = audioDrive = touchDrive = gravityDrive = jointDrive = hotDrive = coldDrive = approachDrive = 0f;
+            sensoryQueued = 0;
             lastCommand = new MotorCommand();
             return lastCommand;
         }
@@ -310,19 +318,29 @@ namespace Mod
         private MotorCommand BuildMotorCommand(SensoryFrame sensory, float elapsedSeconds)
         {
             var danger = IsDangerous(sensory);
-            var left = FiredOnSide("L");
-            var right = FiredOnSide("R");
-            var center = FiredOnSide("M");
+            // Reference MotorMap walking/halting populations. Fractions below are
+            // latest-tick activity, not the upstream biological firing-rate decoder.
+            var forward = MotorActivity("type:DNp09") * .3f + MotorActivity("type:DNg100") * .25f +
+                MotorActivity("type:DNge053") * .15f + MotorActivity("type:DNge050") * .15f + MotorActivity("type:DNg97") * .15f;
+            var backward = MotorActivity("type:MDN");
+            var halt = Math.Max(MotorActivity("type:DNg60"), Math.Max(MotorActivity("type:DNg74_a"), MotorActivity("type:DNg74_b")));
+            var brake = PopulationActivity("type:AN19A018");
+            var locomotionGate = halt >= .2f || brake >= .2f ? 0f : 1f;
+            var neuralWalk = (backward >= .2f ? -backward : forward) * locomotionGate;
+            // Fly leg activity is a human joint-control proxy. Wing, song and
+            // proboscis populations are not reinterpreted as human arm/grip intent.
+            var left = MotorActivity("motor:leg", "L") * locomotionGate;
+            var right = MotorActivity("motor:leg", "R") * locomotionGate;
+            var center = (left + right) * .5f;
             var sideBias = right - left;
-            var hasMotorActivity = left > 0f || right > 0f || center > 0f;
-            var neuralWalk = hasMotorActivity ? Clamp(sideBias + (FiredMotorPopulation("type:DNp09") ? .35f : 0f) - (FiredMotorPopulation("type:MDN") ? .5f : 0f), -1f, 1f) : 0f;
             var freeze = Unit(sensory.Unconscious + sensory.LiquidSedation);
             var movementPermitted = IsMovementPermitted(sensory, freeze);
             var walk = movementPermitted ? neuralWalk : 0f;
             var motorSideBias = movementPermitted ? sideBias : 0f;
             var motorCenter = movementPermitted ? center : 0f;
             var armSwing = Signed((left - right) * .75f * (movementPermitted ? 1f : 0f) + walk * .35f + motorCenter * .15f);
-            var reach = movementPermitted && FiredMotorPopulation("type:MN9") && !danger ? Unit(sensory.Nearby) : 0f;
+            // MN9 extends a fly proboscis; there is no validated human-grasp mapping.
+            var reach = 0f;
             var requested = new MotorCommand
             {
                 Walk = walk,
@@ -344,7 +362,7 @@ namespace Mod
                 Calm = Unit(sensory.LiquidSedation),
                 Extinguish = Unit(sensory.Fire)
             };
-            if (!movementPermitted)
+            if (!movementPermitted || locomotionGate == 0f)
             {
                 ClearMotorRequests(ref requested);
                 lastCommand = requested;
@@ -376,7 +394,7 @@ namespace Mod
 
         private bool IsDangerous(SensoryFrame sensory)
         {
-            return sensory.Pain + sensory.Fire + sensory.Shock + sensory.SubmergedHypoxia + sensory.Projectile > .5f || Fired("type:DNp01");
+            return sensory.Pain + sensory.Fire + sensory.Shock + sensory.SubmergedHypoxia + sensory.Projectile > .5f || FiredMotorPopulation("type:DNp01");
         }
 
         private bool FiredMotorPopulation(string population)
@@ -412,85 +430,98 @@ namespace Mod
             return current < target ? Math.Min(current + maximumChange, target) : Math.Max(current - maximumChange, target);
         }
 
-        private bool Fired(string population)
+        private float PopulationActivity(string population, string side = null, bool motorOnly = false)
         {
             var ids = asset.Population(population);
-            for (var i = 0; i < ids.Count; i++) if (firedIds.Contains(ids[i])) return true;
-            return false;
-        }
-
-        private float FiredOnSide(string side)
-        {
-            var total = 0;
             var count = 0;
-            for (var i = 0; i < fired.Count; i++)
+            var firing = 0;
+            foreach (var id in ids)
             {
-                var id = fired[i];
-                if (!IsMotorNeuron(id)) continue;
+                if (side != null && asset.SideAt(id) != side) continue;
+                if (motorOnly && !IsMotorNeuron(id)) continue;
                 count++;
-                if (asset.SideAt(id).IndexOf(side, StringComparison.OrdinalIgnoreCase) >= 0) total++;
+                if (firedIds.Contains(id)) firing++;
             }
-
-            return count == 0 ? 0f : Unit((float)total / count);
+            return count == 0 ? 0f : (float)firing / count;
         }
+
+        private float MotorActivity(string population, string side = null) => PopulationActivity(population, side, true);
 
         private bool IsMotorNeuron(int id)
         {
             var superclass = asset.SuperclassAt(id);
-            return superclass.IndexOf("descending", StringComparison.OrdinalIgnoreCase) >= 0 || superclass.IndexOf("motor", StringComparison.OrdinalIgnoreCase) >= 0;
+            return superclass == "descending_neuron" || superclass == "vnc_motor" || superclass == "cb_motor";
         }
 
         private void DriveSensoryPopulations(SensoryFrame sensory)
         {
-            var healthDeficit = sensory.HealthValid && IsFinite(sensory.Health) ? 1f - Unit(sensory.Health) : 0f;
-            var oxygenDeficit = sensory.OxygenValid && IsFinite(sensory.Oxygen) ? 1f - Unit(sensory.Oxygen) : 0f;
-            var consciousnessDeficit = sensory.ConsciousnessValid && IsFinite(sensory.Consciousness) ? 1f - Unit(sensory.Consciousness) : 0f;
-            var vitalityDeficit = sensory.VitalityValid && IsFinite(sensory.Vitality) ? 1f - Unit(sensory.Vitality) : 0f;
-            var injury = Unit(sensory.Pain + (sensory.DamageValid ? sensory.Damage : 0f) + sensory.Bleeding + healthDeficit + (sensory.BloodValid ? sensory.Blood : 0f) + sensory.LimbLoss + sensory.Breakage + sensory.JointStress + sensory.BrainDamage + sensory.InternalBleeding + sensory.Wounds + sensory.LungDamage + vitalityDeficit + sensory.Stabbed + sensory.Seizure);
-            var circulationDeficit = sensory.CirculationValid && IsFinite(sensory.Circulation) ? 1f - Unit(sensory.Circulation) : 0f;
-            var hazard = Unit(sensory.Fire + sensory.Heat + sensory.Cold + sensory.Shock + sensory.SubmergedHypoxia + oxygenDeficit + sensory.Wetness + sensory.Charge + sensory.Infection + sensory.AcidExposure + sensory.LiquidHazard + sensory.Lava + sensory.BurnProgress + sensory.Disconnected + sensory.Frozen + sensory.Fall + sensory.Projectile + sensory.AmbientHeat + sensory.AmbientCold + circulationDeficit);
-            var bodyMotion = Unit(sensory.Impact + sensory.Sound * .6f + sensory.Velocity * .6f + sensory.Rotation * .4f + sensory.Balance * .4f + sensory.Numbness + sensory.Paralysis + sensory.Weightless + sensory.Sliding + sensory.Fall * .6f + sensory.Vibration * .35f + sensory.Proprioception * .4f + sensory.PhysicalContact * .15f + sensory.Touch * .15f + sensory.LiquidExposure + sensory.LiquidWater + sensory.Heartbeat * .1f);
-            var visual = Unit(sensory.Light + sensory.Vision);
-            var arousal = Unit(sensory.Adrenaline + (sensory.ConsciousnessValid ? sensory.Unconscious : 0f) + consciousnessDeficit + sensory.LiquidStimulation);
-            injuryDrive = injury;
-            hazardDrive = hazard;
-            motionDrive = bodyMotion;
-            arousalDrive = arousal;
-            LastSensoryDrive = Unit(injury + hazard + bodyMotion + arousal);
+            // Population choices follow the upstream sensory encoder and adult-fly
+            // annotations. Our discrete amplitude model is not its Poisson/Hz model.
+            // Internal blood chemistry, pain and disease do not imply external taste,
+            // odor, light or an identified nociceptor signal.
+            var lightValid = sensory.LightValid && IsFinite(sensory.Light);
+            lightDrive = lightValid ? Unit(sensory.Light) : 0f;
+            var lightChange = lightValid && hasPreviousLight ? lightDrive - previousLight : 0f;
+            lightOnDrive = Unit(lightChange);
+            lightOffDrive = Unit(-lightChange);
+            previousLight = lightDrive;
+            hasPreviousLight = lightValid;
+            audioDrive = Unit(sensory.Sound);
+            touchDrive = Math.Max(Unit(sensory.Impact + sensory.Vibration * .35f), Unit(sensory.Touch * .15f + sensory.PhysicalContact * .15f));
+            gravityDrive = sensory.TiltValid ? Math.Abs(Signed(sensory.SignedTilt)) : 0f;
+            var jointPosition = sensory.JointSensingValid ? Unit(sensory.JointPosition) : 0f;
+            var jointMotion = sensory.JointSensingValid ? Unit(sensory.JointMotion) : 0f;
+            var jointLoad = sensory.JointSensingValid ? Unit(sensory.NeuralJointLoad) : 0f;
+            jointDrive = Math.Max(jointPosition, Math.Max(jointMotion, jointLoad));
+            hotDrive = Math.Max(Unit(sensory.Heat), Unit(sensory.AmbientHeat));
+            coldDrive = Math.Max(Unit(sensory.Cold), Unit(sensory.AmbientCold));
+            approachDrive = Unit(sensory.VisualApproach);
+            LastSensoryDrive = Unit(lightDrive + lightOnDrive + lightOffDrive + audioDrive + touchDrive + gravityDrive + jointDrive + hotDrive + coldDrive + approachDrive);
 
-            Drive("superclass:ol_sensory", LastSensoryDrive, 2048);
-            Drive("type:R1-R6", visual, 256);
-            Drive("type:R7R8_unclear", sensory.Light, 64);
-            Drive("type:R7_unclear", sensory.Light, 64);
-            Drive("type:R7d", sensory.Light, 64);
-            Drive("type:R7p", sensory.Light, 64);
-            Drive("type:R7y", sensory.Light, 64);
-            Drive("type:R8_unclear", sensory.Light, 64);
-            Drive("type:R8d", sensory.Light, 64);
-            Drive("type:R8p", sensory.Light, 64);
-            Drive("type:R8y", sensory.Light, 64);
-            Drive("type:LC4", Unit(hazard + sensory.Nearby), 128);
-            Drive("type:LPLC2", Unit(injury + hazard + sensory.LiquidSedation), 128);
-            Drive("type:MDN", Unit(injury + sensory.SubmergedHypoxia), 128);
-            Drive("type:DNp09", Unit(visual + bodyMotion), 128);
+            // Broadband light only: these inputs do not claim color/UV sensing or
+            // a per-column retina. No body-state stimulus is painted onto the eyes.
+            Drive("input:light", lightDrive);
+            // Reference ON/OFF entries adapted to measured global luminance
+            // changes only. No per-column image or invented dark tonic current.
+            Drive("type:Mi1", lightOnDrive);
+            Drive("type:L2", lightOffDrive);
+            Drive("type:L3", lightOffDrive);
+            Drive("input:auditory", audioDrive, sensory.SoundDirectionValid ? Signed(sensory.SoundDirection) : 0f);
+            Drive("input:tactile", touchDrive);
+            Drive("input:gravity", gravityDrive, sensory.TiltValid ? Signed(sensory.SignedTilt) : 0f);
+            Drive("input:joint-position", jointPosition);
+            Drive("input:joint-motion", jointMotion);
+            Drive("input:joint-load", jointLoad);
+            Drive("input:hot", hotDrive);
+            Drive("input:cold", coldDrive);
+            // As in the reference project, visual feature drive is hand-built.
+            // Here it means visible relative approach, not true angular expansion.
+            var visualDirection = sensory.VisionDirectionValid ? Signed(sensory.VisionDirection) : 0f;
+            Drive("type:LC4", approachDrive, visualDirection);
+            Drive("type:LPLC2", approachDrive, visualDirection);
         }
 
         private float LastSensoryDrive { get; set; }
 
-        private void Drive(string population, float value, int maximum)
+        private void Drive(string population, float value, float direction = 0f)
         {
-            value = Clamp(value, 0f, 4f);
+            value = Unit(value);
             if (value <= .001f) return;
             var ids = asset.Population(population);
-            var count = Math.Min(maximum, ids.Count);
-            for (var i = 0; i < count; i++)
+            // All annotated members are eligible; a first-N cutoff systematically
+            // favored lower IDs and could omit one side of a population.
+            for (var i = 0; i < ids.Count; i++)
             {
                 var id = ids[i];
                 if (simulationTick < refractoryUntil[id]) continue;
+                var side = asset.SideAt(id);
+                var gain = side == "L" ? 1f - Math.Max(0f, direction) : side == "R" ? 1f + Math.Min(0f, direction) : 1f;
+                var input = value * gain;
+                if (input <= .001f) continue;
                 var queued = pending.TryGetValue(id, out var valueAtId) ? valueAtId : 0f;
-                pending[id] = Clamp(queued + value, -4f, 4f);
+                pending[id] = Clamp(queued + input, -4f, 4f);
                 active.Add(id);
-                priority.Add(id);
+                if (priority.Add(id)) sensoryQueued++;
             }
         }
 

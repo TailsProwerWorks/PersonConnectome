@@ -14,7 +14,7 @@ The top-center screen panel stays independent of world lighting and camera zoom.
 The graph contains 176,422 neurons and 6,287,749 retained connections. At most 8,192 located neurons appear on the map; sampling does not change the simulated graph. The scheduler caps processed work and drops stale overload work. It does not guarantee a frame rate or zero latency.
 
 <b><color=#FFD700>LIMITS</color></b>
-This is a thresholded fly-connectome simulation mapped heuristically to a game Human, not a real fly mind or a human brain. Vision is a line-of-sight/light proxy; audio is external object playback. No semantic sight, smell or biological swimming is claimed. Motion requests come from neural motor activity and are rate limited. Native game movement APIs still supply their mechanics. The adapter converts normalized joint targets to degrees/second (30 full-scale by default) and doubles walking intent before clamping to -1..1. These adjustable engineering settings need in-game tuning; stronger requests do not guarantee walking. Raw adrenaline is shown separately from its clamped neural signal. Native injury does not necessarily create an adrenaline surge; pain/shock no longer request chemical calming. Existing restorative outputs are engineered gameplay adjustments, not neural healing.
+This is a thresholded fly-connectome simulation mapped heuristically to a game Human, not a real fly mind or a human brain. Vision is a line-of-sight/light proxy; audio is external object playback. No semantic sight, smell or biological swimming is claimed. Motion requests come from neural motor activity and are rate limited. Native game movement APIs still supply their mechanics. The adapter converts normalized joint targets to degrees/second (30 full-scale by default) and doubles walking intent before clamping to -1..1. These adjustable engineering settings need in-game tuning; stronger requests do not guarantee walking. Raw adrenaline is shown separately from its normalized reading. Native injury does not necessarily create an adrenaline surge; pain/shock no longer request chemical calming. Existing restorative outputs are engineered gameplay adjustments, not neural healing.
 
 Water alone does not disable healthy limbs. Brain injury or unconsciousness is not death. Terminal state and unavailable/low consciousness suppress active motor output.
 
@@ -22,11 +22,35 @@ Water alone does not disable healthy limbs. Brain injury or unconsciousness is n
 Male CNS data: CC BY 4.0
 https://male-cns.janelia.org/
 https://male-cns.janelia.org/download/
-Prepared derivative and visualizer inspiration:
+Prepared derivative, sensory/motor mapping reference and visualizer inspiration:
 https://github.com/blendi-remade/fly-brain-minecraft
 Mod source, tests and provenance:
 https://github.com/TailsProwerWorks/PersonConnectome
 
 <align="center"><size=80%><color=#CCCCCC>Build {{GIT_COMMIT}} | Author: ShadowNineX</color></size></align>
 
-Liquids and syringes: Senses lists all liquids detected in tracked circulation, including mixtures and the 41 stock IDs inspected in game version 1.27.17. Percentages show the highest concentration in any tracked limb, including detached limbs; they are not total-body dose or effect strength. All non-blood identities feed an engineered exposure input. Unknown/custom liquids get no guessed poison or healing effect. Native zombie state is separate from reanimation-agent exposure. Water Breathing Serum is not internal water, and strength/durability serums do not request adrenaline. Native effects can persist after a liquid disappears; pain, oxygen, health and zombie state are sampled independently. No liquid is injected or sensed remotely in a nearby syringe.
+Liquids and syringes: Senses lists all liquids detected in tracked circulation, including mixtures and the 41 stock IDs inspected in game version 1.27.17. Percentages show the highest concentration in any tracked limb, including detached limbs; they are not total-body dose or effect strength. Chemical identity remains exposure telemetry, not a fabricated fly taste/smell input. Unknown/custom liquids get no guessed poison or healing effect. Native zombie state is separate from reanimation-agent exposure. Water Breathing Serum is not internal water, and strength/durability serums do not request adrenaline. Native effects can persist after a liquid disappears; pain, oxygen, health and zombie state are sampled independently. No liquid is injected or sensed remotely in a nearby syringe.
+
+Sensory mapping: external audio (including world-horizontal direction), touch, connected joint position/motion/load, hot/cold and visible approach feed separately annotated populations. Human tilt is an engineered fly gravity-sense proxy. Walking/halting uses named locomotor populations; the fly MN9 feeding neuron no longer requests human grasping. Health, pain, oxygen, zombie state and internal chemistry remain telemetry/control constraints without invented receptors. The Minecraft project uses a different integrator; these mappings do not establish its biological results or reliable human walking.
+
+Measured global light changes also drive ON/OFF pathways; this is not a spatial retina.
+
+Reference mapping adaptation license (fly-brain-minecraft):
+MIT License
+Copyright (c) 2026 Blendi Remade / fal.ai
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

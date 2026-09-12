@@ -75,8 +75,8 @@ namespace Mod
                 SkipInt64Array(reader, count);
                 var types = ReadInt32Array(reader, count);
                 var superclasses = ReadByteArray(reader, count);
-                SkipByteArray(reader, count);
-                SkipUInt16Array(reader, count);
+                var classes = ReadByteArray(reader, count);
+                var subclasses = ReadUInt16Array(reader, count);
                 SkipByteArray(reader, count);
                 var signs = ReadSByteArray(reader, count);
                 var sides = ReadByteArray(reader, count);
@@ -90,7 +90,7 @@ namespace Mod
                 for (var i = 0; i < soma.Length; i++) soma[i] = reader.ReadSingle();
                 SkipInt32Array(reader, count);
                 SkipInt32Array(reader, count);
-                return new RuntimeColumns(types, superclasses, signs, sides, soma);
+                return new RuntimeColumns(types, superclasses, classes, subclasses, signs, sides, soma);
             }
 
             private static RuntimeAsset CreateAsset(RuntimeCounts counts, int[] rows, int[] posts, RuntimeColumns columns)
@@ -128,10 +128,34 @@ namespace Mod
                 for (var i = 0; i < asset.NeuronCount; i++)
                 {
                     var superclass = GetTableValue(tables[1], columns.SuperclassIndexes[i]);
+                    var neuronClass = GetTableValue(tables[2], columns.ClassIndexes[i]);
+                    var subclass = GetTableValue(tables[3], columns.SubclassIndexes[i]);
+                    var type = GetTableValue(tables[0], columns.TypeIndexes[i]);
                     asset.Superclasses[i] = superclass;
                     asset.Sides[i] = GetTableValue(tables[5], columns.SideIndexes[i]);
-                    Add(buckets, "type:" + GetTableValue(tables[0], columns.TypeIndexes[i]), i);
+                    Add(buckets, "type:" + type, i);
+                    Add(buckets, "class:" + neuronClass, i);
+                    Add(buckets, "subclass:" + subclass, i);
+                    // Keep input groups restricted to annotated sensory neurons.
+                    var sensory = superclass == "cb_sensory" || superclass == "vnc_sensory" ||
+                        superclass == "sensory_ascending" || superclass == "sensory_descending";
+                    if (sensory)
+                    {
+                        if (neuronClass == "mechanosensory" && subclass == "auditory") Add(buckets, "input:auditory", i);
+                        if (neuronClass == "mechanosensory" && subclass == "wind_gravity") Add(buckets, "input:gravity", i);
+                        if (neuronClass == "mechanosensory_tactile") Add(buckets, "input:tactile", i);
+                        if (neuronClass == "mechanosensory_proprioceptive")
+                        {
+                            if (subclass == "hair plate") Add(buckets, "input:joint-position", i);
+                            if (subclass == "chordotonal organ") Add(buckets, "input:joint-motion", i);
+                            if (subclass == "campaniform sensilla") Add(buckets, "input:joint-load", i);
+                        }
+                        if (neuronClass == "thermosensory" && type == "TRN_VP2") Add(buckets, "input:hot", i);
+                        if (neuronClass == "thermosensory" && (type == "TRN_VP3a" || type == "TRN_VP3b")) Add(buckets, "input:cold", i);
+                    }
+                    if (superclass == "vnc_motor" && (subclass == "fl" || subclass == "ml" || subclass == "hl")) Add(buckets, "motor:leg", i);
                     Add(buckets, "superclass:" + superclass, i);
+                    if (superclass == "ol_sensory" && neuronClass == "visual") Add(buckets, "input:light", i);
                     if (superclass == "ol_sensory")
                     {
                         Add(buckets, "sensory", i);
@@ -337,10 +361,12 @@ namespace Mod
 
             private sealed class RuntimeColumns
             {
-                public RuntimeColumns(int[] typeIndexes, byte[] superclassIndexes, sbyte[] signs, byte[] sideIndexes, float[] soma)
+                public RuntimeColumns(int[] typeIndexes, byte[] superclassIndexes, byte[] classIndexes, ushort[] subclassIndexes, sbyte[] signs, byte[] sideIndexes, float[] soma)
                 {
                     TypeIndexes = typeIndexes;
                     SuperclassIndexes = superclassIndexes;
+                    ClassIndexes = classIndexes;
+                    SubclassIndexes = subclassIndexes;
                     Signs = signs;
                     SideIndexes = sideIndexes;
                     Soma = soma;
@@ -348,6 +374,8 @@ namespace Mod
 
                 public int[] TypeIndexes { get; }
                 public byte[] SuperclassIndexes { get; }
+                public byte[] ClassIndexes { get; }
+                public ushort[] SubclassIndexes { get; }
                 public sbyte[] Signs { get; }
                 public byte[] SideIndexes { get; }
                 public float[] Soma { get; }

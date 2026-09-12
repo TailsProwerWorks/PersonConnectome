@@ -85,6 +85,11 @@ namespace UnityEngine
     }
     public enum RigidbodyType2D { Dynamic, Kinematic, Static }
     public class Rigidbody2D : Component { public Vector2 velocity; public RigidbodyType2D bodyType = RigidbodyType2D.Dynamic; }
+    public class HingeJoint2D : Component
+    {
+        public Rigidbody2D connectedBody;
+        public float jointAngle, jointSpeed;
+    }
     public class AmbientTemperatureGridBehaviour : Component
     {
         public static AmbientTemperatureGridBehaviour Instance;
@@ -123,6 +128,7 @@ public class LimbBehaviour : UnityEngine.Component
     public float JointStress, Numbness, RegenerationSpeed, MotorSpeed;
     public int MotorCalls;
     public GripBehaviour GripBehaviour;
+    public UnityEngine.HingeJoint2D Joint;
     public CirculationBehaviour CirculationBehaviour;
     public PhysicalBehaviour PhysicalBehaviour;
     public void InfluenceMotorSpeed(float speed, float influence)
