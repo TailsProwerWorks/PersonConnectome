@@ -493,7 +493,8 @@ namespace Mod
             {
                 var adrenalineChange = Unit(command.Stimulate) * .05f - Unit(command.Calm) * .05f;
                 if (adrenalineChange != 0f && IsFinite(person.AdrenalineLevel))
-                    person.AdrenalineLevel = Unit(person.AdrenalineLevel + adrenalineChange);
+                    // Native Update clamps adrenaline to 0..20; only its neural input is unit-clamped.
+                    person.AdrenalineLevel = Mathf.Clamp(person.AdrenalineLevel + adrenalineChange, 0f, 20f);
             }
         }
 

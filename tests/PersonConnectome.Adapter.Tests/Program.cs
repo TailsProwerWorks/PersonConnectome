@@ -44,7 +44,8 @@ internal static class Program
             ("native motor requests use bounded walking and angular units", NativeMotorUnits),
             ("component disable clears commands and chemistry", Disable),
             ("never-activated cleanup preserves game state", NeverActivated),
-            ("neutral chemistry preserves adrenaline", NeutralChemistry)
+            ("neutral chemistry preserves adrenaline", NeutralChemistry),
+            ("active chemistry respects native adrenaline range", NativeAdrenalineRange)
         ];
         var failures = 0;
         foreach (var (name, test) in tests)
@@ -572,6 +573,19 @@ internal static class Program
         var f = new Fixture(); f.Person.AdrenalineLevel = 1.5f; f.Adapter.Read();
         f.Adapter.Apply(default, true); Equal(1.5f, f.Person.AdrenalineLevel);
         f.Adapter.Apply(new MotorCommand { Stimulate = .5f, Calm = .5f }, true); Equal(1.5f, f.Person.AdrenalineLevel);
+    }
+    private static void NativeAdrenalineRange()
+    {
+        var f = new Fixture(); f.Adapter.Read();
+        f.Person.AdrenalineLevel = 2.5f;
+        f.Adapter.Apply(new MotorCommand { Stimulate = 1f }, true); Equal(2.55f, f.Person.AdrenalineLevel);
+        f.Adapter.Apply(new MotorCommand { Calm = 1f }, true); Equal(2.5f, f.Person.AdrenalineLevel);
+        f.Person.AdrenalineLevel = 19.99f;
+        f.Adapter.Apply(new MotorCommand { Stimulate = 1f }, true); Equal(20f, f.Person.AdrenalineLevel);
+        f.Person.AdrenalineLevel = .01f;
+        f.Adapter.Apply(new MotorCommand { Calm = 1f }, true); Equal(0f, f.Person.AdrenalineLevel);
+        f.Person.AdrenalineLevel = 2.5f;
+        f.Adapter.Apply(new MotorCommand { Calm = 1f }, false); Equal(2.5f, f.Person.AdrenalineLevel);
     }
     private static void NeverActivated()
     {
