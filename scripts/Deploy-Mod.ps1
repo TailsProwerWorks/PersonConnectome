@@ -82,16 +82,44 @@ if ($PSCmdlet.ShouldProcess($targetDirectory, 'deploy Person Connectome mod file
         }
     }
 
-    foreach ($file in $files) {
-        $relativePath = $file.FullName.Substring($modSource.Length).TrimStart('\', '/')
-        $destination = Join-Path $targetDirectory $relativePath
-        $sourceHash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
-        $targetHash = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash
-        if ($sourceHash -ne $targetHash) {
-            throw "Hash verification failed for '$relativePath'."
+    $verificationFailures = @()
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        $verificationFailures = @()
+        foreach ($file in $files) {
+            $relativePath = $file.FullName.Substring($modSource.Length).TrimStart('\', '/')
+            $destination = Join-Path $targetDirectory $relativePath
+            if (-not (Test-Path -LiteralPath $destination -PathType Leaf)) {
+                $verificationFailures += "$relativePath (missing)"
+                continue
+            }
+
+            $sourceHash = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
+            $targetHash = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash
+            if ($sourceHash -ne $targetHash) {
+                $verificationFailures += "$relativePath (source $sourceHash; target $targetHash)"
+            }
+        }
+
+        if ($verificationFailures.Count -eq 0) {
+            break
+        }
+
+        if ($attempt -lt 3) {
+            Write-Host "Deployment verification found $($verificationFailures.Count) mismatch(es); retrying copy ($attempt/3)..."
+            foreach ($file in $files) {
+                $relativePath = $file.FullName.Substring($modSource.Length).TrimStart('\', '/')
+                $destination = Join-Path $targetDirectory $relativePath
+                Copy-Item -LiteralPath $file.FullName -Destination $destination -Force
+            }
+            Start-Sleep -Milliseconds 100
         }
     }
 
+    if ($verificationFailures.Count -ne 0) {
+        throw "Deployment verification failed after 3 attempts: $($verificationFailures -join '; ')"
+    }
+
     Write-Host "Deployed $($files.Count) used files to: $targetDirectory"
+    Write-Host "Verified all $($files.Count) deployed files against their source hashes."
     Write-Host 'The deployed connectome carrier was verified byte-for-byte; the raw build input was not deployed.'
 }
