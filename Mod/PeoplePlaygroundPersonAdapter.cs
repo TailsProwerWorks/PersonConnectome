@@ -872,7 +872,16 @@ namespace Mod
 
         private bool IsLikelySelfRootAudio(PhysicalBehaviour physical, AudioSource audio, float distance)
         {
-            return distance <= 2f && IsRootName(physical.name) && IsRootName(audio.name);
+            if (!IsRootName(physical.name) || !IsRootName(audio.name))
+            {
+                return false;
+            }
+
+            // Root/Root sources without a PersonBehaviour are the game's
+            // generated self-audio artifact. Use the configured sensor radius,
+            // not a magic two-unit cutoff, so nearby self audio cannot reappear
+            // just beyond the old boundary.
+            return physical.GetComponentInParent<PersonBehaviour>() == null && distance <= visionRadius;
         }
 
         private static bool IsRootName(string value)

@@ -216,7 +216,7 @@ internal static class Program
         detachedOwnAudio.isPlaying = true; detachedOwnPhysical.MainAudioSource = detachedOwnAudio; f.Limb.PhysicalBehaviour = detachedOwnPhysical;
         Physics2D.Hits = [detachedOwnPhysicalObject.AddComponent<Collider2D>()]; Equal(0, f.Adapter.Read().Sound);
         var generatedRoot = new GameObject("Root"); var generatedPhysical = generatedRoot.AddComponent<PhysicalBehaviour>(); var generatedAudio = generatedRoot.AddComponent<AudioSource>();
-        generatedAudio.isPlaying = true; generatedPhysical.MainAudioSource = generatedAudio; var generatedCollider = generatedRoot.AddComponent<Collider2D>(); generatedCollider.Surface = new Vector2(.37f, 0);
+        generatedAudio.isPlaying = true; generatedPhysical.MainAudioSource = generatedAudio; var generatedCollider = generatedRoot.AddComponent<Collider2D>(); generatedCollider.Surface = new Vector2(2.14f, 0);
         Physics2D.Hits = [generatedCollider]; Equal(0, f.Adapter.Read().Sound); Equal("SENSING", f.Adapter.LiveState);
     }
     private static void Impacts()
