@@ -25,6 +25,13 @@ namespace Mod
             asset.SetPopulation(name, ids);
         }
 
+        internal void SetTestNeuronMetadata(int id, string superclass, string side)
+        {
+            var runtime = (RuntimeAsset)asset;
+            runtime.Superclasses[id] = superclass;
+            runtime.Sides[id] = side;
+        }
+
         internal void SetTestPending(int id, float value)
         {
             pending[id] = value;
@@ -50,6 +57,15 @@ namespace Mod
         internal long TestSimulationTick => simulationTick;
         internal long TestBacklogCursor => backlogCursor;
         internal int TestDroppedCount => droppedThisStep;
+        internal int TestRefractoryActiveCount
+        {
+            get
+            {
+                var count = 0;
+                foreach (var id in active) if (simulationTick + 1 < refractoryUntil[id]) count++;
+                return count;
+            }
+        }
         internal static string PayloadDigestForTest(byte[] data) => RuntimeAsset.ComputePayloadSha256(data);
         internal static byte[] DecodePayloadForTest(UnityEngine.Texture2D texture) => RuntimeAsset.ReadTexturePayload(texture);
         internal static void ReadAssetForTest(Stream stream)

@@ -15,5 +15,7 @@
     <Compile Include="../../Mod/ConnectomeRuntimeAssetReader.cs" Link="Mod/ConnectomeRuntimeAssetReader.cs" />
     <Compile Include="../../Mod/RuntimeTypes.cs" Link="Mod/RuntimeTypes.cs" />
     <Compile Include="../../Mod/RuntimeBrain.cs" Link="Mod/RuntimeBrain.cs" />
+    <Compile Include="../../Mod/BrainVisualization.cs" Link="Mod/BrainVisualization.cs" />
+    <Compile Include="../../Mod/TelemetryLayout.cs" Link="Mod/TelemetryLayout.cs" />
   </ItemGroup>
 </Project>

@@ -13,22 +13,35 @@ internal static class Program
             ("brain injury remains alive with matching signal value", BrainInjury),
             ("invalid health stops control without inventing death", InvalidHealth),
             ("destroyed and newly added inactive limbs", LimbLifecycle),
-            ("normal blood, gorse blood and knockout identities", Liquids),
+            ("all 41 stock liquid IDs have explicit exposure routes", Liquids),
+            ("unknown and invalid liquids cannot fabricate effects", UnknownAndInvalidLiquids),
+            ("liquid snapshots and native zombie state stay separate", LiquidSnapshots),
             ("acid pools produce an explicit acid signal", AcidPools),
             ("paralysis, breakage and limb loss stay distinct", LimbDamageCategories),
             ("blood baseline and vitality fallback", BloodAndVitality),
-        ("hypoxia and submersion remain distinct", Oxygen),
+            ("invalid limb health and blood remain unknown", InvalidLimbSamples),
+            ("hypoxia and submersion remain distinct", Oxygen),
+            ("invalid oxygen remains unknown without hypoxia", InvalidOxygen),
+            ("invalid consciousness suspends output without an unconscious claim", InvalidConsciousness),
+            ("circulation reports unknown when native flow is unavailable", InvalidCirculation),
         ("nearby temperatures provide bounded ambient heat and cold", AmbientTemperature),
         ("nearby lava provides heat and hazard", NearbyLava),
         ("external audio excludes own limbs, mute and invalid distances", Audio),
+        ("last-heard audio persists without stimulating stale sound", AudioHistory),
             ("visible external objects produce a vision proxy", Vision),
             ("vibration, proprioception and projectile channels stay distinct", AdditionalSenses),
             ("falling is distinct from walking and floor contact", Falling),
             ("contact impacts do not fabricate hearing", Impacts),
+            ("detached owned limbs remain excluded from collision signals", DetachedOwnCollisions),
+            ("control clock preserves rate and caps catch-up", ControlClock),
             ("regeneration ownership and cleanup", Chemistry),
             ("front-back hierarchy routes separate channels", SideRouting),
             ("missing grip and joint do not interrupt other limbs", OptionalControls),
+            ("broken limbs do not suppress healthy limb control", LocalLimbDamage),
+            ("dead limb health stops only its own actuator", LocalDeadLimb),
             ("finite boundary sanitization", FiniteInputs),
+            ("telemetry follows native readings independently of requests", NativeTelemetryTrace),
+            ("native motor requests use bounded walking and angular units", NativeMotorUnits),
             ("component disable clears commands and chemistry", Disable),
             ("never-activated cleanup preserves game state", NeverActivated),
             ("neutral chemistry preserves adrenaline", NeutralChemistry)
@@ -89,28 +102,83 @@ internal static class Program
     }
     private static void Liquids()
     {
+        var groups = new (string Kind, string[] Ids)[]
+        {
+            ("Blood", ["BLOOD"]),
+            ("Hazard", ["GORSE BLOOD", "OIL", "NITRO", "TRITIUM", "COOLANT", "REANIMATION AGENT", "ACID", "BONE EATING POISON", "INSTANT DEATH POISON", "FREEZE POISON", "OSTEOMORPHOSIS AGENT", "VESTIBULAR POISON", "MUSCLE POISON", "NUMBING POISON", "EXPLOSION POISON", "CRUSHING POISON", "DISTORTION POISON", "CIRCULATION POISON", "COMBUSTION AGENT", "TISSUE DECONSTRUCTION AGENT"]),
+            ("Sedative", ["KNOCKOUT POISON"]),
+            ("Stimulant", ["ADRENALINE"]),
+            ("Restorative", ["COAGULATION SERUM", "LIFE SERUM", "MENDING SERUM", "IMMORTALITY SERUM", "REGENERATION SERUM"]),
+            ("OtherExposure", ["ULTRA STRENGTH SERUM", "DURABILITY SERUM", "ENHANCING SERUM", "EXOTIC LIQUID", "INERT LIQUID", "BEVERAGE M04", "WATER BREATHING SERUM", "PAIN KILLER", "INERT PINK LIQUID", "MIRRORISING AGENT", "TRANSPARENCY AGENT", "MASS AGENT", "DEBUG LIQUID 001"])
+        };
+        var count = 0;
+        foreach (var (kind, ids) in groups)
+            foreach (var id in ids)
+            {
+                var f = new Fixture(); var c = f.Limb.CirculationBehaviour;
+                c.LiquidDistribution[new Liquid(id)] = new() { Raw = .4f };
+                var frame = f.Adapter.Read();
+                Equal(kind == "Blood" ? 0f : .4f, frame.LiquidExposure);
+                Equal(kind == "Hazard" ? .4f : 0f, frame.LiquidHazard);
+                Equal(kind == "Sedative" ? .4f : 0f, frame.LiquidSedation);
+                Equal(kind == "Stimulant" ? .4f : 0f, frame.LiquidStimulation);
+                Equal(kind == "Restorative" ? .4f : 0f, frame.LiquidHealing);
+                Equal(0f, frame.LiquidWater); Equal(0f, frame.Infection);
+                True(f.Adapter.LiveLiquidSummary.Contains(id + ": " + 40f.ToString("0.0") + "% (" + kind + ")"));
+                if (kind == "Sedative") Equal("SEDATIVE EXPOSURE", f.Adapter.LiveState);
+                c.LiquidDistribution.Clear();
+                frame = f.Adapter.Read(); Equal(0f, frame.LiquidExposure); Equal(0f, frame.LiquidHazard);
+                Equal(0f, frame.LiquidSedation); Equal(0f, frame.LiquidStimulation); Equal(0f, frame.LiquidHealing);
+                True(!f.Adapter.LiveLiquidSummary.Contains(id + ":"));
+                count++;
+            }
+        Equal(41, count);
+    }
+    private static void UnknownAndInvalidLiquids()
+    {
         var f = new Fixture(); var c = f.Limb.CirculationBehaviour;
-        c.LiquidDistribution[new Liquid("BLOOD")] = new() { Raw = 1 };
-        var frame = f.Adapter.Read(); Equal(0, frame.LiquidExposure); Equal(0, frame.LiquidHazard);
-        c.LiquidDistribution.Clear(); c.LiquidDistribution[new Liquid("GORSE BLOOD")] = new() { Raw = .4f };
-        frame = f.Adapter.Read(); Equal(.4f, frame.LiquidExposure); Equal(.4f, frame.LiquidHazard);
-        c.LiquidDistribution.Clear(); c.LiquidDistribution[new Liquid("KNOCKOUT POISON")] = new() { Raw = .7f };
-        frame = f.Adapter.Read(); Equal(.7f, frame.LiquidSedation); Equal(0, frame.LiquidHazard); Equal("SEDATION", f.Adapter.LiveSignal);
-        c.LiquidDistribution[new Liquid("ACID")] = new() { Raw = .3f }; Equal(.3f, f.Adapter.Read().LiquidHazard);
-        c.LiquidDistribution.Clear(); frame = f.Adapter.Read(); Equal(0, frame.LiquidSedation); Equal(0, frame.LiquidHazard);
-        foreach (var identity in new[] { "REANIMATION AGENT", "TISSUE DECONSTRUCTION AGENT", "NITRO", "GASOLINE", "COOLANT", "TRITIUM" })
+        foreach (var liquid in new[] { new Liquid("MOD ACID HEALING WATER"), new Liquid("Human blood"), new Liquid("acid"), new Liquid(null) { DisplayName = "ACID" } })
         {
-            c.LiquidDistribution[new Liquid(identity)] = new() { Raw = .4f };
-            Equal(.4f, f.Adapter.Read().LiquidHazard);
-            c.LiquidDistribution.Clear();
+            c.LiquidDistribution.Clear(); c.LiquidDistribution[liquid] = new() { Raw = .4f };
+            var frame = f.Adapter.Read(); Equal(.4f, frame.LiquidExposure);
+            Equal(0f, frame.LiquidHazard); Equal(0f, frame.LiquidHealing); Equal(0f, frame.LiquidWater);
+            Equal(0f, frame.LiquidSedation); Equal(0f, frame.LiquidStimulation);
+            True(f.Adapter.LiveLiquidSummary.Contains("UnknownExposure"));
         }
-        foreach (var identity in new[] { "LIFE SERUM", "MENDING SERUM", "COAGULATION SERUM", "ENHANCING SERUM", "ULTRA STRENGTH SERUM" })
+        c.LiquidDistribution.Clear(); var acid = new Liquid("ACID");
+        foreach (var bad in new[] { float.NaN, float.PositiveInfinity, float.NegativeInfinity, -1f })
         {
-            c.LiquidDistribution[new Liquid(identity)] = new() { Raw = .4f };
-            frame = f.Adapter.Read();
-            True(frame.LiquidHealing > .0f || frame.LiquidStimulation > .0f);
-            c.LiquidDistribution.Clear();
+            c.TotalLiquidAmount = bad; c.LiquidDistribution[acid] = new() { Raw = .4f };
+            var frame = f.Adapter.Read(); Equal(0f, frame.LiquidExposure); Equal(0f, frame.LiquidHazard);
+            True(f.Adapter.LiveLiquidSummary.Contains("Incomplete"));
+            c.TotalLiquidAmount = 1f; c.LiquidDistribution[acid].Raw = bad;
+            frame = f.Adapter.Read(); Equal(0f, frame.LiquidExposure); Equal(0f, frame.LiquidHazard);
         }
+        c.LiquidDistribution[acid] = null;
+        Equal(0f, f.Adapter.Read().LiquidHazard);
+        c.TotalLiquidAmount = 0f; c.LiquidDistribution[acid] = new() { Raw = .4f };
+        Equal(0f, f.Adapter.Read().LiquidHazard);
+        c.LiquidDistribution = null;
+        Equal(0f, f.Adapter.Read().LiquidExposure);
+        True(f.Adapter.LiveLiquidSummary.Contains("unknown: no readable circulation"));
+    }
+    private static void LiquidSnapshots()
+    {
+        var f = new Fixture(); var c = f.Limb.CirculationBehaviour;
+        var other = Fixture.AddLimb(f.Root, "FootFront");
+        var agent = new Liquid("REANIMATION AGENT");
+        c.TotalLiquidAmount = 2f;
+        c.LiquidDistribution[agent] = new() { Raw = .5f };
+        c.LiquidDistribution[new Liquid("BLOOD")] = new() { Raw = 1.5f };
+        other.CirculationBehaviour.LiquidDistribution[agent] = new() { Raw = .5f };
+        var frame = f.Adapter.Read(); Equal(.5f, frame.LiquidHazard); Equal(0f, frame.Infection);
+        True(f.Adapter.LiveLiquidSummary.Contains("REANIMATION AGENT: " + 50f.ToString("0.0") + "%"));
+        c.LiquidDistribution.Clear(); other.CirculationBehaviour.LiquidDistribution.Clear();
+        f.Limb.IsZombie = true;
+        frame = f.Adapter.Read(); Equal(0f, frame.LiquidHazard); Equal(1f, frame.Infection);
+        True(f.Adapter.LiveInjurySummary.Contains("zombie(native)=" + 1f.ToString("0.00")));
+        Equal("NATIVE ZOMBIE STATE", f.Adapter.LiveSignal);
+        f.Adapter.Suspend(); True(f.Adapter.LiveLiquidSummary.Contains("not sampled"));
     }
     private static void ContextMenuPoseActions()
     {
@@ -143,10 +211,28 @@ internal static class Program
         frame = f.Adapter.Read();
         Equal(.4f, frame.Vitality);
     }
+    private static void InvalidLimbSamples()
+    {
+        var f = new Fixture();
+        f.Adapter.Read(); // Establish the observed native blood baseline.
+        f.Limb.CirculationBehaviour.BloodAmount = float.NaN;
+        var frame = f.Adapter.Read(); True(!frame.BloodValid); Equal(0f, frame.Blood); True(f.Adapter.LiveInjurySummary.Contains("blood-loss=unknown"));
+
+        f = new Fixture(); f.Limb.Health = float.NaN;
+        frame = f.Adapter.Read(); True(!frame.DamageValid); Equal(0f, frame.Damage); True(!frame.VitalityValid); Equal(0f, frame.Vitality);
+        True(f.Adapter.LiveBodySummary.Contains("damage=unknown")); True(f.Adapter.LiveInjurySummary.Contains("vitality=unknown"));
+        f.Adapter.Apply(Moving, false); Equal(0f, f.Limb.MotorSpeed); True(f.Adapter.LiveLimbSummary.Contains("LowerArmFront:invalid-health"));
+
+        var healthy = Fixture.AddLimb(f.Root, "LowerArmBack"); f.Person.Limbs = [f.Limb, healthy]; healthy.IsDismembered = true;
+        frame = f.Adapter.Read(); Equal(.5f, frame.LimbLoss); True(frame.DamageValid); True(frame.VitalityValid);
+    }
     private static void AcidPools()
     {
         var f = new Fixture(); var acidObject = new GameObject("Acid Spider Pool"); var acid = acidObject.AddComponent<AcidPoolBehaviour>(); acid.AcidProgress = .8f; acid.PainIntensity = .2f;
-        Physics2D.Hits = [acidObject.AddComponent<Collider2D>()];
+        var collider = acidObject.AddComponent<Collider2D>(); collider.Surface = new Vector2(2f, 0f);
+        Physics2D.Hits = [collider];
+        Equal(0f, f.Adapter.Read().AcidExposure);
+        collider.Surface = new Vector2(.05f, 0f);
         var frame = f.Adapter.Read(); Equal(.8f, frame.AcidExposure); Equal("ACID", f.Adapter.LiveSignal); Equal(.8f, f.Adapter.LiveSignalValue);
     }
     private static void LimbDamageCategories()
@@ -169,6 +255,36 @@ internal static class Program
         var f = new Fixture(); f.Person.OxygenLevel = .2f;
         Equal(0, f.Adapter.Read().SubmergedHypoxia); Equal("LOW OXYGEN", f.Adapter.LiveSignal);
         f.Limb.PhysicalBehaviour.IsUnderWater = true; Equal(.8f, f.Adapter.Read().SubmergedHypoxia); Equal("SUBMERGED HYPOXIA", f.Adapter.LiveSignal);
+    }
+    private static void InvalidOxygen()
+    {
+        foreach (var bad in new[] { float.NaN, float.PositiveInfinity, float.NegativeInfinity })
+        {
+            var f = new Fixture(); f.Person.OxygenLevel = bad; f.Limb.PhysicalBehaviour.IsUnderWater = true;
+            var frame = f.Adapter.Read(); True(!frame.OxygenValid); Equal(0f, frame.Oxygen); Equal(0f, frame.SubmergedHypoxia);
+            True(f.Adapter.LiveBodySummary.Contains("oxygen=unknown")); True(f.Adapter.LiveSignal != "LOW OXYGEN" && f.Adapter.LiveSignal != "SUBMERGED HYPOXIA");
+        }
+    }
+    private static void InvalidConsciousness()
+    {
+        foreach (var bad in new[] { float.NaN, float.PositiveInfinity, float.NegativeInfinity })
+        {
+            var f = new Fixture(); f.Person.Consciousness = bad; f.Adapter.Read();
+            True(!f.Adapter.Read().ConsciousnessValid); Equal(0f, f.Adapter.Read().Unconscious); Equal("DATA LIMITED", f.Adapter.LiveState);
+            True(f.Adapter.LiveBodySummary.Contains("conscious=unknown") && f.Adapter.LiveBodySummary.Contains("unconscious=unknown"));
+            f.Adapter.Apply(Moving, true); Equal(0f, f.Person.DesiredWalkingDirection); Equal(0f, f.Limb.MotorSpeed); True(!f.Limb.GripBehaviour.isHolding);
+        }
+    }
+    private static void InvalidCirculation()
+    {
+        var f = new Fixture(); f.Limb.CirculationBehaviour = null;
+        var frame = f.Adapter.Read(); True(!frame.CirculationValid); Equal(0f, frame.Circulation); True(f.Adapter.LiveInjurySummary.Contains("circulation=unknown"));
+
+        f = new Fixture(); f.Limb.CirculationBehaviour.BloodFlow = float.NaN;
+        frame = f.Adapter.Read(); True(!frame.CirculationValid); True(f.Adapter.LiveInjurySummary.Contains("circulation=unknown"));
+
+        f = new Fixture(); f.Limb.CirculationBehaviour.HasBloodFlow = false; f.Limb.CirculationBehaviour.BloodFlow = float.NaN;
+        frame = f.Adapter.Read(); True(frame.CirculationValid); Equal(0f, frame.Circulation);
     }
     private static void AmbientTemperature()
     {
@@ -219,6 +335,27 @@ internal static class Program
         generatedAudio.isPlaying = true; generatedPhysical.MainAudioSource = generatedAudio; var generatedCollider = generatedRoot.AddComponent<Collider2D>(); generatedCollider.Surface = new Vector2(2.14f, 0);
         Physics2D.Hits = [generatedCollider]; Equal(0, f.Adapter.Read().Sound); Equal("SENSING", f.Adapter.LiveState);
     }
+    private static void AudioHistory()
+    {
+        var f = new Fixture();
+        True(f.Adapter.LiveAudioSummary.Contains("No external audio detected yet"));
+        var other = SoundObject(out var audio); Physics2D.Hits = [other];
+        Time.realtimeSinceStartup = 10f;
+        True(f.Adapter.Read().Sound > 0f);
+        audio.isPlaying = false;
+        Time.realtimeSinceStartup = 15f;
+        Equal(0f, f.Adapter.Read().Sound);
+        True(f.Adapter.LiveAudioSummary.Contains("LATEST SAMPLE): none"));
+        True(f.Adapter.LiveAudioSummary.Contains("external object Radio"));
+        True(f.Adapter.LiveAudioSummary.Contains("5.0 seconds ago"));
+        Time.realtimeSinceStartup = 20f; // UI time advances even without a new physics sample.
+        True(f.Adapter.LiveAudioSummary.Contains("10.0 seconds ago"));
+        audio.isPlaying = true;
+        True(f.Adapter.Read().Sound > 0f);
+        True(f.Adapter.LiveAudioSummary.Contains("0.0 seconds ago"));
+        Time.realtimeSinceStartup = 0f;
+    }
+
     private static void Impacts()
     {
         var f = new Fixture(); var probe = f.Limb.GetComponent<PersonConnectomeLimbProbe>();
@@ -229,6 +366,74 @@ internal static class Program
         for (var i = 0; i < 30; i++) frame = f.Adapter.Read(); True(frame.Impact < .001f);
         var soft = new Fixture(); soft.Adapter.RegisterCollision(2); frame = soft.Adapter.Read(); Equal(.1f, frame.Impact); Equal("CONTACT", soft.Adapter.LiveSignal); Equal("SENSING", soft.Adapter.LiveState);
     }
+    private static void DetachedOwnCollisions()
+    {
+        var f = new Fixture();
+        var other = Fixture.AddLimb(f.Root, "LowerArmBack");
+        f.Person.Limbs = [f.Limb, other];
+        f.Adapter.Read();
+        other.transform.SetParent(null);
+        var collider = other.gameObject.AddComponent<Collider2D>();
+        other.gameObject.AddComponent<ProjectileBehaviour>();
+        var probe = f.Limb.GetComponent<PersonConnectomeLimbProbe>();
+        var projectileReports = 0;
+        probe.ReportProjectile = _ => projectileReports++;
+        var callback = typeof(PersonConnectomeLimbProbe).GetMethod("OnCollisionEnter2D", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        callback.Invoke(probe, [new Collision2D { collider = collider, relativeVelocity = new Vector2(20, 0) }]);
+        Equal(0, f.Adapter.Read().Impact);
+        Equal(0, projectileReports);
+        f.Adapter.Dispose();
+        True(probe.IsOwned == null && probe.Report == null && probe.ReportProjectile == null);
+    }
+
+    private static void LocalDeadLimb()
+    {
+        var f = new Fixture();
+        var healthy = Fixture.AddLimb(f.Root, "LowerArmBack");
+        f.Person.Limbs = [f.Limb, healthy];
+        f.Limb.Health = 0f;
+        f.Adapter.Read();
+        f.Adapter.Apply(Moving, true);
+        Equal(0f, f.Limb.MotorSpeed);
+        True(healthy.MotorSpeed != 0f);
+        True(!f.Adapter.IsTerminal);
+        f.Limb.Health = 100f;
+        f.Limb.InitialHealth = 0f;
+        var frame = f.Adapter.Read();
+        Equal(0f, frame.Damage);
+        f.Adapter.Apply(Moving, true);
+        Equal(0f, f.Limb.MotorSpeed);
+        healthy.InitialHealth = 0f;
+        frame = f.Adapter.Read();
+        True(!frame.DamageValid && !frame.VitalityValid);
+    }
+
+    private static void ControlClock()
+    {
+        var f = new Fixture();
+        var controller = f.Root.AddComponent<PersonConnectomeController>();
+        var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        var type = typeof(PersonConnectomeController);
+        type.GetMethod("Awake", flags).Invoke(controller, null);
+        var brain = (ConnectomeBrain)type.GetField("brain", flags).GetValue(controller);
+        var tick = type.GetMethod("FixedUpdate", flags);
+        var previousDelta = Time.fixedDeltaTime;
+        try
+        {
+            Time.fixedDeltaTime = .02f;
+            for (var i = 0; i < 50; i++) tick.Invoke(controller, null);
+            Equal(20, brain.StepCount);
+            Time.fixedDeltaTime = .26f;
+            tick.Invoke(controller, null);
+            Equal(21, brain.StepCount);
+            Equal(.26f, brain.LastElapsed);
+            Time.fixedDeltaTime = .02f;
+            tick.Invoke(controller, null);
+            Equal(21, brain.StepCount);
+        }
+        finally { Time.fixedDeltaTime = previousDelta; }
+    }
+
     private static void Vision()
     {
         var f = new Fixture();
@@ -306,11 +511,60 @@ internal static class Program
         var f = new Fixture(); f.Limb.GripBehaviour = null; f.Limb.HasJoint = false;
         var foot = Fixture.AddLimb(f.Root, "FootFront"); f.Adapter.Read(); f.Adapter.Apply(Moving, false); True(foot.MotorSpeed > 0); Equal(1, f.Person.DesiredWalkingDirection); True(f.Adapter.LiveLimbSummary.Contains("LowerArmFront:no-joint"));
     }
+    private static void LocalLimbDamage()
+    {
+        var f = new Fixture(); var healthy = Fixture.AddLimb(f.Root, "LowerArmBack"); f.Person.Limbs = [f.Limb, healthy];
+        f.Limb.Broken = true; f.Adapter.Read(); f.Adapter.Apply(Moving, false);
+        Equal(0f, f.Limb.MotorSpeed); True(healthy.MotorSpeed != 0f);
+    }
+    private static void NativeTelemetryTrace()
+    {
+        var f = new Fixture();
+        f.Person.AverageHealth = .75f; f.Person.PainLevel = .2f;
+        f.Person.OxygenLevel = .6f; f.Person.Consciousness = .9f;
+        f.Person.AverageSpeed = 0f; f.Person.AngleOffset = 18f;
+        f.Person.AdrenalineLevel = 2.5f;
+        var frame = f.Adapter.Read();
+        Equal(.75f, frame.Health); Equal(.2f, frame.Pain); Equal(.6f, frame.Oxygen);
+        Equal(.9f, frame.Consciousness); Equal(.1f, frame.Unconscious);
+        Equal(0f, frame.Velocity); Equal(.1f, frame.Rotation);
+        Equal(1f, frame.Adrenaline);
+        True(f.Adapter.LiveBodySummary.Contains("adrenaline(raw)=" + 2.5f.ToString("0.00")));
+        f.Adapter.Apply(new MotorCommand { Walk = .7f }, false);
+        Equal(1f, f.Person.DesiredWalkingDirection);
+        Equal(0f, f.Adapter.Read().Velocity);
+        f.Person.AverageSpeed = 2f;
+        Equal(.2f, f.Adapter.Read().Velocity);
+    }
+
+    private static void NativeMotorUnits()
+    {
+        var f = new Fixture(); f.Adapter.Read();
+        f.Adapter.Apply(new MotorCommand { Walk = -.46f, RightArm = .5f }, false);
+        Equal(-.92f, f.Person.DesiredWalkingDirection);
+        Equal(3.3f, f.Limb.MotorSpeed); // 0.5 * 30 degrees/s, blended by native 0.22 influence.
+        f.Limb.MotorSpeed = 0f;
+        f.Adapter.Apply(new MotorCommand { Walk = 10f, RightArm = 10f }, false, 10000f, 10000f);
+        Equal(1f, f.Person.DesiredWalkingDirection);
+        Equal(26.4f, f.Limb.MotorSpeed); // Configured target is capped at 120 degrees/s.
+        f.Limb.MotorSpeed = 0f;
+        f.Adapter.Apply(new MotorCommand { Walk = -.46f, RightArm = .5f }, false, 1f, 1f);
+        Equal(-.46f, f.Person.DesiredWalkingDirection); Equal(.11f, f.Limb.MotorSpeed);
+        foreach (var invalid in new[] { float.NaN, float.PositiveInfinity, float.NegativeInfinity })
+        {
+            f.Limb.MotorSpeed = 10f;
+            f.Adapter.Apply(new MotorCommand { Walk = 1f, RightArm = 1f }, false, invalid, invalid);
+            Equal(0f, f.Person.DesiredWalkingDirection); Equal(0f, f.Limb.MotorSpeed);
+            True(f.Adapter.LiveLimbSummary.Contains("invalid (stopped)"));
+        }
+    }
+
     private static void FiniteInputs()
     {
         var f = new Fixture(); f.Adapter.RegisterCollision(float.NaN); f.Adapter.RegisterCollision(float.PositiveInfinity);
-        f.Person.PainLevel = float.NaN; f.Person.AverageSpeed = float.PositiveInfinity;
-        var frame = f.Adapter.Read(); Equal(0, frame.Impact); Equal(0, frame.Pain); Equal(0, frame.Velocity);
+        f.Person.PainLevel = float.NaN; f.Person.AverageSpeed = float.PositiveInfinity; f.Person.BrainDamagedTime = float.NegativeInfinity;
+        f.Limb.BodyTemperature = float.PositiveInfinity; f.Limb.InternalTemperature = float.NegativeInfinity; f.Limb.PhysicalBehaviour.Temperature = float.NaN;
+        var frame = f.Adapter.Read(); Equal(0, frame.Impact); Equal(0, frame.Pain); Equal(0, frame.Velocity); Equal(0, frame.Heat); Equal(0, frame.Cold); Equal(0, frame.BrainDamage);
         f.Adapter.Apply(new MotorCommand { Walk = float.NaN, RightArm = float.NaN, RightGrip = float.NaN }, true); Equal(0, f.Person.DesiredWalkingDirection); Equal(0, f.Limb.MotorSpeed); True(!f.Limb.GripBehaviour.isHolding);
     }
     private static void NeutralChemistry()
@@ -335,6 +589,12 @@ internal static class Program
         type.GetField("adapter", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).SetValue(controller, f.Adapter);
         type.GetMethod("OnDisable", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(controller, null);
         Equal(0, f.Person.DesiredWalkingDirection); Equal(0, f.Limb.MotorSpeed); Equal(0, f.Limb.RegenerationSpeed);
+        True(!f.Adapter.HasSample);
+        True(f.Adapter.LiveState == "INITIALIZING");
+        type.GetMethod("OnEnable", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(controller, null);
+        True(!f.Adapter.HasSample);
+        f.Adapter.Read();
+        True(f.Adapter.HasSample);
     }
     private sealed class Fixture
     {

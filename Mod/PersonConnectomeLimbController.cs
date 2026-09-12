@@ -56,7 +56,7 @@ namespace Mod
             }
         }
 
-        public bool Apply(MotorCommand command)
+        public bool Apply(MotorCommand command, float degreesPerSecond = 30f)
         {
             if (limb == null || !CanDrive)
             {
@@ -65,12 +65,15 @@ namespace Mod
             }
 
             var speed = ResolveSpeed(command);
-            if (float.IsNaN(speed) || float.IsInfinity(speed))
+            if (float.IsNaN(speed) || float.IsInfinity(speed) || float.IsNaN(degreesPerSecond) || float.IsInfinity(degreesPerSecond))
             {
                 Stop();
                 return false;
             }
-            if (limb.HasJoint) limb.InfluenceMotorSpeed(Mathf.Clamp(speed, -1f, 1f), ResolveInfluence());
+            // InfluenceMotorSpeed consumes JointMotor2D.motorSpeed (degrees/s),
+            // not a normalized amplitude. Strength and torque remain native.
+            var targetSpeed = Mathf.Clamp(speed, -1f, 1f) * Mathf.Clamp(degreesPerSecond, 0f, 120f);
+            if (limb.HasJoint) limb.InfluenceMotorSpeed(targetSpeed, ResolveInfluence());
             ApplyGrip(command);
             return limb.HasJoint;
         }
@@ -277,6 +280,8 @@ namespace Mod
             if (!limb.HasJoint) return "no-joint";
             if (limb.Broken || limb.CurrentlyShattered != 0) return "broken";
             if (limb.IsDismembered) return "dismembered";
+            if (!IsFinite(limb.Health) || !IsFinite(limb.InitialHealth) || limb.InitialHealth <= 0f) return "invalid-health";
+            if (limb.Health <= 0f) return "dead-limb";
 
             var physical = limb.PhysicalBehaviour;
             if (physical != null && physical.isDisintegrated) return "disintegrated";
@@ -288,6 +293,8 @@ namespace Mod
         }
 
         private static float FiniteUnit(float value) => float.IsNaN(value) || float.IsInfinity(value) ? 0f : Mathf.Clamp01(value);
+
+        private static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
 
         // Undo only our own last assignment. A newer game/other-mod write wins.
         private sealed class OwnedRegenerationRate

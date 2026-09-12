@@ -42,7 +42,8 @@ function Get-SteamRoots {
         try {
             $properties = Get-ItemProperty -LiteralPath $registryKey -ErrorAction Stop
             foreach ($propertyName in @('InstallPath', 'SteamPath')) {
-                Add-UniquePath $roots ([string]$properties.$propertyName)
+                $property = $properties.PSObject.Properties[$propertyName]
+                if ($null -ne $property) { Add-UniquePath $roots ([string]$property.Value) }
             }
         } catch {
             # Registry keys are optional; Steam may be installed through another view.
@@ -53,7 +54,7 @@ function Get-SteamRoots {
         [Environment]::GetFolderPath('ProgramFilesX86'),
         [Environment]::GetFolderPath('ProgramFiles')
     )) {
-        Add-UniquePath $roots (Join-Path $programFilesRoot 'Steam')
+        if (-not [String]::IsNullOrWhiteSpace($programFilesRoot)) { Add-UniquePath $roots (Join-Path $programFilesRoot 'Steam') }
     }
 
     return $roots.ToArray()
@@ -77,6 +78,9 @@ function Get-SteamLibraryPaths {
         try {
             $vdf = [IO.File]::ReadAllText($libraryFile)
             foreach ($match in [regex]::Matches($vdf, '(?im)"path"\s+"((?:\\.|[^"])*)"')) {
+                Add-UniquePath $libraries (ConvertFrom-SteamVdfPath $match.Groups[1].Value)
+            }
+            foreach ($match in [regex]::Matches($vdf, '(?im)"\d+"\s+"((?:\\.|[^"])*)"')) {
                 Add-UniquePath $libraries (ConvertFrom-SteamVdfPath $match.Groups[1].Value)
             }
         } catch {
@@ -129,7 +133,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $managedDirectory 'Assembly-CSharp.d
     throw "People Playground references were not found under '$managedDirectory'. Pass -GameInstall with the game's install directory."
 }
 
-if (-not $NoBuild) {
+if (-not $NoBuild -and -not $WhatIfPreference) {
     Write-Host "Building the mod against the installed People Playground references..."
     & dotnet build $modProject --configuration $Configuration "-p:PeoplePlaygroundInstall=$GameInstall"
     if ($LASTEXITCODE -ne 0) {
@@ -141,6 +145,7 @@ $gitCommit = (& git -C $repositoryRoot rev-parse --short=12 HEAD).Trim()
 if ($LASTEXITCODE -ne 0 -or [String]::IsNullOrWhiteSpace($gitCommit)) {
     throw "Could not determine the current Git commit for the deployed build."
 }
+elseif ($WhatIfPreference -and -not $NoBuild) { Write-Host "WhatIf: would build the mod with PeoplePlaygroundInstall=$GameInstall" }
 
 $manifest = Get-Content -LiteralPath $manifestSourcePath -Raw | ConvertFrom-Json
 $readmeContent = Get-Content -LiteralPath $readmeSourcePath -Raw

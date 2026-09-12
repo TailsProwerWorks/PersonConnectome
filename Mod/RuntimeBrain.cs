@@ -47,7 +47,11 @@ namespace Mod
         private float injuryDrive, hazardDrive, motionDrive, arousalDrive;
         private const int MaxActivePerStep = 24000;
         private const int RefractoryTicks = 5;
-        private const int WaterStrokePeriodTicks = 32;
+        private const float DefaultStepSeconds = .05f;
+        // Requests are consumed by the game's fixed-step motor adapter.  Keeping
+        // their change rate bounded avoids alternating full-strength joint input
+        // on consecutive neural ticks while retaining a responsive control loop.
+        private const float MotorChangePerSecond = 8f;
 
         private ConnectomeBrain(IRuntimeConnectomeAsset asset)
         {
@@ -70,10 +74,11 @@ namespace Mod
                     return "NEURAL: STOPPED\n  queued=0  processed=0  dropped=0  fired=0";
                 }
 
-                var scheduler = droppedThisStep > 0 ? "REALTIME" : "STEADY";
+                var scheduler = droppedThisStep > 0 ? "OVERLOADED" : "STEADY";
                 return "NEURAL:\n  input=" + Format(LastSensoryDrive) + "  queued=" + pending.Count + "  active=" + active.Count +
                     "\n  processed=" + processedThisStep + "/" + MaxActivePerStep + "  dropped=" + droppedThisStep +
-                    "\n  fired=" + fired.Count + "  scheduler=" + scheduler;
+                    "\n  fired=" + fired.Count + "  scheduler=" + scheduler +
+                    (droppedThisStep > 0 ? "\nWork limit reached; this is not a CPU-time measurement." : "");
             }
         }
 
@@ -88,9 +93,33 @@ namespace Mod
             "\n  head=" + Format(lastCommand.Head) + "  core=" + Format(lastCommand.Core) +
             "  grips=" + Format(lastCommand.LeftGrip) + "/" + Format(lastCommand.RightGrip);
 
-        public MotorCommand Step(SensoryFrame sensory)
+        public long SimulationTick => simulationTick;
+        public int FiredCount => fired.Count;
+        public int ProcessedCount => processedThisStep;
+        public int DroppedCount => droppedThisStep;
+        public int PendingCount => pending.Count;
+        public int ActiveCount => active.Count;
+        public bool IsStopped => stopped;
+        public MotorCommand LastCommand => lastCommand;
+
+        public bool DidFire(int neuronId) => neuronId >= 0 && neuronId < potential.Length && firedIds.Contains(neuronId);
+
+        public int PopulationCount(string name) => string.IsNullOrEmpty(name) ? 0 : asset.Population(name).Count;
+
+        public int PopulationFiredCount(string name)
         {
-            if (!sensory.Alive)
+            if (string.IsNullOrEmpty(name)) return 0;
+            var ids = asset.Population(name);
+            var count = 0;
+            for (var i = 0; i < ids.Count; i++) if (firedIds.Contains(ids[i])) count++;
+            return count;
+        }
+
+        public MotorCommand Step(SensoryFrame sensory) => Step(sensory, DefaultStepSeconds);
+
+        public MotorCommand Step(SensoryFrame sensory, float elapsedSeconds)
+        {
+            if (sensory.BrainDead || !sensory.Alive)
             {
                 return Stop();
             }
@@ -115,10 +144,17 @@ namespace Mod
             DriveSensoryPopulations(sensory);
 
             ProcessActiveNeurons(nextPending, nextActive);
+            // A target can fire after an earlier source queued it this tick.
+            // Clear only those fired IDs, rather than scanning the whole queue.
+            foreach (var id in fired)
+            {
+                nextPending.Remove(id);
+                nextActive.Remove(id);
+            }
             SwapPendingState();
             priority.Clear();
 
-            return BuildMotorCommand(sensory);
+            return BuildMotorCommand(sensory, elapsedSeconds);
         }
 
         private MotorCommand Stop()
@@ -143,6 +179,8 @@ namespace Mod
 
             LastSensoryDrive = 0f;
             processedThisStep = 0;
+            droppedThisStep = 0;
+            injuryDrive = hazardDrive = motionDrive = arousalDrive = 0f;
             lastCommand = new MotorCommand();
             return lastCommand;
         }
@@ -172,40 +210,43 @@ namespace Mod
             foreach (var id in priority)
             {
                 if (budget == 0) break;
-                ProcessActiveNeuron(id, next, nextActiveState);
+                if (ProcessActiveNeuron(id, next, nextActiveState)) budget--;
                 scheduled.Add(id);
-                budget--;
             }
 
-            var generalProcessed = 0;
+            var examined = 0;
             for (var index = 0; index < orderedActive.Count && budget > 0; index++)
             {
                 var id = orderedActive[(start + index) % orderedActive.Count];
+                examined++;
                 if (priority.Contains(id)) continue;
-                ProcessActiveNeuron(id, next, nextActiveState);
+                if (ProcessActiveNeuron(id, next, nextActiveState)) budget--;
                 scheduled.Add(id);
-                generalProcessed++;
-                budget--;
             }
 
             foreach (var id in orderedActive)
             {
-                if (!scheduled.Contains(id)) DropNeuron(id);
+                if (!scheduled.Contains(id))
+                {
+                    if (simulationTick < refractoryUntil[id]) potential[id] = 0f;
+                    else DropNeuron(id);
+                }
             }
 
-            backlogCursor = (start + generalProcessed) % orderedActive.Count;
+            backlogCursor = (start + examined) % orderedActive.Count;
         }
 
-        private void ProcessActiveNeuron(int id, Dictionary<int, float> next, HashSet<int> nextActiveState)
+        private bool ProcessActiveNeuron(int id, Dictionary<int, float> next, HashSet<int> nextActiveState)
         {
-            processedThisStep++;
             if (simulationTick < refractoryUntil[id])
             {
                 potential[id] = 0f;
-                return;
+                return false;
             }
 
+            processedThisStep++;
             ProcessNeuron(id, next, nextActiveState);
+            return true;
         }
 
         private void DropNeuron(int id)
@@ -218,10 +259,10 @@ namespace Mod
         {
             var input = pending.TryGetValue(id, out var queued) ? queued : 0f;
             var updatedPotential = Clamp(potential[id] * .92f + Clamp(input, -4f, 4f), -8f, 8f);
-            if (Math.Abs(updatedPotential) > .001f) nextActiveState.Add(id);
             if (updatedPotential < 1f)
             {
                 potential[id] = updatedPotential;
+                if (Math.Abs(updatedPotential) > .001f) nextActiveState.Add(id);
                 return;
             }
 
@@ -239,6 +280,9 @@ namespace Mod
             for (var edge = start; edge < end; edge++)
             {
                 var target = asset.TargetAt(edge);
+                // Propagated input arrives on the next tick. Allow input on
+                // the exact recovery tick; earlier input cannot be integrated.
+                if (simulationTick + 1 < refractoryUntil[target]) continue;
                 MergePending(next, target, asset.WeightAt(edge) * asset.SignAt(source));
                 nextActiveState.Add(target);
             }
@@ -263,70 +307,71 @@ namespace Mod
             nextActive.Clear();
         }
 
-        private MotorCommand BuildMotorCommand(SensoryFrame sensory)
+        private MotorCommand BuildMotorCommand(SensoryFrame sensory, float elapsedSeconds)
         {
-            if (sensory.UnderWater > .5f && (sensory.Touch <= .5f || sensory.SubmergedHypoxia > .05f))
-            {
-                return BuildWaterSurvivalCommand(sensory);
-            }
-
             var danger = IsDangerous(sensory);
             var left = FiredOnSide("L");
             var right = FiredOnSide("R");
             var center = FiredOnSide("M");
             var sideBias = right - left;
-            var neuralWalk = Clamp(sideBias + (Fired("type:DNp09") ? .35f : 0f) - (Fired("type:MDN") ? .5f : 0f), -1f, 1f);
-            var walk = danger ? EscapeDirection(sensory.NearbyDirection) : neuralWalk;
-            var armSwing = Signed((left - right) * .75f + walk * .35f + center * .15f);
-            var reach = Fired("type:MN9") && !danger ? sensory.Nearby : 0f;
-            lastCommand = new MotorCommand
+            var hasMotorActivity = left > 0f || right > 0f || center > 0f;
+            var neuralWalk = hasMotorActivity ? Clamp(sideBias + (FiredMotorPopulation("type:DNp09") ? .35f : 0f) - (FiredMotorPopulation("type:MDN") ? .5f : 0f), -1f, 1f) : 0f;
+            var freeze = Unit(sensory.Unconscious + sensory.LiquidSedation);
+            var movementPermitted = IsMovementPermitted(sensory, freeze);
+            var walk = movementPermitted ? neuralWalk : 0f;
+            var motorSideBias = movementPermitted ? sideBias : 0f;
+            var motorCenter = movementPermitted ? center : 0f;
+            var armSwing = Signed((left - right) * .75f * (movementPermitted ? 1f : 0f) + walk * .35f + motorCenter * .15f);
+            var reach = movementPermitted && FiredMotorPopulation("type:MN9") && !danger ? Unit(sensory.Nearby) : 0f;
+            var requested = new MotorCommand
             {
                 Walk = walk,
                 LeftArm = Signed(-armSwing),
                 RightArm = armSwing,
-                LeftLeg = Signed(walk - sideBias * .2f),
-                RightLeg = Signed(walk + sideBias * .2f),
-                Core = Signed(walk * .6f + center * .15f),
-                Head = Signed(sideBias * .5f),
+                LeftLeg = Signed(walk - motorSideBias * .2f),
+                RightLeg = Signed(walk + motorSideBias * .2f),
+                Core = Signed(walk * .6f + motorCenter * .15f),
+                Head = Signed(motorSideBias * .5f),
                 ReachGrab = reach,
                 LeftGrip = reach,
                 RightGrip = reach,
                 Avoid = danger ? 1f : 0f,
-                Freeze = Unit(sensory.Unconscious + sensory.LiquidSedation),
+                Freeze = freeze,
                 Heal = Unit(sensory.Damage + sensory.Bleeding + sensory.LiquidHealing),
-                Stimulate = Unit(sensory.Adrenaline + sensory.LiquidStimulation),
-                Calm = Unit(sensory.Shock + sensory.Pain + sensory.LiquidSedation),
+                // Native stress values are inputs, not automatic instructions
+                // to amplify adrenaline or chemically calm an injured person.
+                Stimulate = Unit(sensory.LiquidStimulation),
+                Calm = Unit(sensory.LiquidSedation),
                 Extinguish = Unit(sensory.Fire)
             };
+            if (!movementPermitted)
+            {
+                ClearMotorRequests(ref requested);
+                lastCommand = requested;
+                return lastCommand;
+            }
+
+            lastCommand = SmoothMotorRequest(requested, elapsedSeconds);
             return lastCommand;
         }
 
-        private MotorCommand BuildWaterSurvivalCommand(SensoryFrame sensory)
+        private static void ClearMotorRequests(ref MotorCommand command)
         {
-            var phase = (float)((simulationTick % WaterStrokePeriodTicks) * (Math.PI * 2.0 / WaterStrokePeriodTicks));
-            var stroke = (float)Math.Sin(phase);
-            var armStroke = stroke * .75f;
-            var legStroke = stroke * .45f;
-            lastCommand = new MotorCommand
-            {
-                Walk = 0f,
-                LeftArm = armStroke,
-                RightArm = -armStroke,
-                LeftLeg = -legStroke,
-                RightLeg = legStroke,
-                Core = .25f,
-                Head = -.15f,
-                ReachGrab = 0f,
-                LeftGrip = 0f,
-                RightGrip = 0f,
-                Avoid = 1f,
-                Freeze = Unit(sensory.Unconscious + sensory.LiquidSedation),
-                Heal = Unit(sensory.Damage + sensory.Bleeding + sensory.LiquidHealing),
-                Stimulate = Unit(sensory.Adrenaline + sensory.LiquidStimulation + sensory.SubmergedHypoxia),
-                Calm = Unit(sensory.Shock + sensory.Pain + sensory.LiquidSedation),
-                Extinguish = Unit(sensory.Fire)
-            };
-            return lastCommand;
+            command.Walk = 0f;
+            command.LeftArm = 0f;
+            command.RightArm = 0f;
+            command.LeftLeg = 0f;
+            command.RightLeg = 0f;
+            command.Core = 0f;
+            command.Head = 0f;
+            command.ReachGrab = 0f;
+            command.LeftGrip = 0f;
+            command.RightGrip = 0f;
+        }
+
+        private bool IsMovementPermitted(SensoryFrame sensory, float freeze)
+        {
+            return sensory.HealthValid && sensory.ConsciousnessValid && IsFinite(sensory.Consciousness) && Unit(sensory.Consciousness) > .8f && freeze < .5f;
         }
 
         private bool IsDangerous(SensoryFrame sensory)
@@ -334,10 +379,37 @@ namespace Mod
             return sensory.Pain + sensory.Fire + sensory.Shock + sensory.SubmergedHypoxia + sensory.Projectile > .5f || Fired("type:DNp01");
         }
 
-        private static float EscapeDirection(float nearbyDirection)
+        private bool FiredMotorPopulation(string population)
         {
-            var direction = Math.Abs(nearbyDirection) < .001f ? 1f : nearbyDirection;
-            return -Math.Sign(direction);
+            var ids = asset.Population(population);
+            for (var i = 0; i < ids.Count; i++)
+            {
+                if (firedIds.Contains(ids[i]) && IsMotorNeuron(ids[i])) return true;
+            }
+
+            return false;
+        }
+
+        private MotorCommand SmoothMotorRequest(MotorCommand requested, float elapsedSeconds)
+        {
+            var seconds = IsFinite(elapsedSeconds) && elapsedSeconds > 0f ? elapsedSeconds : DefaultStepSeconds;
+            var maximumChange = MotorChangePerSecond * Clamp(seconds, 0f, .25f);
+            requested.Walk = MoveTowards(lastCommand.Walk, requested.Walk, maximumChange);
+            requested.LeftArm = MoveTowards(lastCommand.LeftArm, requested.LeftArm, maximumChange);
+            requested.RightArm = MoveTowards(lastCommand.RightArm, requested.RightArm, maximumChange);
+            requested.LeftLeg = MoveTowards(lastCommand.LeftLeg, requested.LeftLeg, maximumChange);
+            requested.RightLeg = MoveTowards(lastCommand.RightLeg, requested.RightLeg, maximumChange);
+            requested.Core = MoveTowards(lastCommand.Core, requested.Core, maximumChange);
+            requested.Head = MoveTowards(lastCommand.Head, requested.Head, maximumChange);
+            requested.ReachGrab = MoveTowards(lastCommand.ReachGrab, requested.ReachGrab, maximumChange);
+            requested.LeftGrip = MoveTowards(lastCommand.LeftGrip, requested.LeftGrip, maximumChange);
+            requested.RightGrip = MoveTowards(lastCommand.RightGrip, requested.RightGrip, maximumChange);
+            return requested;
+        }
+
+        private static float MoveTowards(float current, float target, float maximumChange)
+        {
+            return current < target ? Math.Min(current + maximumChange, target) : Math.Max(current - maximumChange, target);
         }
 
         private bool Fired(string population)
@@ -370,15 +442,16 @@ namespace Mod
 
         private void DriveSensoryPopulations(SensoryFrame sensory)
         {
-            var healthDeficit = 1f - sensory.Health;
-            var oxygenDeficit = 1f - sensory.Oxygen;
-            var consciousnessDeficit = 1f - sensory.Consciousness;
-            var injury = Unit(sensory.Pain + sensory.Damage + sensory.Bleeding + healthDeficit + sensory.Blood + sensory.LimbLoss + sensory.Breakage + sensory.JointStress + sensory.BrainDamage + sensory.InternalBleeding + sensory.Wounds + sensory.LungDamage + (1f - sensory.Vitality) + sensory.Stabbed + sensory.Seizure);
-            var circulationDeficit = 1f - sensory.Circulation;
+            var healthDeficit = sensory.HealthValid && IsFinite(sensory.Health) ? 1f - Unit(sensory.Health) : 0f;
+            var oxygenDeficit = sensory.OxygenValid && IsFinite(sensory.Oxygen) ? 1f - Unit(sensory.Oxygen) : 0f;
+            var consciousnessDeficit = sensory.ConsciousnessValid && IsFinite(sensory.Consciousness) ? 1f - Unit(sensory.Consciousness) : 0f;
+            var vitalityDeficit = sensory.VitalityValid && IsFinite(sensory.Vitality) ? 1f - Unit(sensory.Vitality) : 0f;
+            var injury = Unit(sensory.Pain + (sensory.DamageValid ? sensory.Damage : 0f) + sensory.Bleeding + healthDeficit + (sensory.BloodValid ? sensory.Blood : 0f) + sensory.LimbLoss + sensory.Breakage + sensory.JointStress + sensory.BrainDamage + sensory.InternalBleeding + sensory.Wounds + sensory.LungDamage + vitalityDeficit + sensory.Stabbed + sensory.Seizure);
+            var circulationDeficit = sensory.CirculationValid && IsFinite(sensory.Circulation) ? 1f - Unit(sensory.Circulation) : 0f;
             var hazard = Unit(sensory.Fire + sensory.Heat + sensory.Cold + sensory.Shock + sensory.SubmergedHypoxia + oxygenDeficit + sensory.Wetness + sensory.Charge + sensory.Infection + sensory.AcidExposure + sensory.LiquidHazard + sensory.Lava + sensory.BurnProgress + sensory.Disconnected + sensory.Frozen + sensory.Fall + sensory.Projectile + sensory.AmbientHeat + sensory.AmbientCold + circulationDeficit);
             var bodyMotion = Unit(sensory.Impact + sensory.Sound * .6f + sensory.Velocity * .6f + sensory.Rotation * .4f + sensory.Balance * .4f + sensory.Numbness + sensory.Paralysis + sensory.Weightless + sensory.Sliding + sensory.Fall * .6f + sensory.Vibration * .35f + sensory.Proprioception * .4f + sensory.PhysicalContact * .15f + sensory.Touch * .15f + sensory.LiquidExposure + sensory.LiquidWater + sensory.Heartbeat * .1f);
             var visual = Unit(sensory.Light + sensory.Vision);
-            var arousal = Unit(sensory.Adrenaline + sensory.Unconscious + consciousnessDeficit + sensory.LiquidStimulation);
+            var arousal = Unit(sensory.Adrenaline + (sensory.ConsciousnessValid ? sensory.Unconscious : 0f) + consciousnessDeficit + sensory.LiquidStimulation);
             injuryDrive = injury;
             hazardDrive = hazard;
             motionDrive = bodyMotion;
@@ -413,6 +486,7 @@ namespace Mod
             for (var i = 0; i < count; i++)
             {
                 var id = ids[i];
+                if (simulationTick < refractoryUntil[id]) continue;
                 var queued = pending.TryGetValue(id, out var valueAtId) ? valueAtId : 0f;
                 pending[id] = Clamp(queued + value, -4f, 4f);
                 active.Add(id);

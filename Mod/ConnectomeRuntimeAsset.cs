@@ -16,6 +16,7 @@ namespace Mod
             public float[] Weights;
             public sbyte[] NtSigns;
             public string[] Superclasses, Sides;
+            public BrainMapSample BrainMap;
             internal readonly Dictionary<string, int[]> populations = new(StringComparer.OrdinalIgnoreCase);
             public IReadOnlyList<int> Population(string name)
             {

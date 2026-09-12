@@ -9,11 +9,15 @@ namespace Mod
         // Configuration is intentionally exposed in the spawned object's inspector.
         [Range(1f, 60f)] public float TickRateHz = 20f;
         [Range(1f, 30f)] public float VisionRadius = 8f;
+        // Engineering conversion settings, not biological calibration.
+        [Range(0f, 4f)] public float WalkingRequestGain = 2f;
+        [Range(0f, 120f)] public float JointSpeedDegreesPerSecond = 30f;
 
         private ConnectomeBrain brain;
         private PeoplePlaygroundPersonAdapter adapter;
         private PersonConnectomeStatusDisplay statusDisplay;
         private float accumulator;
+        private float sampleElapsed;
         private readonly List<SuppressedContextMenuButton> suppressedContextMenuButtons = [];
         private readonly List<ContextMenuOptionComponent> contextMenuOptions = [];
 
@@ -42,6 +46,7 @@ namespace Mod
 
         private void OnEnable()
         {
+            statusDisplay?.SetActive(true);
             SuppressNativePoseOptions();
         }
 
@@ -54,27 +59,34 @@ namespace Mod
 
             var rate = float.IsNaN(TickRateHz) || float.IsInfinity(TickRateHz) ? 20f : Mathf.Clamp(TickRateHz, 1f, 60f);
             var interval = 1f / rate;
-            // Process at most one tick per physics callback. Dropping excess elapsed
-            // time prevents a slow frame from turning into a catch-up spike.
-            accumulator = Mathf.Min(accumulator + Time.fixedDeltaTime, interval);
-            if (accumulator >= interval)
+            // Preserve fractional time; still process at most one tick per callback.
+            accumulator += Time.fixedDeltaTime;
+            sampleElapsed += Time.fixedDeltaTime;
+            if (accumulator + .000001f >= interval)
             {
-                accumulator -= interval;
+                var remaining = Mathf.Max(0f, accumulator - interval);
+                var skipped = (float)Math.Floor((remaining + .000001f) / interval) * interval;
+                accumulator = Mathf.Max(0f, remaining - skipped);
+                var started = Time.realtimeSinceStartup;
                 var sensory = adapter.Read();
-                adapter.Apply(brain.Step(sensory), true);
+                adapter.Apply(brain.Step(sensory, sampleElapsed), true, JointSpeedDegreesPerSecond, WalkingRequestGain);
+                sampleElapsed = 0f;
+                statusDisplay?.RecordTick((Time.realtimeSinceStartup - started) * 1000f, skipped, brain);
             }
         }
 
         private void LateUpdate()
         {
-            statusDisplay?.Update(Time.deltaTime, brain, adapter);
+            statusDisplay?.Update(Time.unscaledDeltaTime, brain, adapter);
         }
 
         private void OnDisable()
         {
             accumulator = 0f;
+            sampleElapsed = 0f;
+            statusDisplay?.SetActive(false);
             brain?.Step(default(SensoryFrame));
-            adapter?.Stop();
+            adapter?.Suspend();
             RestoreNativePoseOptions();
         }
 
@@ -181,6 +193,7 @@ namespace Mod
         public Transform OwnerRoot;
         public Action<float> Report;
         public Action<float> ReportProjectile;
+        public Func<Transform, bool> IsOwned;
 
         private void OnCollisionEnter2D(Collision2D collision)
         {
@@ -207,6 +220,7 @@ namespace Mod
             }
 
             var other = collision.collider.transform;
+            if (IsOwned != null) return !IsOwned(other);
             return OwnerRoot == null || (other != OwnerRoot && !other.IsChildOf(OwnerRoot));
         }
 

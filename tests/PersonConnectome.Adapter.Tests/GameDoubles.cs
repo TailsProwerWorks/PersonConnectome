@@ -103,7 +103,7 @@ namespace UnityEngine
     public class AudioSource : Component { public bool isPlaying, mute; public bool isActiveAndEnabled = true; public float volume = 1; }
     public class Collision2D { public Collider2D collider; public Vector2 relativeVelocity; }
     public class RangeAttribute : Attribute { public RangeAttribute(float min, float max) { } }
-    public static class Time { public static float fixedDeltaTime = .02f, deltaTime = .02f; }
+    public static class Time { public static float fixedDeltaTime = .02f, deltaTime = .02f, unscaledDeltaTime = .02f, realtimeSinceStartup; }
     public static class Debug { public static void Log(string message) { } }
 }
 public class PersonBehaviour : UnityEngine.Component
@@ -155,8 +155,9 @@ public class PhysicalBehaviour : UnityEngine.Component
 public class Liquid(string identity)
 {
     public readonly string Identity = identity;
+    public string DisplayName = identity;
     public static string GetIdentity(Liquid liquid) => liquid.Identity;
-    public string GetDisplayName() => Identity;
+    public string GetDisplayName() => DisplayName;
 }
 public class AcidPoolBehaviour : UnityEngine.Component
 {
@@ -194,14 +195,19 @@ namespace Mod
     // Lifecycle tests only need a neutral brain; neural-source tests use their own harness.
     internal class ConnectomeBrain
     {
+        public int StepCount;
+        public float LastElapsed;
         public string Status => "test";
         public static ConnectomeBrain TryCreate(out string status) { status = "test"; return new(); }
         public MotorCommand Step(SensoryFrame frame) => default;
+        public MotorCommand Step(SensoryFrame frame, float elapsed) { StepCount++; LastElapsed = elapsed; return default; }
     }
     internal class PersonConnectomeStatusDisplay
     {
         public PersonConnectomeStatusDisplay(UnityEngine.Transform anchor) { }
         public void Update(float elapsed, ConnectomeBrain brain, PeoplePlaygroundPersonAdapter adapter) { }
+        public void SetActive(bool active) { }
+        public void RecordTick(float milliseconds, float skipped, ConnectomeBrain brain) { }
         public void Dispose() { }
     }
 }

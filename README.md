@@ -1,143 +1,99 @@
 # Person Connectome
 
-`Person Connectome` is a bounded People Playground Human controller driven by the prepared MaleCNS v1.0 connectome. It is a computational model, not a claim of consciousness or complete biological fidelity.
+A People Playground Human variation controlled by a bounded neural simulation using a **MaleCNS v1.0-derived fly connectome**. The bundled graph has **176,422 neurons and 6,287,749 retained connections** (synapse weight ≥5). It is a thresholded derivative, not the full released graph or a biologically complete fly mind.
 
-## Install and attach
+## Play
 
-1. In a disposable People Playground install, run `.\scripts\Deploy-Mod.ps1` from an administrator PowerShell. It copies the manifest-listed scripts, `mod.json`, the generated `README.txt`, the thumbnail, and the PNG carrier to `People Playground/Mods/PersonConnectome`.
-2. Start the game and enable **Person Connectome** in the mod list.
-3. From **Entities**, spawn **Person Connectome (Active)**. This variation is the explicit attachment mechanism: it is a normal Human with `PersonConnectomeController` attached on spawn. Existing stock Humans are never silently modified.
-4. The controller samples the person when the validated asset and adapter are available. Motor and chemistry requests are suppressed for invalid health, terminal state, consciousness at or below 0.8, or a freeze request. A world-space status label follows the brain/head limb and is the primary live display.
+1. Copy the contents listed by `Mod/mod.json`, `Mod/README.txt`, the thumbnail and the PNG carrier into `People Playground/Mods/PersonConnectome`, or use the deployment script below.
+2. Enable **Person Connectome** with **Shady Code Rejection enabled**.
+3. Spawn **Person Connectome (Active)** from **Entities**. Stock Humans are not modified.
+4. Use the screen panel at the top center. **Prev / Next** selects a controlled person; its number and world coordinates identify it. **A- / A+** adjusts text size; **Collapse** keeps a small header visible. Drag the title bar to move the panel; drag its bottom-right corner to resize it smaller or larger. Use the mouse wheel or scrollbar within each page to reach all readings. The panel stays within the screen; sizing and position last for this session.
 
-The public component fields on the spawned variation expose bounded timing and sensing settings. There is no fallback or observe-only runtime mode. The bundled graph is a thresholded derivative, not the full released connection graph. No persistence is attempted: saved game object/component serialization is game-version-dependent.
+The panel is an opaque screen overlay. World lighting, walls, water, fire, camera rotation and zoom do not participate in its rendering. Native rendering and input interaction still require the [manual game checks](docs/manual-game-test.md).
 
-## How it works
+- **Overview:** body state, local limb eligibility, submitted commands, and requested motor output. A request is not measured movement.
+- **Senses:** normalized game readings and derived signals. Most values are 0..1, not HP points, degrees or physical units; raw native adrenaline is explicitly labeled. Unknown readings are explicitly marked where validity is tracked; unavailable effect channels do not create a positive signal.
+- **Brain:** neural workload, derived population drives, spikes per processed tick and a soma activity map. The map samples at most 8,192 actual source neurons with finite soma coordinates. White marks neurons that fired in the displayed capture; omitted or dark neurons do not establish inactivity. The X/Z projection preserves relative source coordinates and is not a human brain image.
 
-In simple terms: the game provides the information, the connectome runtime processes it, and the resulting motor signals are sent back to the same Human. It is not a real fly mind and it does not make a claim of consciousness. It is a game controller inspired by a real fly nervous-system wiring diagram.
+The panel shows the age of the last input sample, measured control-loop time, and skipped game time. It does not claim zero latency or a guaranteed real-time simulation rate. The display normally refreshes ten times per second of unscaled UI time (resizing can refresh it sooner) and can miss activity between captures; the history records every processed control tick.
 
-```mermaid
-flowchart LR
-    G[People Playground Human] --> S[Native game state]
-    S --> A["Sensory adapter<br/>health, motion, water, heat, audio, etc."]
-    A --> B[MaleCNS-derived neural runtime]
-    B --> D[Motor decoder]
-    D --> C[Walking, limb motors, and grips]
-    C --> G
-    A --> T[Live telemetry]
-    B --> T
-    D --> T
-```
+## What controls the person
 
-The loop runs during the game's physics updates:
+The game supplies health, body, environment and contact data. The adapter normalizes those readings, the single `Mod/RuntimeBrain.cs` implementation processes them through the pinned sparse graph, and a heuristic decoder maps actual descending/motor-neuron activity to Human requests.
 
-1. The adapter reads native People Playground state from the Human, its limbs, nearby colliders, audio sources, liquids, and the ambient-temperature grid.
-2. Those values are normalized into bounded signals. A value such as `0.80` means “strong signal for this controller,” not 80 degrees, 80 health points, or a biological measurement.
-3. The MaleCNS-derived sparse neural graph integrates the signals and produces activity in its motor-related populations.
-4. The decoder turns that activity into a walking direction, per-limb motor requests, and optional grip/restorative requests. The game applies those requests through its existing movement and joint APIs.
-5. The label shows the latest sensed state, the neural scheduler, and the requested outputs. `REQUEST` means what the brain asked for; it is not a measurement of how far a joint actually moved.
+There is no independent water-paddling oscillator or sensor-only escape command. Motor requests change by at most eight normalized units per elapsed game second (elapsed time capped at 0.25 seconds per step). This damps abrupt reversals; it does not prove effective walking, balance or swimming. Terminal state and unavailable/low consciousness clear motor requests immediately. Sensory mappings, simulation constants and the fly-to-human motor decoder are engineering choices, not validated biological capabilities.
 
-What is directly game-driven:
+The adapter uses native `DesiredWalkingDirection`, `InfluenceMotorSpeed`, and optional grip APIs. These APIs still execute game movement mechanics; removing native pose-menu actions alone does not establish exclusive neural control of native standing/balance. See [API compatibility](docs/api-compatibility.md) for the verified boundary. Limb names infer head/core/arm/hand/leg/foot roles. Explicit left/right takes priority; front maps to right and back to left as a game-plane convention; unknown sides receive the average channel.
 
-- Health, pain, shock, oxygen, consciousness, bleeding, wounds, limb damage, water, temperature, fire, liquids, motion, falling, contact, and native projectile collisions.
-- Walking and joint control through the game's own `DesiredWalkingDirection` and `InfluenceMotorSpeed` APIs.
-- The displayed neural counts and sensory values collected on the current control cycle.
+The adapter converts normalized joint requests to degrees per second (default maximum 30), and multiplies walking intent by 2 before clamping to the ordinary -1..1 native request. These are adjustable component settings: `JointSpeedDegreesPerSecond` (0..120) and `WalkingRequestGain` (0..4). The installed game selects walking only at absolute request >=0.5 and decays that request by 1 unit/second. For example, a -0.46 neural request now submits -0.92 before any hazard scaling. The settings are engineering starting points requiring native tuning, not measured biological gains or a guarantee of walking. Native pose controls still contribute, and native brain damage can randomize applied joint speeds.
 
-What is an approximation:
+Eligibility is local: broken, disconnected, paralysed or otherwise locally failed limbs stop while healthy limbs remain available. Wetness, submersion and the game's global `IsCapable` flag do not independently disable all limbs. Brain damage and unconsciousness are not death. Native `Braindead`, or finite average health ≤0.001, is terminal. Invalid average health suspends control without inventing death. Consciousness ≤0.8 or unavailable consciousness suppresses active output while nonterminal neural sampling continues.
 
-- `VISION` is a nearest-target line-of-sight and ambient-light proxy, not semantic eyesight or object recognition.
-- `AUDIO` is active playback from nearby external physical objects, not a biological hearing model.
-- Heat and cold are normalized game-temperature signals. Nearby dynamic objects and lava contribute distance-attenuated cues; walls are not treated as thermal radiation sources.
-- Falling, vibration, proprioception, and projectile awareness are bounded signals derived from native physics state and collision/projectile components.
+Existing restorative requests remain engineered gameplay interventions: bounded regeneration boosts, explicit liquid-driven adrenaline adjustments and fire-intensity reduction. Native pain/shock no longer request chemical calming, and sensed adrenaline no longer amplifies itself. They are derived from sensed state, not evidence of neural healing. Regeneration cleanup restores only values still owned by this controller. Control adds no forces, damage/liquid injection, networking, shell execution, native interop or gameplay object spawning/deletion. There is no fallback demo graph. Game save compatibility is not established.
 
-The runtime does not invent readings when the game exposes no stable signal. Unknown liquids remain unknown exposure, and unsupported senses such as smell are not fabricated.
+## What it senses—and the limits
 
-## Active control
+- **Body:** native health, pain, shock, oxygen, consciousness, brain damage/death, wounds, blood, circulation, temperature, movement and limb state. Damage, blood deficit and vitality fallback are derived quantities. Invalid oxygen cannot become hypoxia; missing circulation is unknown.
+- **Environment:** water/wetness, fire/burn, lava, acid contact, local ambient temperature and distance-attenuated dynamic-object heat/cold. The default ambient temperature 20 is neutral. Static geometry is excluded from the object-temperature pass. Nearby acid alone is not acid exposure.
+- **Motion/contact:** falling uses downward native limb velocity with floor-contact gating. Vibration and proprioception are mechanical proxies. Known own limbs remain excluded from collision, nearby and audio detection after detachment; foot-floor impacts can still be self-generated contact.
+- **Vision:** nearest external physical collider, line of sight and ambient light. Target names are conservative component classifications, not recognition or semantic eyesight. A 128-collider overlap buffer can miss objects in crowded scenes.
+- **Audio:** active, unmuted external physical-object playback. Own sources and generic `Root/Root` artifacts are filtered. This is not general biological hearing. The Senses page retains the last detected source with real-time seconds since detection; current sound becomes zero when playback stops.
+- **Projectiles:** native projectile components and collision/motion evidence. Penetrability alone is not evidence of a projectile.
+- **Liquids and syringes:** reads every liquid already present in tracked native circulation, with explicit recognition of all 41 stock IDs in the inspected 1.27.17 game. Senses lists each identity and its highest concentration in a tracked limb. Blood is excluded from the general exposure drive. Verified IDs use documented exposure routes; custom/unregistered liquids remain exposure-only. Water Breathing Serum is not water, and strength/durability serums do not request adrenaline. Native zombie state, pain, oxygen and other effects are read separately; exposure is not proof an effect happened. This is an engineered game-state input, not biological chemical recognition. No liquid is injected. See the [liquid mapping and limits](docs/api-compatibility.md#liquid-and-syringe-coverage).
 
-The shipped runtime loads the downloaded MaleCNS FLYB payload through the allowed `ModAPI.LoadTexture("connectome/malecns-v1.0.png")` mod-asset API. The texture carrier contains the exact bytes of `malecns-v1.0.flyb.gz`; the raw payload is a repository/build input and is not copied into the deployed mod. The runtime verifies the compressed payload SHA-256, dataset identity and exact counts, and rejects missing, malformed or incompatible data. It uses a deterministic sparse leaky integrate-and-fire simulation with a capped fixed tick (default 20 Hz, at most one neural tick per physics callback), drives real sensory populations by stable MaleCNS metadata, and decodes activity from real descending/motor populations into bounded commands. The game adapter uses documented People Playground members for its primary control path:
+Submerged hypoxia requires both submersion and a valid oxygen deficit; it does not prove that water caused the deficit. Smell, semantic perception and unsupported biological senses are not fabricated.
 
-- `PersonBehaviour.DesiredWalkingDirection` for left/right locomotion;
-- `LimbBehaviour.InfluenceMotorSpeed` for differentiated head, core, arm, hand, leg, and foot motor channels;
-- `GripBehaviour` for grab/drop, probed independently so its absence never disables locomotion;
-- bounded restorative outputs (`BloodRegenerationPerSecond`, `RegenerationSpeed`, adrenaline and lower fire intensity) are enabled during capable active control. Regeneration boosts preserve existing rates and restore their baseline only while the last assignment is still owned by this controller.
+The mod does not synthesize random telemetry or neural commands. Native readings feed the graph, and the graph feeds a heuristic motor decoder. For example, `velocity` is native average speed divided by 10; `walk-request` is a submitted direction, so nonzero requests can coexist with zero sensed motion. Overload means the 24,000-neuron work limit was reached, not that a frame-time limit was measured. Refractory inputs that would be discarded are skipped before spending that budget; genuine overload can remain.
 
-Each discovered `LimbBehaviour` receives a deterministic actuator profile. Limb roles are inferred from component names. Side names are read from the limb hierarchy: explicit left/right names take priority, front maps to right and back to left as a game-plane convention, and unknown sides receive the average channel. This remains a heuristic; local horizontal position is not used as anatomical side. This gives every jointed human limb a brain-derived channel, but it is necessarily a fly-to-human control mapping rather than an anatomically exact human motor map.
+## Build and verify
 
-Control does **not** add force, inject damage or liquids, spawn/delete gameplay objects, use networking/shells/native interop, or alter the game's liquid contents. The diagnostic label has its own nonphysical GameObject and is destroyed with its controller. Grip and chemistry are separate capability calls after locomotion and limb control; unsupported capability shapes are skipped, while invocation errors are not intercepted.
+Requires .NET 10 SDK, PowerShell 7 for the offline script checks, and installed People Playground assemblies for the `net48` game project. No NuGet packages are required.
 
-The overhead label reports body state, a prioritized sensory cue with its matching value, available/capable limbs, the number of joint commands applied on the last control tick, and the applied walking request. `REQUEST` shows the brain's desired limb/grip channels, not measured joint motion. `NEURAL` separates pending-input targets (`queued`), neurons processed, stale overload work dropped, and spikes (`fired`). The scheduler prioritizes fresh sensory input and drops stale recurrent work when the active set exceeds the cap, keeping control bounded instead of allowing old work to accumulate. Refractory periods expire in neural ticks even during silence. Blood loss is measured against each circulation's first valid positive blood reading because the game stores liquid amounts in native liquid units; Vitality uses its positive native value and falls back to normalized limb health when the native baseline is zero.
-
-`PersonBehaviour.Braindead` and finite average health <= 0.001 are terminal. `BrainDamaged` alone is injury, and consciousness loss is not death. Terminal state clears neural state, immediately zeros joint speed requests using full motor influence, releases grips and restores owned regeneration boosts. Recovery starts from cleared neural state. Invalid/nonfinite health reports `INVALID DATA`/`hp=unknown` and suspends control rather than claiming death. Disabling/removing the controller also clears its commands. The label stays upright in world space without inheriting human mirroring and falls back to the root if no brain-bearing limb remains; rendering still requires an in-game check.
-
-## Sensory and status mapping
-
-The adapter samples Person/Limb/Circulation/Physical state and per-limb collision probes: health/damage, blood loss, pain, shock/electric charge, oxygen/suffocation, consciousness/unconsciousness, adrenaline, brain damage/seizures, balance/heartbeat, limbs/dismemberment/breakage/joint stress/paralysis/numbness/vitality, movement/rotation, contact/touch/impact/being-held, nearby entities/line direction, ambient light, active audio, fire/burn progress, temperature/hot/cold, wetness/water, blood, stab/gunshot wounds/internal bleeding, lava, weightlessness/sliding/stabbing, and zombie/infection. The router combines bounded inputs into heuristic population drives with headroom for normal contact and motion. It uses the actual R7/R8 variant types in the asset. Liquid healing and nearby direction are decoder-only inputs, not claimed neural sensory mappings. The game build does not expose a stable public smell/odor channel, so that remains unavailable rather than being invented.
-
-The inspected interface has no native semantic vision/hearing or general disease-severity channel. Unity raycasts could provide an additional line-of-sight approximation, but this mod does not implement one. Nearby detection is a bounded allocation-free `Physics2D.OverlapCircleNonAlloc` approximation; light is Unity ambient light; audio is physical-object audio playback. Ambient temperature uses the native `AmbientTemperatureGridBehaviour` at the person location, with dynamic nearby physical objects contributing distance-attenuated heat/cold. The default ambient value of 20 is neutral; static map geometry is excluded from the object-temperature pass. Oxygen deficit is labelled `LOW OXYGEN`; `SUBMERGED HYPOXIA` also requires a submerged limb; this does not establish that water caused the oxygen loss. Collision-relative velocity is `CONTACT IMPACT`, which can include self-generated foot-floor impacts, not a claim of external vibration. `OBJECT AUDIO` requires a nearby external physical object with active, unmuted audio; it is a playback proxy, not general hearing. Known limbs are excluded even after detachment. Normal blood is excluded from exposure, Gorse blood is corrosive, and knockout poison maps to sedation. Installed liquid IDs including named poisons, reanimation/deconstruction agents, nitro, gasoline, coolant and tritium are mapped to hazard; serum identities are mapped to healing or stimulation where their names provide a safe category. Liquid identities are read from the installed build's public `CirculationBehaviour.LiquidDistribution` and `Liquid.GetIdentity` members, then mapped to bounded hazard, sedation, stimulation, healing, and water signals. Unknown identities remain exposure-only. See [API compatibility](docs/api-compatibility.md) for exact limitations.
-
-## Build and offline verification
-
-Requires .NET 10 SDK; no NuGet packages are needed:
-
-```sh
+```powershell
 dotnet format PersonConnectome.sln --verify-no-changes --no-restore
 dotnet build PersonConnectome.sln -c Release
 dotnet run --project tests/PersonConnectome.Runtime.Tests -c Release
 dotnet run --project tests/PersonConnectome.Adapter.Tests -c Release
+dotnet build Mod/PersonConnectome.Mod.csproj -c Release
+pwsh -NoProfile -File scripts/Test-ModSourceSafety.ps1
+pwsh -NoProfile -File scripts/Test-GameCompilation.ps1
+pwsh -NoProfile -File scripts/Test-DeployDiscovery.ps1
+.\scripts\Deploy-Mod.ps1 -WhatIf
 git diff --check
 ```
 
-The game-facing project intentionally targets `net48`. The installed game ships a classic CLR 4 / Unity Mono profile; `net48` is the project target, not a proven maximum BCL compatibility claim; its mod compiler resolves references from `People Playground_Data/Managed` as described in the [official modding guide](https://wiki.studiominus.nl/intro/boilerplate.html). `net10.0` APIs must not cross into the game-facing scripts. The game-facing project uses the installed People Playground assemblies:
+The source safety check parses every manifest script against the [documented rejection rules](https://wiki.studiominus.nl/details/shadyCodeRejection.html), including identifier tokens, forbidden namespaces and aliased imports. It does not disable rejection and does not substitute for a native load test.
 
-```sh
-dotnet build Mod/PersonConnectome.Mod.csproj -c Release
-```
+The game-compilation check uses the exact assembly references in the installed compiler's `last_instructions` record. Run a mod compilation in the game first if that record is missing. It accepts `-GameInstall` or discovers Steam. This catches API-reference differences that an ordinary project build can miss, including unsupported IMGUI types. It emits only to memory, then runs the installed compiler's low-risk and high-risk semantic rejection scanners. It does not run the full compiler server or load the mod.
 
-The deployment script discovers People Playground through Steam's registered install locations and `steamapps/libraryfolders.vdf`. For a direct game-facing build, set `PeoplePlaygroundInstall` to the game's install directory when it is not at the project-file default.
-
-To build and deploy the mod to the detected install, run PowerShell as an administrator and use:
+Deploy from an appropriately permitted PowerShell:
 
 ```powershell
 .\scripts\Deploy-Mod.ps1
+# Or select an installation explicitly:
+.\scripts\Deploy-Mod.ps1 -GameInstall 'D:\Games\People Playground'
 ```
 
-For a manually selected install, use `-GameInstall 'D:\Games\People Playground'`. Use `-NoBuild` only when the mod has already been built, or `-WhatIf` to preview the copy without changing the game directory. The script replaces the `{{GIT_COMMIT}}` token in the deployed `README.txt` with the current short Git commit, copies the manifest-listed `.cs` sources, `mod.json`, `README.txt`, `thumb.png`, and only the PNG connectome carrier, then verifies every deployed file with SHA-256. If an older deployment contains the raw `.flyb.gz` build input, the script removes that exact stale file.
+Discovery uses registered Steam paths and modern or legacy `steamapps/libraryfolders.vdf`. The resolved install is forwarded to MSBuild. `-GameInstall` takes precedence; an invalid explicit path fails rather than silently selecting another installation. `-WhatIf` validates the package and shows the destination/planned build without building or writing the game directory. `-NoBuild` is for an already verified build. Direct `dotnet` builds use the project default Steam directory unless `-p:PeoplePlaygroundInstall='D:\Games\People Playground'` is supplied.
 
-To rebuild the game-safe PNG carrier from the pinned FLYB/GZip CNS payload, run this from the repository root:
+Deployment copies manifest scripts, `mod.json`, a README with the current Git commit marker, the thumbnail and the PNG carrier, then verifies SHA-256. It removes only the known stale raw `.flyb.gz` from older deployments. Other game-directory files are preserved. Rebuild the carrier with `scripts/Build-ConnectomeCarrier.ps1`; the raw payload stays a build input and its identity constants must change deliberately before a different payload is accepted.
 
-```powershell
-.\scripts\Build-ConnectomeCarrier.ps1
-```
+## Code and attribution
 
-Use `-InputPath`, `-OutputPath`, `-Width`, `-Height`, and optional `-ExpectedSha256` for carrier tooling. Runtime identity constants must also be deliberately updated before a different payload is accepted. The builder writes top-to-bottom PNG rows, matching the Unity runtime decoder, and refuses to finish unless the carrier round-trips to the exact input hash.
+- `Mod/RuntimeBrain.cs`: single authoritative sparse LIF simulation and decoder.
+- `Mod/PeoplePlaygroundPersonAdapter.cs` / `PersonConnectomeLimbController.cs`: native sensing and local actuation.
+- `Mod/PersonConnectomeController.cs`: Unity lifecycle, timing and collision probes.
+- `Mod/ConnectomeRuntimeAsset*.cs`: validated texture-carrier/FLYB decoding and shared immutable graph data.
+- `Mod/BrainVisualization.cs` / `PersonConnectomeStatusDisplay.cs`: bounded diagnostic sample and screen overlay.
+- `tests/`: shipped sources linked against narrow doubles. These verify contracts, not Unity physics/rendering.
 
-The solution also compiles the game-facing sources against the installed assemblies. `Mod/RuntimeBrain.cs` is the single brain implementation: the mod and runtime tests compile that same physical file. The runtime and adapter test projects link the actual shipped integration sources against narrow test doubles to check neural timing, payload identity, terminal cleanup, limb lifecycle, liquid/audio/oxygen semantics, regeneration ownership and invalid readings. Those doubles do not emulate Unity physics or rendering. Follow [the manual game checklist](docs/manual-game-test.md) before release.
+[Architecture](docs/architecture.md), [API compatibility](docs/api-compatibility.md), [provenance](docs/PROVENANCE.md) and [manual checks](docs/manual-game-test.md) describe the boundaries.
 
-## Layout
+The Male CNS dataset is attributed under **CC BY 4.0**; see `THIRD_PARTY_NOTICES`. This mod uses the prepared derivative from [fly-brain-minecraft](https://github.com/blendi-remade/fly-brain-minecraft), which also inspired the diagnostic display. The visualization here reads the existing asset and actual local runtime activity.
 
-- `Mod/script.cs`: loadable People Playground entrypoint and runtime brain factory.
-- `Mod/README.txt`: in-game rich-text documentation with the deployment commit and repository link.
-- `Mod/RuntimeBrain.cs`: single bounded MaleCNS controller implementation compiled by the mod and source/test projects.
-- `Mod/ConnectomeRuntimeAsset.cs`: game-safe texture-carrier and FLYB parser.
-- `Mod/PersonConnectomeController.cs`: Unity lifecycle and collision probe.
-- `Mod/PeoplePlaygroundPersonAdapter.cs`: People Playground sensory and motor bridge.
-- `Mod/PersonConnectomeStatusDisplay.cs`: world-space TextMeshPro state label and camera-facing display.
-- `Mod/RuntimeTypes.cs`: game-facing sensory and motor value types.
-- `tests/PersonConnectome.Runtime.Tests/`: source-linked runtime tests using narrow game/Unity doubles.
-- `tests/PersonConnectome.Adapter.Tests/`: adapter contract tests using focused game doubles.
-- `config/`: versioned settings and runtime asset identity.
-- `Mod/connectome/malecns-v1.0.flyb.gz`: downloaded raw FLYB payload used by the carrier builder; it is not a deployed mod file.
-- `Mod/connectome/malecns-v1.0.png`: game-facing texture carrier loaded through `ModAPI.LoadTexture`.
-
-The asset is a thresholded derivative of the public MaleCNS v1.0 connectome: 176,422 neurons and 6,287,749 connections retained at synapse weight >= 5. See [provenance](docs/PROVENANCE.md) for the exact source, transformations, checksum, and limitations.
-
-## Research and references
-
-These links explain the source connectome, the way large connectomes are explored, and the People Playground mod format. The mod uses a prepared, thresholded derivative of the MaleCNS data; it does not ship or claim to run the complete biological model.
-
-- [Male CNS Connectome project](https://male-cns.janelia.org/) — project overview, cell types, connectivity, and dataset context.
-- [MaleCNS v1.0 downloads](https://male-cns.janelia.org/download/) — source data, annotations, connectivity files, and license information.
-- [Codex Connectome Data Explorer](https://codex.flywire.ai/) — interactive exploration of connectomes and network connections.
-- [FlyWire / Codex about page](https://codex.flywire.ai/about_flywire) — background on proofreading, annotation, and connectome data stewardship.
-- [People Playground: creating a mod](https://www.studiominus.nl/ppg-modding/tutorials/tutorialCreatingMod.html) — official mod folder, `mod.json`, and script entry-point basics.
-- [People Playground: script files](https://www.studiominus.nl/ppg-modding/details/scriptFiles.html) — official `Scripts` and `EntryPoint` behavior.
-- [Person Connectome source repository](https://github.com/TailsProwerWorks/PersonConnectome) — this mod's code, asset provenance, tests, and deployment scripts.
+- [Male CNS Connectome project](https://male-cns.janelia.org/)
+- [MaleCNS v1.0 downloads](https://male-cns.janelia.org/download/)
+- [Pinned derivative asset](https://github.com/blendi-remade/fly-brain-minecraft/blob/main/src/main/resources/connectome/malecns-v1.0.flyb.gz)
+- [Codex Connectome Data Explorer](https://codex.flywire.ai/) and [FlyWire/Codex background](https://codex.flywire.ai/about_flywire)
+- [People Playground modding documentation](https://wiki.studiominus.nl/index.html)
+- [Person Connectome source](https://github.com/TailsProwerWorks/PersonConnectome)

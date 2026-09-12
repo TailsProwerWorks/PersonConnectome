@@ -18,6 +18,8 @@ namespace Mod
         private readonly Action<float> reportProjectile;
         private float appliedWalk;
         private int appliedLimbCount;
+        private float jointSpeedLimit = 30f;
+        private bool jointSpeedValid = true;
         private bool hasAppliedControl;
         private readonly float visionRadius;
         private readonly Collider2D[] nearbyColliders = new Collider2D[128];
@@ -25,10 +27,17 @@ namespace Mod
         private float vibration;
         private float projectile;
         private SensoryFrame lastFrame;
+        private float nativeAdrenaline;
         private bool hasReadFrame;
         private string audioSourceSummary = "none";
+        private string lastHeardAudio;
+        private float lastHeardAudioTime;
         private string visionTargetSummary = "none";
+        private readonly Dictionary<string, LiquidReading> liquidReadings = new Dictionary<string, LiquidReading>(StringComparer.Ordinal);
+        private int readableLiquidContainers;
+        private int invalidLiquidReadings;
         public bool IsUsable { get { return person != null && LimbCount > 0; } }
+        public bool HasSample => hasReadFrame;
         public bool IsTerminal { get { return hasReadFrame && (lastFrame.BrainDead || (lastFrame.HealthValid && !lastFrame.Alive)); } }
         public bool IsBrainDead { get { return hasReadFrame && lastFrame.BrainDead; } }
         public string CapabilitySummary { get { return "walk=" + (person != null) + " limbs=" + LimbCount + " capable=" + DrivenLimbCount + "/" + LimbCount + " grip=optional sensors=" + SensorSummary; } }
@@ -41,29 +50,64 @@ namespace Mod
         {
             get
             {
-                return "BODY:\n  hp=" + (lastFrame.HealthValid ? lastFrame.Health.ToString("0.00") : "unknown") + "  damage=" + lastFrame.Damage.ToString("0.00") + "  pain=" + lastFrame.Pain.ToString("0.00") + "  shock=" + lastFrame.Shock.ToString("0.00") + "\n  oxygen=" + lastFrame.Oxygen.ToString("0.00") + "  conscious=" + lastFrame.Consciousness.ToString("0.00") + "  unconscious=" + lastFrame.Unconscious.ToString("0.00") + "  adrenaline=" + lastFrame.Adrenaline.ToString("0.00") + "\n  heartbeat=" + lastFrame.Heartbeat.ToString("0.00") + "  velocity=" + lastFrame.Velocity.ToString("0.00") + "  falling=" + lastFrame.Fall.ToString("0.00") + "  rotation=" + lastFrame.Rotation.ToString("0.00") + "  balance=" + lastFrame.Balance.ToString("0.00") + "  proprioception=" + lastFrame.Proprioception.ToString("0.00") + "  brain=" + BrainSummary;
+                return "BODY:\n  native-hp=" + (lastFrame.HealthValid ? lastFrame.Health.ToString("0.00") : "unknown") + "  limb-damage=" + (lastFrame.DamageValid ? lastFrame.Damage.ToString("0.00") : "unknown") + "  pain=" + lastFrame.Pain.ToString("0.00") + "  shock=" + lastFrame.Shock.ToString("0.00") + "\n  oxygen=" + (lastFrame.OxygenValid ? lastFrame.Oxygen.ToString("0.00") : "unknown") + "  conscious=" + (lastFrame.ConsciousnessValid ? lastFrame.Consciousness.ToString("0.00") : "unknown") + "  unconscious=" + (lastFrame.ConsciousnessValid ? lastFrame.Unconscious.ToString("0.00") : "unknown") + "  adrenaline(raw)=" + (IsFinite(nativeAdrenaline) ? nativeAdrenaline.ToString("0.00") : "unknown") + "  adrenaline-drive=" + lastFrame.Adrenaline.ToString("0.00") + "\n  heartbeat=" + lastFrame.Heartbeat.ToString("0.00") + "  velocity=" + lastFrame.Velocity.ToString("0.00") + "  falling=" + lastFrame.Fall.ToString("0.00") + "  rotation=" + lastFrame.Rotation.ToString("0.00") + "  balance=" + lastFrame.Balance.ToString("0.00") + "  proprioception=" + lastFrame.Proprioception.ToString("0.00") + "  brain=" + BrainSummary;
             }
         }
         public string LiveInjurySummary
         {
             get
             {
-                return "INJURY:\n  bleeding=" + lastFrame.Bleeding.ToString("0.00") + "  internal=" + lastFrame.InternalBleeding.ToString("0.00") + "  wounds=" + lastFrame.Wounds.ToString("0.00") + "  blood-loss=" + lastFrame.Blood.ToString("0.00") + "\n  vitality=" + lastFrame.Vitality.ToString("0.00") + "  circulation=" + lastFrame.Circulation.ToString("0.00") + "  limb-loss=" + lastFrame.LimbLoss.ToString("0.00") + "  breakage=" + lastFrame.Breakage.ToString("0.00") + "  disconnected=" + lastFrame.Disconnected.ToString("0.00") + "\n  joint-stress=" + lastFrame.JointStress.ToString("0.00") + "  paralysis=" + lastFrame.Paralysis.ToString("0.00") + "  numbness=" + lastFrame.Numbness.ToString("0.00") + "\n  lung-damage=" + lastFrame.LungDamage.ToString("0.00") + "  infection=" + lastFrame.Infection.ToString("0.00") + "  brain-damage=" + lastFrame.BrainDamage.ToString("0.00") + "  seizure=" + lastFrame.Seizure.ToString("0.00") + "  frozen=" + lastFrame.Frozen.ToString("0.00");
+                return "INJURY:\n  bleeding=" + lastFrame.Bleeding.ToString("0.00") + "  internal=" + lastFrame.InternalBleeding.ToString("0.00") + "  wounds=" + lastFrame.Wounds.ToString("0.00") + "  blood-loss=" + (lastFrame.BloodValid ? lastFrame.Blood.ToString("0.00") : "unknown") + "\n  vitality=" + (lastFrame.VitalityValid ? lastFrame.Vitality.ToString("0.00") : "unknown") + "  circulation=" + (lastFrame.CirculationValid ? lastFrame.Circulation.ToString("0.00") : "unknown") + "  limb-loss=" + lastFrame.LimbLoss.ToString("0.00") + "  breakage=" + lastFrame.Breakage.ToString("0.00") + "  disconnected=" + lastFrame.Disconnected.ToString("0.00") + "\n  joint-stress=" + lastFrame.JointStress.ToString("0.00") + "  paralysis=" + lastFrame.Paralysis.ToString("0.00") + "  numbness=" + lastFrame.Numbness.ToString("0.00") + "\n  lung-damage=" + lastFrame.LungDamage.ToString("0.00") + "  zombie(native)=" + lastFrame.Infection.ToString("0.00") + "  brain-damage=" + lastFrame.BrainDamage.ToString("0.00") + "  seizure=" + lastFrame.Seizure.ToString("0.00") + "  frozen=" + lastFrame.Frozen.ToString("0.00");
             }
         }
         public string LiveEnvironmentSummary
         {
             get
             {
-                return "ENVIRONMENT:\n  fire=" + lastFrame.Fire.ToString("0.00") + "  lava=" + lastFrame.Lava.ToString("0.00") + "  acid=" + lastFrame.AcidExposure.ToString("0.00") + "  burn=" + lastFrame.BurnProgress.ToString("0.00") + "\n  heat=" + lastFrame.Heat.ToString("0.00") + "  cold=" + lastFrame.Cold.ToString("0.00") + "  ambient-heat=" + lastFrame.AmbientHeat.ToString("0.00") + "  ambient-cold=" + lastFrame.AmbientCold.ToString("0.00") + "  light=" + lastFrame.Light.ToString("0.00") + "\n  nearby=" + lastFrame.Nearby.ToString("0.00") + "  direction=" + lastFrame.NearbyDirection.ToString("0.00") + "  vision=" + lastFrame.Vision.ToString("0.00") + "  target=" + visionTargetSummary + "\n  sound=" + lastFrame.Sound.ToString("0.00") + "  impact=" + lastFrame.Impact.ToString("0.00") + "  vibration=" + lastFrame.Vibration.ToString("0.00") + "  projectile=" + lastFrame.Projectile.ToString("0.00") + "\n  touch=" + lastFrame.Touch.ToString("0.00") + "  contact/held=" + lastFrame.PhysicalContact.ToString("0.00") + "  wet=" + lastFrame.Wetness.ToString("0.00") + "\n  underwater=" + lastFrame.UnderWater.ToString("0.00") + "  submerged-hypoxia=" + lastFrame.SubmergedHypoxia.ToString("0.00") + "  liquid=" + lastFrame.LiquidExposure.ToString("0.00") + "\n  hazard=" + lastFrame.LiquidHazard.ToString("0.00") + "  sedation=" + lastFrame.LiquidSedation.ToString("0.00") + "  stimulation=" + lastFrame.LiquidStimulation.ToString("0.00") + "\n  healing=" + lastFrame.LiquidHealing.ToString("0.00") + "  water-liquid=" + lastFrame.LiquidWater.ToString("0.00") + "  charge=" + lastFrame.Charge.ToString("0.00") + "\n  stabbed=" + lastFrame.Stabbed.ToString("0.00") + "  weightless=" + lastFrame.Weightless.ToString("0.00") + "  sliding=" + lastFrame.Sliding.ToString("0.00");
+                return "ENVIRONMENT:\n  fire=" + lastFrame.Fire.ToString("0.00") + "  lava=" + lastFrame.Lava.ToString("0.00") + "  acid=" + lastFrame.AcidExposure.ToString("0.00") + "  burn=" + lastFrame.BurnProgress.ToString("0.00") + "\n  heat=" + lastFrame.Heat.ToString("0.00") + "  cold=" + lastFrame.Cold.ToString("0.00") + "  ambient-heat=" + lastFrame.AmbientHeat.ToString("0.00") + "  ambient-cold=" + lastFrame.AmbientCold.ToString("0.00") + "  light=" + lastFrame.Light.ToString("0.00") + "\n  nearby=" + lastFrame.Nearby.ToString("0.00") + "  direction=" + lastFrame.NearbyDirection.ToString("0.00") + "  vision=" + lastFrame.Vision.ToString("0.00") + "  target=" + visionTargetSummary + "\n  sound=" + lastFrame.Sound.ToString("0.00") + "  impact=" + lastFrame.Impact.ToString("0.00") + "  vibration=" + lastFrame.Vibration.ToString("0.00") + "  projectile=" + lastFrame.Projectile.ToString("0.00") + "\n  touch=" + lastFrame.Touch.ToString("0.00") + "  contact/held=" + lastFrame.PhysicalContact.ToString("0.00") + "  wet=" + lastFrame.Wetness.ToString("0.00") + "\n  underwater=" + lastFrame.UnderWater.ToString("0.00") + "  submerged-hypoxia=" + lastFrame.SubmergedHypoxia.ToString("0.00") + "  liquid=" + lastFrame.LiquidExposure.ToString("0.00") + "\n  hazard-exposure=" + lastFrame.LiquidHazard.ToString("0.00") + "  sedative-exposure=" + lastFrame.LiquidSedation.ToString("0.00") + "  stimulant-exposure=" + lastFrame.LiquidStimulation.ToString("0.00") + "\n  restorative-exposure=" + lastFrame.LiquidHealing.ToString("0.00") + "  water-liquid=" + lastFrame.LiquidWater.ToString("0.00") + "  charge=" + lastFrame.Charge.ToString("0.00") + "\n  stabbed=" + lastFrame.Stabbed.ToString("0.00") + "  weightless=" + lastFrame.Weightless.ToString("0.00") + "  sliding=" + lastFrame.Sliding.ToString("0.00");
             }
         }
-        public string LiveAudioSummary { get { return "AUDIO:\n  " + audioSourceSummary.Replace(" d=", "\n  distance=").Replace(" signal=", "\n  signal=").Replace(" volume=", "\n  volume="); } }
+        public string LiveLiquidSummary
+        {
+            get
+            {
+                if (!hasReadFrame) return "CIRCULATING LIQUIDS: not sampled";
+                var summary = "CIRCULATING LIQUIDS\nHighest fraction in any tracked limb (including detached limbs).\nExposure categories are adapter mappings, not measured effect strength.";
+                if (liquidReadings.Count == 0)
+                {
+                    summary += readableLiquidContainers == 0 ? "\n  unknown: no readable circulation" : "\n  none detected";
+                }
+                else
+                {
+                    var names = new List<string>(liquidReadings.Keys);
+                    names.Sort(StringComparer.Ordinal);
+                    foreach (var name in names)
+                    {
+                        var reading = liquidReadings[name];
+                        summary += "\n  " + name + ": " + (reading.Fraction * 100f).ToString("0.0") + "% (" + reading.Kind + ")";
+                    }
+                }
+                if (invalidLiquidReadings > 0) summary += "\n  Incomplete: invalid/unavailable liquid readings skipped.";
+                return summary;
+            }
+        }
+        public string LiveAudioSummary
+        {
+            get
+            {
+                var current = !hasReadFrame ? "not sampled" : lastFrame.Sound > 0f ? "detected" : "none";
+                if (lastHeardAudio == null) return "AUDIO (LATEST SAMPLE): " + current + "\nNo external audio detected yet.";
+                var age = Mathf.Max(0f, Time.realtimeSinceStartup - lastHeardAudioTime);
+                return "AUDIO (LATEST SAMPLE): " + current + "\nLAST HEARD: " + age.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) +
+                    " seconds ago (real time)\n  " + lastHeardAudio.Replace(" d=", "\n  distance at detection=").Replace(" signal=", "\n  signal at detection=").Replace(" volume=", "\n  volume at detection=");
+            }
+        }
         public string LiveLimbSummary
         {
             get
             {
-                var summary = "LIMBS: total=" + LimbCount + " driveable=" + DrivenLimbCount + "/" + LimbCount + " lost=" + LostLimbCount + "/" + LimbCount + " applied=" + appliedLimbCount + " walk=" + appliedWalk.ToString("0.00");
+                var summary = "LIMBS: total=" + LimbCount + " driveable=" + DrivenLimbCount + "/" + LimbCount + " lost=" + LostLimbCount + "/" + LimbCount + " submitted=" + appliedLimbCount + " walk-request=" + appliedWalk.ToString("0.00") +
+                    "\nJoint target limit=" + (jointSpeedValid ? jointSpeedLimit.ToString("0.0") + " deg/s" : "invalid (stopped)") + "; native walking gate=0.50.";
                 if (IsTerminal)
                 {
                     return summary + "\nCONTROL: stopped (" + (IsBrainDead ? "brain dead" : "dead") + "; per-limb capability suppressed)";
@@ -121,7 +165,7 @@ namespace Mod
                 return count;
             }
         }
-        private string SensorSummary { get { return "health=" + lastFrame.Health.ToString("0.00") + " damage=" + lastFrame.Damage.ToString("0.00") + " pain=" + lastFrame.Pain.ToString("0.00") + " fire=" + lastFrame.Fire.ToString("0.00") + " shock=" + lastFrame.Shock.ToString("0.00") + " oxygen=" + lastFrame.Oxygen.ToString("0.00") + " nearby=" + lastFrame.Nearby.ToString("0.00") + " liquid=" + lastFrame.LiquidExposure.ToString("0.00"); } }
+        private string SensorSummary { get { return "health=" + (lastFrame.HealthValid ? lastFrame.Health.ToString("0.00") : "unknown") + " damage=" + (lastFrame.DamageValid ? lastFrame.Damage.ToString("0.00") : "unknown") + " pain=" + lastFrame.Pain.ToString("0.00") + " fire=" + lastFrame.Fire.ToString("0.00") + " shock=" + lastFrame.Shock.ToString("0.00") + " oxygen=" + (lastFrame.OxygenValid ? lastFrame.Oxygen.ToString("0.00") : "unknown") + " nearby=" + lastFrame.Nearby.ToString("0.00") + " liquid=" + lastFrame.LiquidExposure.ToString("0.00"); } }
 
         public PeoplePlaygroundPersonAdapter(GameObject root, float visionRadius, Action<float> reportCollision, Action<float> reportProjectile = null)
         {
@@ -162,11 +206,12 @@ namespace Mod
             AttachProbe(limb.gameObject, root.transform, reportCollision, reportProjectile);
         }
 
-        private static void AttachProbe(GameObject limbObject, Transform ownerRoot, Action<float> reportCollision, Action<float> reportProjectile)
+        private void AttachProbe(GameObject limbObject, Transform ownerRoot, Action<float> reportCollision, Action<float> reportProjectile)
         {
             var probe = limbObject.GetComponent<PersonConnectomeLimbProbe>() ?? limbObject.AddComponent<PersonConnectomeLimbProbe>();
 
             probe.OwnerRoot = ownerRoot;
+            probe.IsOwned = IsOwnTransform;
             probe.Report = reportCollision;
             probe.ReportProjectile = reportProjectile;
         }
@@ -211,6 +256,11 @@ namespace Mod
                 return "DEAD";
             }
 
+            if (!lastFrame.ConsciousnessValid)
+            {
+                return "DATA LIMITED";
+            }
+
             if (lastFrame.Consciousness <= .8f)
             {
                 return "UNCONSCIOUS";
@@ -218,7 +268,7 @@ namespace Mod
 
             if (lastFrame.LiquidSedation > .05f)
             {
-                return "SEDATED";
+                return "SEDATIVE EXPOSURE";
             }
 
             if (lastFrame.BrainDamage > .05f)
@@ -257,11 +307,12 @@ namespace Mod
             if (IsTerminal) return new LiveReading("DEATH", 1f);
             if (lastFrame.BrainDamage > .05f) return new LiveReading("BRAIN INJURY", lastFrame.BrainDamage);
             if (lastFrame.AcidExposure > .05f) return new LiveReading("ACID", lastFrame.AcidExposure);
-            if (lastFrame.LiquidHazard > .05f) return new LiveReading("ACID/POISON", lastFrame.LiquidHazard);
+            if (lastFrame.Infection > .05f) return new LiveReading("NATIVE ZOMBIE STATE", lastFrame.Infection);
+            if (lastFrame.LiquidHazard > .05f) return new LiveReading("HAZARDOUS LIQUID", lastFrame.LiquidHazard);
             var fire = Mathf.Max(lastFrame.Fire, lastFrame.Lava);
             if (fire > .05f) return new LiveReading("FIRE/LAVA", fire);
             if (lastFrame.SubmergedHypoxia > .05f) return new LiveReading("SUBMERGED HYPOXIA", lastFrame.SubmergedHypoxia);
-            if (lastFrame.Oxygen < .95f) return new LiveReading("LOW OXYGEN", 1f - lastFrame.Oxygen);
+            if (lastFrame.OxygenValid && lastFrame.Oxygen < .95f) return new LiveReading("LOW OXYGEN", 1f - lastFrame.Oxygen);
             if (lastFrame.AmbientHeat > .05f) return new LiveReading("AMBIENT HEAT", lastFrame.AmbientHeat);
             if (lastFrame.AmbientCold > .05f) return new LiveReading("AMBIENT COLD", lastFrame.AmbientCold);
             if (lastFrame.Heat > .05f) return new LiveReading("HEAT", lastFrame.Heat);
@@ -270,10 +321,10 @@ namespace Mod
             if (shock > .05f) return new LiveReading("SHOCK", shock);
             var injury = Mathf.Max(lastFrame.Pain, Mathf.Max(lastFrame.Damage, lastFrame.Bleeding));
             if (injury > .05f) return new LiveReading("PAIN/INJURY", injury);
-            if (lastFrame.LiquidSedation > .05f) return new LiveReading("SEDATION", lastFrame.LiquidSedation);
-            var stimulation = Mathf.Max(lastFrame.LiquidStimulation, lastFrame.Adrenaline);
-            if (stimulation > .05f) return new LiveReading("STIMULATION", stimulation);
-            if (lastFrame.LiquidHealing > .05f) return new LiveReading("HEALING", lastFrame.LiquidHealing);
+            if (lastFrame.LiquidSedation > .05f) return new LiveReading("SEDATIVE EXPOSURE", lastFrame.LiquidSedation);
+            if (lastFrame.Adrenaline > .05f) return new LiveReading("NATIVE ADRENALINE", lastFrame.Adrenaline);
+            if (lastFrame.LiquidStimulation > .05f) return new LiveReading("STIMULANT EXPOSURE", lastFrame.LiquidStimulation);
+            if (lastFrame.LiquidHealing > .05f) return new LiveReading("RESTORATIVE EXPOSURE", lastFrame.LiquidHealing);
             if (lastFrame.Fall > .05f) return new LiveReading("FALLING", lastFrame.Fall);
             if (lastFrame.Projectile > .05f) return new LiveReading("PROJECTILE", lastFrame.Projectile);
             if (lastFrame.Sound > .05f) return new LiveReading("OBJECT AUDIO", lastFrame.Sound);
@@ -284,6 +335,7 @@ namespace Mod
             if (contact > .05f) return new LiveReading("CONTACT", contact);
             if (lastFrame.UnderWater > .05f) return new LiveReading("UNDERWATER", lastFrame.UnderWater);
             if (lastFrame.LiquidWater > .05f) return new LiveReading("INTERNAL WATER", lastFrame.LiquidWater);
+            if (lastFrame.LiquidExposure > .05f) return new LiveReading("LIQUID EXPOSURE", lastFrame.LiquidExposure);
             if (lastFrame.Wetness > .05f) return new LiveReading("WETNESS", lastFrame.Wetness);
             return lastFrame.Velocity > .05f ? new LiveReading("SELF-MOTION", lastFrame.Velocity) : new LiveReading("NONE", 0f);
         }
@@ -332,6 +384,9 @@ namespace Mod
 
         public SensoryFrame Read()
         {
+            liquidReadings.Clear();
+            readableLiquidContainers = 0;
+            invalidLiquidReadings = 0;
             RefreshLimbs();
             if (!IsUsable)
             {
@@ -345,11 +400,17 @@ namespace Mod
             visionTargetSummary = "none";
             var healthSum = 0f;
             var healthCount = 0;
+            var trackedLimbCount = 0;
             foreach (var limb in limbs)
             {
                 if (limb == null) continue;
-                healthSum += ReadLimb(ref frame, limb);
-                healthCount++;
+                trackedLimbCount++;
+                var health = ReadLimb(ref frame, limb, out var healthValid);
+                if (healthValid)
+                {
+                    healthSum += health;
+                    healthCount++;
+                }
             }
 
             var lostLimbCount = 0;
@@ -358,16 +419,24 @@ namespace Mod
                 if (IsLostLimb(limb)) lostLimbCount++;
             }
 
-            frame.LimbLoss = healthCount == 0 ? 0f : (float)lostLimbCount / healthCount;
-            frame.Damage = healthCount == 0 ? 0f : 1f - healthSum / healthCount;
+            frame.LimbLoss = trackedLimbCount == 0 ? 0f : (float)lostLimbCount / trackedLimbCount;
+            frame.DamageValid = healthCount > 0;
+            frame.Damage = frame.DamageValid ? 1f - healthSum / healthCount : 0f;
             frame.Fall = ReadFalling(frame.Touch > .05f || person.IsTouchingFloor);
             frame.Proprioception = Mathf.Clamp01(frame.Velocity * .35f + frame.Rotation * .25f + frame.Balance * .25f + frame.JointStress * .15f);
             ApplyCollision(ref frame);
             ReadNearby(ref frame);
+            // Display history only. The next sensory frame still contains zero
+            // sound as soon as current playback is absent or filtered out.
+            if (frame.Sound > 0f)
+            {
+                lastHeardAudio = audioSourceSummary;
+                lastHeardAudioTime = Time.realtimeSinceStartup;
+            }
             frame.BrainDead = person.Braindead;
             frame.HealthValid = IsFinite(person.AverageHealth);
             frame.Alive = frame.HealthValid && !person.Braindead && !HasZeroHealth(person.AverageHealth);
-            frame.SubmergedHypoxia = frame.UnderWater * (1f - frame.Oxygen);
+            frame.SubmergedHypoxia = frame.OxygenValid ? frame.UnderWater * (1f - frame.Oxygen) : 0f;
             lastFrame = frame;
             hasReadFrame = true;
             return frame;
@@ -395,22 +464,28 @@ namespace Mod
             return Mathf.Clamp01(maximumDownwardSpeed / 12f);
         }
 
-        public void Apply(MotorCommand command, bool chemistry)
+        public void Apply(MotorCommand command, bool chemistry, float jointSpeedDegreesPerSecond = 30f, float walkingRequestGain = 2f)
         {
             hasAppliedControl = true;
             appliedLimbCount = 0;
-            if (!IsUsable || !hasReadFrame || !lastFrame.Alive || lastFrame.Consciousness <= .8f ||
+            jointSpeedValid = IsFinite(jointSpeedDegreesPerSecond);
+            jointSpeedLimit = jointSpeedValid ? Mathf.Clamp(jointSpeedDegreesPerSecond, 0f, 120f) : 0f;
+            if (!IsUsable || !hasReadFrame || !lastFrame.Alive || !lastFrame.ConsciousnessValid || lastFrame.Consciousness <= .8f ||
                 !IsFinite(command.Freeze) || command.Freeze > .5f)
             {
                 Stop();
                 return;
             }
 
-            var walk = command.Walk * (1f - Unit(command.Avoid) * .25f);
+            // Native walking selects a pose only at |request| >= .5. Convert
+            // neural amplitude explicitly, retaining zero and its sign and
+            // capping the result at the ordinary unit walking request.
+            var walkGain = IsFinite(walkingRequestGain) ? Mathf.Clamp(walkingRequestGain, 0f, 4f) : 0f;
+            var walk = command.Walk * walkGain * (1f - Unit(command.Avoid) * .25f);
             ApplyWalking(walk);
             foreach (var controller in limbControllers)
             {
-                if (controller.Apply(command)) appliedLimbCount++;
+                if (controller.Apply(command, jointSpeedDegreesPerSecond)) appliedLimbCount++;
                 controller.ApplyChemistry(command, chemistry);
             }
 
@@ -420,6 +495,12 @@ namespace Mod
                 if (adrenalineChange != 0f && IsFinite(person.AdrenalineLevel))
                     person.AdrenalineLevel = Unit(person.AdrenalineLevel + adrenalineChange);
             }
+        }
+
+        public void Suspend()
+        {
+            Stop();
+            hasReadFrame = false;
         }
 
         public void Stop()
@@ -444,18 +525,22 @@ namespace Mod
                 {
                     probe.Report = null;
                     probe.ReportProjectile = null;
+                    probe.IsOwned = null;
                 }
             }
         }
 
         private SensoryFrame ReadPersonState()
         {
+            nativeAdrenaline = person.AdrenalineLevel;
             var frame = new SensoryFrame
             {
                 Pain = Unit(person.PainLevel),
                 Shock = Unit(person.ShockLevel),
+                ConsciousnessValid = IsFinite(person.Consciousness),
                 Consciousness = Unit(person.Consciousness),
                 Adrenaline = Unit(person.AdrenalineLevel),
+                OxygenValid = IsFinite(person.OxygenLevel),
                 Oxygen = Unit(person.OxygenLevel),
                 Health = Unit(person.AverageHealth),
                 Fire = Unit(person.AverageFireIntensity),
@@ -468,12 +553,20 @@ namespace Mod
                 Heartbeat = Unit(person.Heartbeat),
                 BrainDamage = person.BrainDamaged ? 1f : 0f,
                 Seizure = Unit(person.SeizureTime / 5f),
-                Vitality = 1f,
-                Circulation = 1f
+                Vitality = 0f,
+                Circulation = 0f
             };
             frame.BrainDamage = Mathf.Max(frame.BrainDamage, person.Braindead ? 1f : 0f);
-            frame.BrainDamage = Mathf.Max(frame.BrainDamage, Unit(person.BrainDamagedTime / 5f));
-            frame.Unconscious = 1f - frame.Consciousness;
+            if (IsFinite(person.BrainDamagedTime))
+            {
+                frame.BrainDamage = Mathf.Max(frame.BrainDamage, Unit(person.BrainDamagedTime / 5f));
+            }
+            if (!frame.ConsciousnessValid)
+            {
+                frame.Consciousness = 0f;
+            }
+
+            frame.Unconscious = frame.ConsciousnessValid ? 1f - frame.Consciousness : 0f;
             return frame;
         }
 
@@ -482,9 +575,10 @@ namespace Mod
             return !float.IsNaN(averageHealth) && !float.IsInfinity(averageHealth) && averageHealth <= DeathHealthThreshold;
         }
 
-        private float ReadLimb(ref SensoryFrame frame, LimbBehaviour limb)
+        private float ReadLimb(ref SensoryFrame frame, LimbBehaviour limb, out bool healthValid)
         {
-            var health = Unit(limb.Health / Mathf.Max(1f, limb.InitialHealth));
+            healthValid = IsFinite(limb.Health) && IsFinite(limb.InitialHealth) && limb.InitialHealth > 0f;
+            var health = healthValid ? Unit(limb.Health / Mathf.Max(1f, limb.InitialHealth)) : 0f;
             frame.Breakage = Mathf.Max(frame.Breakage, limb.Broken || limb.CurrentlyShattered != 0 ? 1f : 0f);
             frame.JointStress = Mathf.Max(frame.JointStress, Unit(limb.JointStress / 100f));
             frame.Heat = Mathf.Max(frame.Heat, TemperatureHeat(limb.BodyTemperature));
@@ -494,7 +588,12 @@ namespace Mod
             frame.Frozen = Mathf.Max(frame.Frozen, limb.Frozen ? 1f : 0f);
             frame.Paralysis = Mathf.Max(frame.Paralysis, limb.IsParalysed ? 1f : 0f);
             frame.Numbness = Mathf.Max(frame.Numbness, Unit(limb.Numbness));
-            frame.Vitality = Mathf.Min(frame.Vitality, ReadVitality(limb, health));
+            if (healthValid)
+            {
+                var vitality = ReadVitality(limb, health);
+                frame.Vitality = frame.VitalityValid ? Mathf.Min(frame.Vitality, vitality) : vitality;
+                frame.VitalityValid = true;
+            }
             frame.LungDamage = Mathf.Max(frame.LungDamage, limb.HasLungs && limb.LungsPunctured ? 1f : 0f);
             frame.Touch = Mathf.Max(frame.Touch, limb.IsOnFloor ? 1f : 0f);
             ReadCirculation(ref frame, limb.CirculationBehaviour);
@@ -512,16 +611,31 @@ namespace Mod
         {
             if (circulation == null)
             {
+                invalidLiquidReadings++;
                 return;
             }
 
             frame.Bleeding = Mathf.Max(frame.Bleeding, Unit(circulation.BleedingRate));
             frame.InternalBleeding = Mathf.Max(frame.InternalBleeding, Unit(circulation.InternalBleedingIntensity));
             frame.Heartbeat = Mathf.Max(frame.Heartbeat, Unit(circulation.GetHeartRate() / 120f));
-            frame.Circulation = Mathf.Min(frame.Circulation, circulation.HasBloodFlow ? Unit(circulation.BloodFlow) : 0f);
+            // HasBloodFlow is an observed native state: false is a known zero even if
+            // the optional flow scalar is unavailable. A non-finite positive-flow
+            // scalar remains unknown, rather than becoming a fabricated deficit.
+            var circulationValueKnown = !circulation.HasBloodFlow || IsFinite(circulation.BloodFlow);
+            if (circulationValueKnown)
+            {
+                var circulationValue = circulation.HasBloodFlow ? Unit(circulation.BloodFlow) : 0f;
+                frame.Circulation = frame.CirculationValid ? Mathf.Min(frame.Circulation, circulationValue) : circulationValue;
+                frame.CirculationValid = true;
+            }
             frame.Disconnected = Mathf.Max(frame.Disconnected, circulation.IsDisconnected || !circulation.HasCirculation ? 1f : 0f);
             frame.Wounds = Mathf.Max(frame.Wounds, Unit((circulation.StabWoundCount + circulation.GunshotWoundCount + circulation.BleedingPointCount) / 8f));
-            frame.Blood = Mathf.Max(frame.Blood, ReadBloodDeficit(circulation));
+            var bloodDeficit = ReadBloodDeficit(circulation, out var bloodValid);
+            if (bloodValid)
+            {
+                frame.Blood = frame.BloodValid ? Mathf.Max(frame.Blood, bloodDeficit) : bloodDeficit;
+                frame.BloodValid = true;
+            }
             ReadLiquidIdentities(ref frame, circulation);
         }
 
@@ -530,100 +644,136 @@ namespace Mod
             return IsFinite(limb.Vitality) && limb.Vitality > .001f ? Unit(limb.Vitality) : health;
         }
 
-        private float ReadBloodDeficit(CirculationBehaviour circulation)
+        private float ReadBloodDeficit(CirculationBehaviour circulation, out bool valid)
         {
             var amount = circulation.GetAmountOfBlood();
-            if (!IsFinite(amount) || amount <= .001f)
+            if (!IsFinite(amount))
             {
-                return bloodBaselines.ContainsKey(circulation) ? 1f : 0f;
+                valid = false;
+                return 0f;
+            }
+
+            if (amount <= .001f)
+            {
+                valid = bloodBaselines.ContainsKey(circulation);
+                return valid ? 1f : 0f;
             }
 
             if (!bloodBaselines.TryGetValue(circulation, out var baseline) || amount > baseline)
             {
                 bloodBaselines[circulation] = amount;
+                valid = true;
                 return 0f;
             }
 
+            valid = true;
             return 1f - Unit(amount / baseline);
         }
 
-        private static void ReadLiquidIdentities(ref SensoryFrame frame, CirculationBehaviour circulation)
+        private enum LiquidKind
         {
-            if (circulation.LiquidDistribution == null || circulation.TotalLiquidAmount <= .001f)
+            UnknownExposure, Blood, Hazard, Sedative, Stimulant, Restorative, OtherExposure
+        }
+
+        private struct LiquidReading
+        {
+            public float Fraction;
+            public LiquidKind Kind;
+        }
+
+        // Exact stock IDs from Global.Awake in the installed 1.27.17 assembly.
+        // These are engineered exposure routes, not measurements of an effect.
+        private static LiquidKind ClassifyLiquid(string identity)
+        {
+            switch (identity)
             {
+                case "BLOOD": return LiquidKind.Blood;
+                case "GORSE BLOOD":
+                case "OIL":
+                case "NITRO":
+                case "TRITIUM":
+                case "COOLANT":
+                case "REANIMATION AGENT":
+                case "ACID":
+                case "BONE EATING POISON":
+                case "INSTANT DEATH POISON":
+                case "FREEZE POISON":
+                case "OSTEOMORPHOSIS AGENT":
+                case "VESTIBULAR POISON":
+                case "MUSCLE POISON":
+                case "NUMBING POISON":
+                case "EXPLOSION POISON":
+                case "CRUSHING POISON":
+                case "DISTORTION POISON":
+                case "CIRCULATION POISON":
+                case "COMBUSTION AGENT":
+                case "TISSUE DECONSTRUCTION AGENT": return LiquidKind.Hazard;
+                case "KNOCKOUT POISON": return LiquidKind.Sedative;
+                case "ADRENALINE": return LiquidKind.Stimulant;
+                case "COAGULATION SERUM":
+                case "LIFE SERUM":
+                case "MENDING SERUM":
+                case "IMMORTALITY SERUM":
+                case "REGENERATION SERUM": return LiquidKind.Restorative;
+                case "ULTRA STRENGTH SERUM":
+                case "DURABILITY SERUM":
+                case "ENHANCING SERUM":
+                case "EXOTIC LIQUID":
+                case "INERT LIQUID":
+                case "BEVERAGE M04":
+                case "WATER BREATHING SERUM":
+                case "PAIN KILLER":
+                case "INERT PINK LIQUID":
+                case "MIRRORISING AGENT":
+                case "TRANSPARENCY AGENT":
+                case "MASS AGENT":
+                case "DEBUG LIQUID 001": return LiquidKind.OtherExposure;
+                default: return LiquidKind.UnknownExposure;
+            }
+        }
+
+        private void ReadLiquidIdentities(ref SensoryFrame frame, CirculationBehaviour circulation)
+        {
+            var total = circulation.TotalLiquidAmount;
+            if (circulation.LiquidDistribution == null || !IsFinite(total) || total < 0f)
+            {
+                invalidLiquidReadings++;
                 return;
             }
-
+            readableLiquidContainers++;
             foreach (var entry in circulation.LiquidDistribution)
             {
-                var amount = Unit(entry.Value.Raw / Mathf.Max(.001f, circulation.TotalLiquidAmount));
-                if (entry.Key == null || amount <= .001f)
+                if (entry.Key == null || entry.Value == null || !IsFinite(entry.Value.Raw) || entry.Value.Raw < 0f)
                 {
+                    invalidLiquidReadings++;
                     continue;
                 }
-
+                if (entry.Value.Raw == 0f) continue;
+                if (total <= 0f)
+                {
+                    invalidLiquidReadings++;
+                    continue;
+                }
+                var amount = entry.Value.Raw >= total ? 1f : entry.Value.Raw / total;
+                if (amount <= 0f) continue;
                 var identity = Liquid.GetIdentity(entry.Key);
-                if (String.IsNullOrEmpty(identity))
+                var kind = ClassifyLiquid(identity);
+                // A display name is useful text but cannot grant a known effect.
+                var name = !String.IsNullOrEmpty(identity) ? identity :
+                    (entry.Key.GetDisplayName() ?? "Unnamed liquid") + " (unregistered)";
+                if (!liquidReadings.TryGetValue(name, out var reading) || amount > reading.Fraction)
                 {
-                    identity = entry.Key.GetDisplayName();
+                    liquidReadings[name] = new LiquidReading { Fraction = amount, Kind = kind };
                 }
-
-                var isBlood = String.Equals(identity, "BLOOD", StringComparison.OrdinalIgnoreCase) ||
-                    String.Equals(identity, "Human blood", StringComparison.OrdinalIgnoreCase);
-                var isSedation = MatchesLiquid(identity, "knockout", "anesthetic", "anaesthetic", "sedation");
-                if (!isBlood)
+                if (kind != LiquidKind.Blood) frame.LiquidExposure = Mathf.Max(frame.LiquidExposure, amount);
+                switch (kind)
                 {
-                    frame.LiquidExposure = Mathf.Max(frame.LiquidExposure, amount);
-                }
-
-                if (MatchesLiquid(identity, "acid", "corrosion", "gorse", "toxin", "zombie") ||
-                    MatchesLiquid(identity, "reanimation", "deconstruction", "combustion", "osteomorphosis", "tritium") ||
-                    MatchesLiquid(identity, "nitro", "gasoline", "coolant", "oil", "explosive") ||
-                    (!isSedation && MatchesLiquid(identity, "poison")))
-                {
-                    frame.LiquidHazard = Mathf.Max(frame.LiquidHazard, amount);
-                }
-
-                if (isSedation)
-                {
-                    frame.LiquidSedation = Mathf.Max(frame.LiquidSedation, amount);
-                }
-
-                if (MatchesLiquid(identity, "adrenaline", "stimulation", "enhancing", "ultra strength", "durability"))
-                {
-                    frame.LiquidStimulation = Mathf.Max(frame.LiquidStimulation, amount);
-                }
-
-                if (MatchesLiquid(identity, "regeneration", "healing", "immortality", "life serum", "mending") ||
-                    MatchesLiquid(identity, "coagulation"))
-                {
-                    frame.LiquidHealing = Mathf.Max(frame.LiquidHealing, amount);
-                }
-
-                if (MatchesLiquid(identity, "water"))
-                {
-                    frame.LiquidWater = Mathf.Max(frame.LiquidWater, amount);
+                    case LiquidKind.Hazard: frame.LiquidHazard = Mathf.Max(frame.LiquidHazard, amount); break;
+                    case LiquidKind.Sedative: frame.LiquidSedation = Mathf.Max(frame.LiquidSedation, amount); break;
+                    case LiquidKind.Stimulant: frame.LiquidStimulation = Mathf.Max(frame.LiquidStimulation, amount); break;
+                    case LiquidKind.Restorative: frame.LiquidHealing = Mathf.Max(frame.LiquidHealing, amount); break;
                 }
             }
-        }
-
-        private static bool MatchesLiquid(string identity, string first, string second = null, string third = null, string fourth = null, string fifth = null)
-        {
-            if (String.IsNullOrEmpty(identity))
-            {
-                return false;
-            }
-
-            return ContainsLiquidName(identity, first) ||
-                ContainsLiquidName(identity, second) ||
-                ContainsLiquidName(identity, third) ||
-                ContainsLiquidName(identity, fourth) ||
-                ContainsLiquidName(identity, fifth);
-        }
-
-        private static bool ContainsLiquidName(string identity, string name)
-        {
-            return !String.IsNullOrEmpty(name) && identity.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static void ReadPhysical(ref SensoryFrame frame, PhysicalBehaviour physical)
@@ -690,8 +840,13 @@ namespace Mod
             if (person != null) person.DesiredWalkingDirection = appliedWalk;
         }
 
-        private bool IsOwnTransform(Transform candidate)
+        internal bool IsOwnTransform(Transform candidate)
         {
+            if (candidate == null || root == null)
+            {
+                return false;
+            }
+
             if (candidate == root.transform || candidate.IsChildOf(root.transform)) return true;
             foreach (var limb in limbs)
             {
@@ -717,16 +872,16 @@ namespace Mod
                     continue;
                 }
 
+                var delta = hit.ClosestPoint(origin) - origin;
+                var distance = delta.magnitude;
+                if (!IsFinite(distance) || !IsFinite(delta.x)) continue;
+
                 var acidPool = hit.GetComponentInParent<AcidPoolBehaviour>();
-                if (acidPool != null && !IsOwnTransform(acidPool.transform))
+                if (acidPool != null && !IsOwnTransform(acidPool.transform) && distance <= .05f)
                 {
                     var acid = Mathf.Max(Unit(acidPool.AcidProgress), Unit(acidPool.PainIntensity));
                     f.AcidExposure = Mathf.Max(f.AcidExposure, acid);
                 }
-
-                var delta = hit.ClosestPoint(origin) - origin;
-                var distance = delta.magnitude;
-                if (!IsFinite(distance) || !IsFinite(delta.x)) continue;
 
                 var lava = hit.GetComponentInParent<LavaBehaviour>();
                 if (lava != null && !IsOwnTransform(lava.transform))

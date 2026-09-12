@@ -86,10 +86,11 @@ namespace Mod
                 SkipByteArray(reader, count);
                 SkipByteArray(reader, count);
                 SkipByteArray(reader, count);
-                SkipSingleArray(reader, checked(count * 3));
+                var soma = new float[checked(count * 3)];
+                for (var i = 0; i < soma.Length; i++) soma[i] = reader.ReadSingle();
                 SkipInt32Array(reader, count);
                 SkipInt32Array(reader, count);
-                return new RuntimeColumns(types, superclasses, signs, sides);
+                return new RuntimeColumns(types, superclasses, signs, sides, soma);
             }
 
             private static RuntimeAsset CreateAsset(RuntimeCounts counts, int[] rows, int[] posts, RuntimeColumns columns)
@@ -146,6 +147,7 @@ namespace Mod
                 {
                     asset.populations[pair.Key] = pair.Value.ToArray();
                 }
+                asset.BrainMap = BrainMapSample.Create(columns.Soma, asset.Superclasses);
             }
 
             private static bool IsMotorSuperclass(string superclass)
@@ -319,14 +321,6 @@ namespace Mod
                 }
             }
 
-            private static void SkipSingleArray(ByteReader reader, int count)
-            {
-                for (var i = 0; i < count; i++)
-                {
-                    _ = reader.ReadSingle();
-                }
-            }
-
             private sealed class RuntimeCounts
             {
                 public RuntimeCounts(int neuronCount, int edgeCount, int retinaCount)
@@ -343,34 +337,42 @@ namespace Mod
 
             private sealed class RuntimeColumns
             {
-                public RuntimeColumns(int[] typeIndexes, byte[] superclassIndexes, sbyte[] signs, byte[] sideIndexes)
+                public RuntimeColumns(int[] typeIndexes, byte[] superclassIndexes, sbyte[] signs, byte[] sideIndexes, float[] soma)
                 {
                     TypeIndexes = typeIndexes;
                     SuperclassIndexes = superclassIndexes;
                     Signs = signs;
                     SideIndexes = sideIndexes;
+                    Soma = soma;
                 }
 
                 public int[] TypeIndexes { get; }
                 public byte[] SuperclassIndexes { get; }
                 public sbyte[] Signs { get; }
                 public byte[] SideIndexes { get; }
+                public float[] Soma { get; }
             }
 
             internal sealed class ByteReader : IDisposable
             {
                 private readonly Stream stream;
+                private readonly byte[] scalar = new byte[8];
                 public ByteReader(Stream stream) { this.stream = stream; }
-                public byte ReadByte() { return ReadBytes(1)[0]; }
+                public byte ReadByte() { ReadInto(scalar, 1); return scalar[0]; }
                 public sbyte ReadSByte() { return unchecked((sbyte)ReadByte()); }
-                public ushort ReadUInt16() { return BitConverter.ToUInt16(ReadBytes(2), 0); }
-                public uint ReadUInt32() { return BitConverter.ToUInt32(ReadBytes(4), 0); }
-                public int ReadInt32() { return BitConverter.ToInt32(ReadBytes(4), 0); }
-                public long ReadInt64() { return BitConverter.ToInt64(ReadBytes(8), 0); }
-                public float ReadSingle() { return BitConverter.ToSingle(ReadBytes(4), 0); }
+                public ushort ReadUInt16() { ReadInto(scalar, 2); return BitConverter.ToUInt16(scalar, 0); }
+                public uint ReadUInt32() { ReadInto(scalar, 4); return BitConverter.ToUInt32(scalar, 0); }
+                public int ReadInt32() { ReadInto(scalar, 4); return BitConverter.ToInt32(scalar, 0); }
+                public long ReadInt64() { ReadInto(scalar, 8); return BitConverter.ToInt64(scalar, 0); }
+                public float ReadSingle() { ReadInto(scalar, 4); return BitConverter.ToSingle(scalar, 0); }
                 public byte[] ReadBytes(int count)
                 {
                     var bytes = new byte[count];
+                    ReadInto(bytes, count);
+                    return bytes;
+                }
+                private void ReadInto(byte[] bytes, int count)
+                {
                     var offset = 0;
                     while (offset < count)
                     {
@@ -378,7 +380,6 @@ namespace Mod
                         if (read == 0) throw new EndOfStreamException();
                         offset += read;
                     }
-                    return bytes;
                 }
                 public void Dispose()
                 {

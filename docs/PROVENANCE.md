@@ -42,3 +42,15 @@ network. Rebuilding the derivative must preserve the MaleCNS CC BY attribution,
 the exact source dataset/version, the threshold and transformations above, and
 must update the checksum and counts here. FlyWire CC BY-NC data is not mixed into
 this asset.
+
+## Diagnostic soma map
+
+The same pinned FLYB payload also contains interleaved float32 soma X/Y/Z coordinates (raw neuPrint voxel coordinates; NaN for missing positions), as documented by the upstream [FLYB builder](https://github.com/blendi-remade/fly-brain-minecraft/blob/main/tools/build_flyb.py). The current payload has 141,781 neurons with three finite coordinates. Runtime preserves a deterministic evenly spaced sample of up to 8,192 of these, retaining original compact neuron IDs and superclass categories. The diagnostic X/Z projection preserves relative coordinates with a common scale and does not invent positions for the remaining neurons. All 176,422 graph neurons remain in the simulation.
+
+White points correspond to sampled IDs in this runtime's actual fired set for the displayed capture. The image is not a human-brain reconstruction, a membrane-voltage measurement or a complete activity recording. Whole-graph spike history and population fired/member bars are separate diagnostics. Their values are not asserted to be biological firing rates.
+
+The [Minecraft brain view](https://github.com/blendi-remade/fly-brain-minecraft/blob/main/src/client/java/com/fruitfly/client/hud/BrainViewHud.java) inspired the requested presentation. This implementation uses the existing asset and a local Unity display; no Minecraft game mechanics, reflex controller or replacement connectome were imported. The compressed payload and carrier were not changed by this polish.
+
+## Game liquid mapping provenance
+
+The adapter's 41 stock liquid IDs come from static inspection of `Global.Awake` registration calls in the locally installed People Playground 1.27.17 assembly. Selected liquid effect methods were inspected to separate exposure from observed native effects, as recorded in api-compatibility.md. This is game integration metadata, not MaleCNS chemical-sense data. It does not change the connectome, source attribution, payload checksum or PNG carrier.
