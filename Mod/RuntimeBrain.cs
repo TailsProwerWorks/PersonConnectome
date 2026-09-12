@@ -47,6 +47,7 @@ namespace Mod
         private float injuryDrive, hazardDrive, motionDrive, arousalDrive;
         private const int MaxActivePerStep = 24000;
         private const int RefractoryTicks = 5;
+        private const int WaterStrokePeriodTicks = 32;
 
         private ConnectomeBrain(IRuntimeConnectomeAsset asset)
         {
@@ -264,7 +265,7 @@ namespace Mod
 
         private MotorCommand BuildMotorCommand(SensoryFrame sensory)
         {
-            if (sensory.UnderWater > .5f)
+            if (sensory.UnderWater > .5f && (sensory.Touch <= .5f || sensory.SubmergedHypoxia > .05f))
             {
                 return BuildWaterSurvivalCommand(sensory);
             }
@@ -302,16 +303,19 @@ namespace Mod
 
         private MotorCommand BuildWaterSurvivalCommand(SensoryFrame sensory)
         {
-            var stroke = simulationTick % 8 < 4 ? 1f : -1f;
+            var phase = (float)((simulationTick % WaterStrokePeriodTicks) * (Math.PI * 2.0 / WaterStrokePeriodTicks));
+            var stroke = (float)Math.Sin(phase);
+            var armStroke = stroke * .75f;
+            var legStroke = stroke * .45f;
             lastCommand = new MotorCommand
             {
                 Walk = 0f,
-                LeftArm = stroke,
-                RightArm = -stroke,
-                LeftLeg = -stroke,
-                RightLeg = stroke,
-                Core = .35f,
-                Head = -.2f,
+                LeftArm = armStroke,
+                RightArm = -armStroke,
+                LeftLeg = -legStroke,
+                RightLeg = legStroke,
+                Core = .25f,
+                Head = -.15f,
                 ReachGrab = 0f,
                 LeftGrip = 0f,
                 RightGrip = 0f,

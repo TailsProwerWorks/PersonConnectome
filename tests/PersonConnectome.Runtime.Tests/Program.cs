@@ -12,6 +12,7 @@ var tests = new (string Name, Action Run)[]
     ("healthy standing leaves sensory headroom", HealthyStateLeavesSensoryHeadroom),
     ("normalized blood and vitality drive injury", NormalizedBloodAndVitalityDriveInjury),
     ("submersion triggers survival paddling", SubmersionTriggersSurvivalPaddling),
+    ("supported shallow water keeps normal control", SupportedShallowWaterKeepsNormalControl),
     ("nearby stimulus does not force escape walking", NearbyStimulusDoesNotForceEscapeWalking),
     ("R7 R8 variants receive light drive", RetinaVariantsReceiveLightDrive),
     ("bundled payload identity", BundledPayloadIdentity),
@@ -167,16 +168,36 @@ static void SubmersionTriggersSurvivalPaddling()
     };
 
     var first = brain.Step(sensory);
-    brain.Step(sensory);
-    brain.Step(sensory);
-    brain.Step(sensory);
     var second = brain.Step(sensory);
+    True(MathF.Abs(second.LeftArm - first.LeftArm) < 1f, "water response must change smoothly");
+    for (var i = 0; i < 15; i++) brain.Step(sensory);
+    var reversed = brain.Step(sensory);
     Equal(0f, first.Walk);
     Equal(1f, first.Avoid);
     True(first.LeftArm != 0f && first.LeftArm == -first.RightArm, "water response must paddle with alternating arms");
-    True(first.LeftLeg == -first.RightLeg, "water response must alternate the legs");
-    True(first.LeftArm == -second.LeftArm, "water response must alternate strokes");
+    True(first.LeftLeg == -first.RightLeg, "water response must coordinate the legs");
+    True(first.LeftArm * reversed.LeftArm < 0f, "water response must reverse after a full half-cycle");
     True(first.Stimulate > 0f, "water response must raise arousal from hypoxia");
+}
+
+static void SupportedShallowWaterKeepsNormalControl()
+{
+    var brain = OneNeuronBrain();
+    var command = brain.Step(new SensoryFrame
+    {
+        Alive = true,
+        Health = 1f,
+        Oxygen = 1f,
+        Consciousness = 1f,
+        Vitality = 1f,
+        Circulation = 1f,
+        UnderWater = 1f,
+        Touch = 1f
+    });
+    Equal(0f, command.Avoid);
+    Equal(0f, command.Walk);
+    Equal(0f, command.LeftArm);
+    Equal(0f, command.RightArm);
 }
 
 static void FreshSensoryInputsBypassRecurrentBacklog()
