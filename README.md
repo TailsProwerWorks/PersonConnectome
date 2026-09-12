@@ -4,7 +4,7 @@
 
 ## Install and attach
 
-1. In a disposable People Playground install, run `.\scripts\Deploy-Mod.ps1` from an administrator PowerShell. It copies only the manifest-listed scripts, `mod.json`, and the PNG carrier to `People Playground/Mods/PersonConnectome`.
+1. In a disposable People Playground install, run `.\scripts\Deploy-Mod.ps1` from an administrator PowerShell. It copies the manifest-listed scripts, `mod.json`, the generated `README.txt`, the thumbnail, and the PNG carrier to `People Playground/Mods/PersonConnectome`.
 2. Start the game and enable **Person Connectome** in the mod list.
 3. From **Entities**, spawn **Person Connectome (Active)**. This variation is the explicit attachment mechanism: it is a normal Human with `PersonConnectomeController` attached on spawn. Existing stock Humans are never silently modified.
 4. The controller samples the person when the validated asset and adapter are available. Motor and chemistry requests are suppressed for invalid health, terminal state, consciousness at or below 0.8, or a freeze request. A world-space status label follows the brain/head limb and is the primary live display.
@@ -22,7 +22,7 @@ The shipped runtime loads the downloaded MaleCNS FLYB payload through the allowe
 
 Each discovered `LimbBehaviour` receives a deterministic actuator profile. Limb roles are inferred from component names. Side names are read from the limb hierarchy: explicit left/right names take priority, front maps to right and back to left as a game-plane convention, and unknown sides receive the average channel. This remains a heuristic; local horizontal position is not used as anatomical side. This gives every jointed human limb a brain-derived channel, but it is necessarily a fly-to-human control mapping rather than an anatomically exact human motor map.
 
-Control does **not** add force, inject damage, spawn/delete gameplay objects, use networking/shells/native interop, or inject chemicals. The diagnostic label has its own nonphysical GameObject and is destroyed with its controller. Grip and chemistry are separate capability calls after locomotion and limb control; unsupported capability shapes are skipped, while invocation errors are not intercepted.
+Control does **not** add force, inject damage or liquids, spawn/delete gameplay objects, use networking/shells/native interop, or alter the game's liquid contents. The diagnostic label has its own nonphysical GameObject and is destroyed with its controller. Grip and chemistry are separate capability calls after locomotion and limb control; unsupported capability shapes are skipped, while invocation errors are not intercepted.
 
 The overhead label reports body state, a prioritized sensory cue with its matching value, available/capable limbs, the number of joint commands applied on the last control tick, and the applied walking request. `REQUEST` shows the brain's desired limb/grip channels, not measured joint motion. `NEURAL` separates pending-input targets (`queued`), neurons processed, stale overload work dropped, and spikes (`fired`). The scheduler prioritizes fresh sensory input and drops stale recurrent work when the active set exceeds the cap, keeping control bounded instead of allowing old work to accumulate. Refractory periods expire in neural ticks even during silence. Blood loss is measured against each circulation's first valid positive blood reading because the game stores liquid amounts in native liquid units; Vitality uses its positive native value and falls back to normalized limb health when the native baseline is zero.
 
@@ -39,7 +39,7 @@ The inspected interface has no native semantic vision/hearing or general disease
 Requires .NET 10 SDK; no NuGet packages are needed:
 
 ```sh
-dotnet format PersonConnectome.sln --verify-no-changes
+dotnet format PersonConnectome.sln --verify-no-changes --no-restore
 dotnet build PersonConnectome.sln -c Release
 dotnet run --project tests/PersonConnectome.Runtime.Tests -c Release
 dotnet run --project tests/PersonConnectome.Adapter.Tests -c Release
@@ -60,7 +60,7 @@ To build and deploy the mod to that default install, run PowerShell as an admini
 .\scripts\Deploy-Mod.ps1
 ```
 
-For another install, use `-GameInstall 'D:\Games\People Playground'`. Use `-NoBuild` only when the mod has already been built, or `-WhatIf` to preview the copy without changing the game directory. The script replaces the `{{GIT_COMMIT}}` token in the deployed manifest description with the current short Git commit, copies the manifest-listed `.cs` sources and only the PNG connectome carrier, then verifies every deployed file with SHA-256. If an older deployment contains the raw `.flyb.gz` build input, the script removes that exact stale file.
+For another install, use `-GameInstall 'D:\Games\People Playground'`. Use `-NoBuild` only when the mod has already been built, or `-WhatIf` to preview the copy without changing the game directory. The script replaces the `{{GIT_COMMIT}}` token in the deployed `README.txt` with the current short Git commit, copies the manifest-listed `.cs` sources, `mod.json`, `README.txt`, `thumb.png`, and only the PNG connectome carrier, then verifies every deployed file with SHA-256. If an older deployment contains the raw `.flyb.gz` build input, the script removes that exact stale file.
 
 To rebuild the game-safe PNG carrier from the pinned FLYB/GZip CNS payload, run this from the repository root:
 
@@ -75,6 +75,7 @@ The solution also compiles the game-facing sources against the installed assembl
 ## Layout
 
 - `Mod/script.cs`: loadable People Playground entrypoint and runtime brain factory.
+- `Mod/README.txt`: in-game rich-text documentation with the deployment commit and repository link.
 - `Mod/RuntimeBrain.cs`: single bounded MaleCNS controller implementation compiled by the mod and source/test projects.
 - `Mod/ConnectomeRuntimeAsset.cs`: game-safe texture-carrier and FLYB parser.
 - `Mod/PersonConnectomeController.cs`: Unity lifecycle and collision probe.

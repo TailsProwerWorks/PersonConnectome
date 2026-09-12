@@ -15,6 +15,7 @@ $modProject = Join-Path $modSource 'PersonConnectome.Mod.csproj'
 $managedDirectory = Join-Path $GameInstall 'People Playground_Data\Managed'
 $targetDirectory = Join-Path $GameInstall 'Mods\PersonConnectome'
 $manifestSourcePath = Join-Path $modSource 'mod.json'
+$readmeSourcePath = Join-Path $modSource 'README.txt'
 
 if (-not (Test-Path -LiteralPath $modProject -PathType Leaf)) {
     throw "Mod project was not found: $modProject"
@@ -37,17 +38,18 @@ if ($LASTEXITCODE -ne 0 -or [String]::IsNullOrWhiteSpace($gitCommit)) {
     throw "Could not determine the current Git commit for the deployed build."
 }
 
-$manifestJson = Get-Content -LiteralPath $manifestSourcePath -Raw
-if (-not $manifestJson.Contains('{{GIT_COMMIT}}')) {
-    throw "The mod manifest does not contain the {{GIT_COMMIT}} build marker."
+$manifest = Get-Content -LiteralPath $manifestSourcePath -Raw | ConvertFrom-Json
+$readmeContent = Get-Content -LiteralPath $readmeSourcePath -Raw
+if (-not $readmeContent.Contains('{{GIT_COMMIT}}')) {
+    throw "The mod README does not contain the {{GIT_COMMIT}} build marker."
 }
 
-$manifestJson = $manifestJson.Replace('{{GIT_COMMIT}}', $gitCommit)
-$manifest = $manifestJson | ConvertFrom-Json
-$generatedManifestPath = Join-Path ([IO.Path]::GetTempPath()) ('person-connectome-mod-' + [guid]::NewGuid().ToString('N') + '.json')
-[IO.File]::WriteAllText($generatedManifestPath, $manifestJson, [Text.UTF8Encoding]::new($false))
+$readmeContent = $readmeContent.Replace('{{GIT_COMMIT}}', $gitCommit)
+$generatedReadmePath = Join-Path ([IO.Path]::GetTempPath()) ('person-connectome-readme-' + [guid]::NewGuid().ToString('N') + '.txt')
+[IO.File]::WriteAllText($generatedReadmePath, $readmeContent, [Text.UTF8Encoding]::new($false))
 $files = @(
-    [pscustomobject]@{ SourcePath = $generatedManifestPath; RelativePath = 'mod.json' }
+    [pscustomobject]@{ SourcePath = $manifestSourcePath; RelativePath = 'mod.json' }
+    [pscustomobject]@{ SourcePath = $generatedReadmePath; RelativePath = 'README.txt' }
 )
 foreach ($script in $manifest.Scripts) {
     $scriptPath = Join-Path $modSource $script
@@ -73,9 +75,10 @@ if (-not [String]::IsNullOrWhiteSpace($manifest.ThumbnailPath)) {
         throw "Manifest thumbnail was not found: $thumbnailPath"
     }
 
-    $files += [pscustomobject]@{ SourcePath = $thumbnailPath; RelativePath = $manifest.ThumbnailPath }
+$files += [pscustomobject]@{ SourcePath = $thumbnailPath; RelativePath = $manifest.ThumbnailPath }
 }
 
+try {
 if ($PSCmdlet.ShouldProcess($targetDirectory, 'deploy Person Connectome mod files')) {
     New-Item -ItemType Directory -Path $targetDirectory -Force | Out-Null
     $targetConnectomeDirectory = Join-Path $targetDirectory 'connectome'
@@ -137,6 +140,9 @@ if ($PSCmdlet.ShouldProcess($targetDirectory, 'deploy Person Connectome mod file
     Write-Host 'The deployed connectome carrier was verified byte-for-byte; the raw build input was not deployed.'
 }
 
-if (Test-Path -LiteralPath $generatedManifestPath -PathType Leaf) {
-    Remove-Item -LiteralPath $generatedManifestPath -Force
+}
+finally {
+    if (Test-Path -LiteralPath $generatedReadmePath -PathType Leaf) {
+        [IO.File]::Delete($generatedReadmePath)
+    }
 }
