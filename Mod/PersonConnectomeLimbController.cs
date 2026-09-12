@@ -38,7 +38,10 @@ namespace Mod
 
         public bool IsConfigured => limb != null;
 
-        public bool CanDrive => limb != null && limb.HasJoint && limb.IsCapable;
+        // People Playground can clear IsCapable across the entire person for
+        // global states such as submersion. It is not a reliable per-limb motor
+        // gate, so nonterminal control uses only local joint/damage evidence.
+        public bool CanDrive => limb != null && !HasLocalMotorFailure();
 
         public string DiagnosticSummary
         {
@@ -47,14 +50,15 @@ namespace Mod
                 if (limb == null) return "missing-limb";
 
                 if (!limb.HasJoint) return limb.name + ":no-joint";
-                if (!limb.IsCapable) return limb.name + ":incapable";
+                var failure = LocalMotorFailure();
+                if (failure != null) return limb.name + ":" + failure;
                 return null;
             }
         }
 
         public bool Apply(MotorCommand command)
         {
-            if (limb == null || !limb.IsCapable)
+            if (limb == null || !CanDrive)
             {
                 Stop();
                 return false;
@@ -237,7 +241,7 @@ namespace Mod
         public void ApplyChemistry(MotorCommand command, bool enabled)
         {
             if (limb == null) return;
-            if (!enabled || !limb.IsCapable)
+            if (!enabled || !CanDrive)
             {
                 RestoreChemistry();
                 return;
@@ -260,6 +264,27 @@ namespace Mod
             if (circulation != null)
                 circulation.BloodRegenerationPerSecond = bloodRate.Restore(circulation.BloodRegenerationPerSecond);
             limb.RegenerationSpeed = limbRate.Restore(limb.RegenerationSpeed);
+        }
+
+        private bool HasLocalMotorFailure()
+        {
+            return !limb.HasJoint || LocalMotorFailure() != null;
+        }
+
+        private string LocalMotorFailure()
+        {
+            if (limb == null) return "missing-limb";
+            if (!limb.HasJoint) return "no-joint";
+            if (limb.Broken || limb.CurrentlyShattered != 0) return "broken";
+            if (limb.IsDismembered) return "dismembered";
+
+            var physical = limb.PhysicalBehaviour;
+            if (physical != null && physical.isDisintegrated) return "disintegrated";
+            if (limb.IsParalysed) return "paralysed";
+
+            var circulation = limb.CirculationBehaviour;
+            if (circulation != null && (circulation.IsDisconnected || !circulation.HasCirculation)) return "disconnected";
+            return null;
         }
 
         private static float FiniteUnit(float value) => float.IsNaN(value) || float.IsInfinity(value) ? 0f : Mathf.Clamp01(value);

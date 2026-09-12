@@ -113,12 +113,46 @@ namespace Mod
 
                 renderer.sortingLayerID = frontLayer;
                 renderer.sortingOrder = short.MaxValue;
+                renderer.shadowCastingMode = ShadowCastingMode.Off;
+                renderer.receiveShadows = false;
             }
 
             var material = label == null ? null : label.fontMaterial;
-            if (material != null && material.HasProperty("_ZTest"))
+            if (material == null)
             {
-                material.SetFloat("_ZTest", (float)CompareFunction.Always);
+                return;
+            }
+
+            // Use a private material so the display cannot change the game's
+            // shared TMP font material or inherit scene-lighting state.
+            var foregroundMaterial = new Material(material)
+            {
+                name = "Person Connectome Foreground Text",
+                renderQueue = 4000
+            };
+
+            // TMP's distance-field shader is unlit. Prefer it explicitly so
+            // scene lights and lightning flashes cannot tint the telemetry.
+            var unlitShader = Shader.Find("TextMeshPro/Distance Field");
+            if (unlitShader != null && foregroundMaterial.shader != unlitShader)
+            {
+                var unlitMaterial = new Material(unlitShader);
+                unlitMaterial.CopyPropertiesFromMaterial(foregroundMaterial);
+                unlitMaterial.name = foregroundMaterial.name;
+                UnityEngine.Object.Destroy(foregroundMaterial);
+                foregroundMaterial = unlitMaterial;
+            }
+
+            label.fontMaterial = foregroundMaterial;
+
+            if (foregroundMaterial.HasProperty("_ZTest"))
+            {
+                foregroundMaterial.SetFloat("_ZTest", (float)CompareFunction.Always);
+            }
+
+            if (foregroundMaterial.HasProperty("_ZWrite"))
+            {
+                foregroundMaterial.SetFloat("_ZWrite", 0f);
             }
         }
 

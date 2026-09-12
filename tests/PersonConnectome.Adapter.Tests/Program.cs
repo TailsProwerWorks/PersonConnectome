@@ -9,7 +9,7 @@ internal static class Program
         [
             ("terminal motors and grips clear immediately", TerminalStop),
             ("native pose context actions are suppressed", ContextMenuPoseActions),
-            ("unconscious and incapable limbs clear old commands", IncapableStop),
+            ("unconscious and locally damaged limbs clear old commands", IncapableStop),
             ("brain injury remains alive with matching signal value", BrainInjury),
             ("invalid health stops control without inventing death", InvalidHealth),
             ("destroyed and newly added inactive limbs", LimbLifecycle),
@@ -62,8 +62,10 @@ internal static class Program
     {
         var f = new Fixture(); f.Person.Consciousness = .7f; f.Limb.MotorSpeed = 8; f.Limb.GripBehaviour.isHolding = true;
         f.Adapter.Read(); Equal("UNCONSCIOUS", f.Adapter.LiveState); f.Adapter.Apply(Moving, true); Equal(0, f.Limb.MotorSpeed); True(!f.Limb.GripBehaviour.isHolding);
-        f.Person.Consciousness = 1; f.Limb.IsCapable = false; f.Limb.MotorSpeed = 3; f.Adapter.Read(); f.Adapter.Apply(Moving, true); Equal(0, f.Limb.MotorSpeed); Equal(0, f.Limb.RegenerationSpeed);
-        True(f.Adapter.LiveLimbSummary.Contains("LowerArmFront:incapable"));
+        f.Person.Consciousness = 1; f.Limb.IsCapable = false; f.Limb.MotorSpeed = 3; f.Adapter.Read(); f.Adapter.Apply(Moving, true); True(f.Limb.MotorSpeed != 0); Equal(0.8f, f.Limb.RegenerationSpeed);
+        True(!f.Adapter.LiveLimbSummary.Contains("LowerArmFront:incapable"));
+        f.Limb.Broken = true; f.Limb.MotorSpeed = 3; f.Adapter.Read(); f.Adapter.Apply(Moving, true); Equal(0, f.Limb.MotorSpeed);
+        True(f.Adapter.LiveLimbSummary.Contains("LowerArmFront:broken"));
     }
     private static void BrainInjury()
     {
