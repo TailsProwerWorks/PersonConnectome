@@ -8,12 +8,17 @@ namespace Mod
     {
         private const float DeathHealthThreshold = .001f;
         private const float ContactImpactAlertThreshold = .15f;
+        private static readonly string[] HeadNames = { "head", "neck", "brain", "skull" };
+        private static readonly string[] ArmNames = { "hand", "finger", "thumb", "palm", "wrist", "arm", "elbow" };
+        private static readonly string[] LegNames = { "foot", "toe", "ankle", "leg", "knee", "thigh" };
+        private static readonly string[] CoreNames = { "body", "chest", "torso", "pelvis", "hip", "stomach", "waist" };
         private readonly GameObject root;
         private readonly PersonBehaviour person;
         private readonly List<LimbBehaviour> limbs = [];
         private readonly List<PersonConnectomeLimbController> limbControllers = [];
         private readonly List<LimbBehaviour> discoveredLimbs = [];
         private readonly Dictionary<CirculationBehaviour, float> bloodBaselines = [];
+        private readonly Dictionary<LimbBehaviour, LimbHealthSample> healthSamples = [];
         private readonly Action<float> reportCollision;
         private readonly Action<float> reportProjectile;
         private float appliedWalk;
@@ -33,6 +38,8 @@ namespace Mod
         private string lastHeardAudio;
         private float lastHeardAudioTime;
         private string visionTargetSummary = "none";
+        private readonly float[] spectrumBuffer = new float[512];
+        private AudioSource winningAudioSource;
         private readonly Dictionary<string, LiquidReading> liquidReadings = new Dictionary<string, LiquidReading>(StringComparer.Ordinal);
         private int readableLiquidContainers;
         private int invalidLiquidReadings;
@@ -50,7 +57,7 @@ namespace Mod
         {
             get
             {
-                return "BODY:\n  native-hp=" + (lastFrame.HealthValid ? lastFrame.Health.ToString("0.00") : "unknown") + "  limb-damage=" + (lastFrame.DamageValid ? lastFrame.Damage.ToString("0.00") : "unknown") + "  pain=" + lastFrame.Pain.ToString("0.00") + "  shock=" + lastFrame.Shock.ToString("0.00") + "\n  oxygen=" + (lastFrame.OxygenValid ? lastFrame.Oxygen.ToString("0.00") : "unknown") + "  conscious=" + (lastFrame.ConsciousnessValid ? lastFrame.Consciousness.ToString("0.00") : "unknown") + "  unconscious=" + (lastFrame.ConsciousnessValid ? lastFrame.Unconscious.ToString("0.00") : "unknown") + "  adrenaline(raw)=" + (IsFinite(nativeAdrenaline) ? nativeAdrenaline.ToString("0.00") : "unknown") + "  adrenaline(normalized)=" + lastFrame.Adrenaline.ToString("0.00") + "\n  heartbeat=" + lastFrame.Heartbeat.ToString("0.00") + "  velocity=" + lastFrame.Velocity.ToString("0.00") + "  velocity-xy(native rigidbody)=" + (lastFrame.VelocityValid ? lastFrame.VelocityX.ToString("0.00") + "," + lastFrame.VelocityY.ToString("0.00") : "unknown") + "  falling=" + lastFrame.Fall.ToString("0.00") + "\n  rotation=" + lastFrame.Rotation.ToString("0.00") + "  tilt(native angle proxy)=" + (lastFrame.TiltValid ? lastFrame.SignedTilt.ToString("0.00") : "unknown") + "  balance=" + lastFrame.Balance.ToString("0.00") + "  proprioception(proxy)=" + lastFrame.Proprioception.ToString("0.00") + "\n  joint-reading position=" + (lastFrame.JointSensingValid ? lastFrame.JointPosition.ToString("0.00") : "unknown") + "  motion=" + (lastFrame.JointSensingValid ? lastFrame.JointMotion.ToString("0.00") : "unknown") + "  brain=" + BrainSummary;
+                return "BODY:\n  native-hp=" + (lastFrame.HealthValid ? lastFrame.Health.ToString("0.00") : "unknown") + "  limb-damage=" + (lastFrame.DamageValid ? lastFrame.Damage.ToString("0.00") : "unknown") + "  damage-event=" + lastFrame.DamageEvent.ToString("0.00") + "  pain=" + lastFrame.Pain.ToString("0.00") + "  shock=" + lastFrame.Shock.ToString("0.00") + "\n  oxygen=" + (lastFrame.OxygenValid ? lastFrame.Oxygen.ToString("0.00") : "unknown") + "  conscious=" + (lastFrame.ConsciousnessValid ? lastFrame.Consciousness.ToString("0.00") : "unknown") + "  unconscious=" + (lastFrame.ConsciousnessValid ? lastFrame.Unconscious.ToString("0.00") : "unknown") + "  adrenaline(raw)=" + (IsFinite(nativeAdrenaline) ? nativeAdrenaline.ToString("0.00") : "unknown") + "  adrenaline(normalized)=" + lastFrame.Adrenaline.ToString("0.00") + "\n  heartbeat=" + lastFrame.Heartbeat.ToString("0.00") + "  velocity=" + lastFrame.Velocity.ToString("0.00") + "  velocity-xy(native rigidbody)=" + (lastFrame.VelocityValid ? lastFrame.VelocityX.ToString("0.00") + "," + lastFrame.VelocityY.ToString("0.00") : "unknown") + "  angular-velocity(native)=" + (lastFrame.AngularVelocityValid ? lastFrame.AngularVelocity.ToString("0.0") + " deg/s" : "unknown") + "  falling=" + lastFrame.Fall.ToString("0.00") + "\n  rotation=" + lastFrame.Rotation.ToString("0.00") + "  tilt(native angle proxy)=" + (lastFrame.TiltValid ? lastFrame.SignedTilt.ToString("0.00") : "unknown") + "  balance=" + lastFrame.Balance.ToString("0.00") + "  proprioception(proxy)=" + lastFrame.Proprioception.ToString("0.00") + "\n  joint-reading position=" + (lastFrame.JointSensingValid ? lastFrame.JointPosition.ToString("0.00") : "unknown") + "  motion=" + (lastFrame.JointSensingValid ? lastFrame.JointMotion.ToString("0.00") : "unknown") + "  brain=" + BrainSummary;
             }
         }
         public string LiveInjurySummary
@@ -64,7 +71,10 @@ namespace Mod
         {
             get
             {
-                return "ENVIRONMENT:\n  fire=" + lastFrame.Fire.ToString("0.00") + "  lava=" + lastFrame.Lava.ToString("0.00") + "  acid=" + lastFrame.AcidExposure.ToString("0.00") + "  burn=" + lastFrame.BurnProgress.ToString("0.00") + "\n  heat=" + lastFrame.Heat.ToString("0.00") + "  cold=" + lastFrame.Cold.ToString("0.00") + "  ambient-heat=" + lastFrame.AmbientHeat.ToString("0.00") + "  ambient-cold=" + lastFrame.AmbientCold.ToString("0.00") + "  light=" + lastFrame.Light.ToString("0.00") + "\n  nearby=" + lastFrame.Nearby.ToString("0.00") + "  direction=" + lastFrame.NearbyDirection.ToString("0.00") + "  vision=" + lastFrame.Vision.ToString("0.00") + "  direction-world-x=" + (lastFrame.VisionDirectionValid ? lastFrame.VisionDirection.ToString("0.00") : "unknown") + "  approach proxy=" + lastFrame.VisualApproach.ToString("0.00") + "  target=" + visionTargetSummary + "\n  sound=" + lastFrame.Sound.ToString("0.00") + "  direction-world-x=" + (lastFrame.SoundDirectionValid ? lastFrame.SoundDirection.ToString("0.00") : "unknown") + "  impact=" + lastFrame.Impact.ToString("0.00") + "  vibration=" + lastFrame.Vibration.ToString("0.00") + "  projectile=" + lastFrame.Projectile.ToString("0.00") + "\n  touch=" + lastFrame.Touch.ToString("0.00") + "  contact/held=" + lastFrame.PhysicalContact.ToString("0.00") + "  wet=" + lastFrame.Wetness.ToString("0.00") + "\n  underwater=" + lastFrame.UnderWater.ToString("0.00") + "  submerged-hypoxia=" + lastFrame.SubmergedHypoxia.ToString("0.00") + "  liquid=" + lastFrame.LiquidExposure.ToString("0.00") + "\n  hazard-exposure=" + lastFrame.LiquidHazard.ToString("0.00") + "  sedative-exposure=" + lastFrame.LiquidSedation.ToString("0.00") + "  stimulant-exposure=" + lastFrame.LiquidStimulation.ToString("0.00") + "\n  restorative-exposure=" + lastFrame.LiquidHealing.ToString("0.00") + "  water-liquid=" + lastFrame.LiquidWater.ToString("0.00") + "  charge=" + lastFrame.Charge.ToString("0.00") + "\n  stabbed=" + lastFrame.Stabbed.ToString("0.00") + "  weightless=" + lastFrame.Weightless.ToString("0.00") + "  sliding=" + lastFrame.Sliding.ToString("0.00");
+                return "ENVIRONMENT:\n  fire=" + lastFrame.Fire.ToString("0.00") + "  lava=" + lastFrame.Lava.ToString("0.00") + "  acid=" + lastFrame.AcidExposure.ToString("0.00") + "  burn=" + lastFrame.BurnProgress.ToString("0.00") + "\n  heat=" + lastFrame.Heat.ToString("0.00") + "  cold=" + lastFrame.Cold.ToString("0.00") + "  ambient-heat=" + lastFrame.AmbientHeat.ToString("0.00") + "  ambient-cold=" + lastFrame.AmbientCold.ToString("0.00") + "  light=" + lastFrame.Light.ToString("0.00") + "\n  nearby=" + lastFrame.Nearby.ToString("0.00") + "  direction=" + lastFrame.NearbyDirection.ToString("0.00") + "  vision=" + lastFrame.Vision.ToString("0.00") + "  direction-world-x=" + (lastFrame.VisionDirectionValid ? lastFrame.VisionDirection.ToString("0.00") : "unknown") + "  approach proxy=" + lastFrame.VisualApproach.ToString("0.00") + "  target=" + visionTargetSummary + "\n  sound=" + lastFrame.Sound.ToString("0.00") + "  direction-world-x=" + (lastFrame.SoundDirectionValid ? lastFrame.SoundDirection.ToString("0.00") : "unknown") + "  impact=" + lastFrame.Impact.ToString("0.00") + "  vibration=" + lastFrame.Vibration.ToString("0.00") + "  projectile=" + lastFrame.Projectile.ToString("0.00") + "\n  touch=" + lastFrame.Touch.ToString("0.00") + "  contact/held=" + lastFrame.PhysicalContact.ToString("0.00") + "  wet=" + lastFrame.Wetness.ToString("0.00") + "\n  underwater=" + lastFrame.UnderWater.ToString("0.00") + "  submerged-hypoxia=" + lastFrame.SubmergedHypoxia.ToString("0.00") + "  liquid=" + lastFrame.LiquidExposure.ToString("0.00") + "\n  hazard-exposure=" + lastFrame.LiquidHazard.ToString("0.00") + "  sedative-exposure=" + lastFrame.LiquidSedation.ToString("0.00") + "  stimulant-exposure=" + lastFrame.LiquidStimulation.ToString("0.00") + "\n  restorative-exposure=" + lastFrame.LiquidHealing.ToString("0.00") + "  water-liquid=" + lastFrame.LiquidWater.ToString("0.00") + "  charge=" + lastFrame.Charge.ToString("0.00") + "\n  stabbed=" + lastFrame.Stabbed.ToString("0.00") + "  weightless=" + lastFrame.Weightless.ToString("0.00") + "  sliding=" + lastFrame.Sliding.ToString("0.00") +
+                    "\n  region-touch(head/arms/legs/core)=" + (lastFrame.RegionalTouchValid ? lastFrame.TouchHead.ToString("0.00") + "/" + lastFrame.TouchArms.ToString("0.00") + "/" + lastFrame.TouchLegs.ToString("0.00") + "/" + lastFrame.TouchCore.ToString("0.00") : "unknown") +
+                    "\n  visual bounds geometry=" + (lastFrame.VisualGeometryValid ? "size " + lastFrame.VisualAngularSize.ToString("0.0") + " deg; expansion " + lastFrame.VisualExpansion.ToString("0.0") + " deg/s; sweep " + lastFrame.VisualAngularSpeed.ToString("0.0") + " deg/s" : "unknown") +
+                    "\n  source spectrum energy (<100 / >=100 Hz)=" + (lastFrame.SoundSpectrumValid ? lastFrame.SoundLow.ToString("0.00") + " / " + lastFrame.SoundHigh.ToString("0.00") : "unavailable; broad playback proxy");
             }
         }
         public string LiveLiquidSummary
@@ -183,6 +193,7 @@ namespace Mod
             {
                 if (limbs[i] == null)
                 {
+                    if (!ReferenceEquals(limbs[i], null)) healthSamples.Remove(limbs[i]);
                     limbControllers[i].Stop();
                     limbs.RemoveAt(i);
                     limbControllers.RemoveAt(i);
@@ -390,6 +401,8 @@ namespace Mod
             RefreshLimbs();
             if (!IsUsable)
             {
+                healthSamples.Clear();
+                winningAudioSource = null;
                 lastFrame = new SensoryFrame();
                 hasReadFrame = true;
                 return lastFrame;
@@ -397,6 +410,7 @@ namespace Mod
 
             var frame = ReadPersonState();
             audioSourceSummary = "none";
+            winningAudioSource = null;
             visionTargetSummary = "none";
             var healthSum = 0f;
             var healthCount = 0;
@@ -426,6 +440,7 @@ namespace Mod
             frame.Proprioception = Mathf.Clamp01(frame.Velocity * .35f + frame.Rotation * .25f + frame.Balance * .25f + frame.JointStress * .15f);
             ApplyCollision(ref frame);
             ReadNearby(ref frame);
+            ReadWinningSpectrum(ref frame);
             // Display history only. The next sensory frame still contains zero
             // sound as soon as current playback is absent or filtered out.
             if (frame.Sound > 0f)
@@ -436,6 +451,11 @@ namespace Mod
             frame.BrainDead = person.Braindead;
             frame.HealthValid = IsFinite(person.AverageHealth);
             frame.Alive = frame.HealthValid && !person.Braindead && !HasZeroHealth(person.AverageHealth);
+            if (!frame.Alive)
+            {
+                healthSamples.Clear();
+                frame.DamageEvent = 0f;
+            }
             frame.SubmergedHypoxia = frame.OxygenValid ? frame.UnderWater * (1f - frame.Oxygen) : 0f;
             lastFrame = frame;
             hasReadFrame = true;
@@ -506,6 +526,7 @@ namespace Mod
 
         public void Stop()
         {
+            healthSamples.Clear();
             // A failed asset load never activates control. Disposing that adapter
             // must not clear native walking, joint or held-object state.
             if (!hasAppliedControl) return;
@@ -563,6 +584,8 @@ namespace Mod
             var anchor = FindStatusAnchor();
             var body = anchor == null ? null : anchor.GetComponent<Rigidbody2D>();
             frame.VelocityValid = body != null && IsFinite(body.velocity.x) && IsFinite(body.velocity.y);
+            frame.AngularVelocityValid = body != null && IsFinite(body.angularVelocity);
+            frame.AngularVelocity = frame.AngularVelocityValid ? body.angularVelocity : 0f;
             if (frame.VelocityValid)
             {
                 frame.VelocityX = Mathf.Clamp(body.velocity.x / 10f, -1f, 1f);
@@ -602,6 +625,19 @@ namespace Mod
             }
             healthValid = IsFinite(limb.Health) && IsFinite(limb.InitialHealth) && limb.InitialHealth > 0f;
             var health = healthValid ? Unit(limb.Health / Mathf.Max(1f, limb.InitialHealth)) : 0f;
+            if (healthValid && !IsLostLimb(limb) && limb.CirculationBehaviour != null && !limb.CirculationBehaviour.IsDisconnected)
+            {
+                if (healthSamples.TryGetValue(limb, out var previous) && previous.InitialHealth == limb.InitialHealth && health < previous.Health)
+                {
+                    frame.DamageEvent = Mathf.Max(frame.DamageEvent, previous.Health - health);
+                }
+                if (health > DeathHealthThreshold) healthSamples[limb] = new LimbHealthSample { Health = health, InitialHealth = limb.InitialHealth };
+                else healthSamples.Remove(limb);
+            }
+            else
+            {
+                healthSamples.Remove(limb);
+            }
             frame.Breakage = Mathf.Max(frame.Breakage, limb.Broken || limb.CurrentlyShattered != 0 ? 1f : 0f);
             frame.JointStress = Mathf.Max(frame.JointStress, Unit(limb.JointStress / 100f));
             frame.Heat = Mathf.Max(frame.Heat, TemperatureHeat(limb.BodyTemperature));
@@ -619,10 +655,24 @@ namespace Mod
             }
             frame.LungDamage = Mathf.Max(frame.LungDamage, limb.HasLungs && limb.LungsPunctured ? 1f : 0f);
             frame.Touch = Mathf.Max(frame.Touch, limb.IsOnFloor ? 1f : 0f);
+            ReadRegionalTouch(ref frame, limb);
             ReadCirculation(ref frame, limb.CirculationBehaviour);
             ReadPhysical(ref frame, limb.PhysicalBehaviour);
             frame.Infection = Mathf.Max(frame.Infection, limb.IsZombie ? 1f : 0f);
             return health;
+        }
+
+        private static void ReadRegionalTouch(ref SensoryFrame frame, LimbBehaviour limb)
+        {
+            if (limb == null || IsLostLimb(limb) || limb.CirculationBehaviour == null || limb.CirculationBehaviour.IsDisconnected) return;
+            var physical = limb.PhysicalBehaviour;
+            var contact = limb.IsOnFloor || (physical != null && (physical.IsTouchingSomething || physical.beingHeldByGripper));
+            if (!contact) return;
+            var name = limb.name ?? String.Empty;
+            if (limb.HasBrain || ContainsAny(name, HeadNames)) { frame.TouchHead = 1f; frame.RegionalTouchValid = true; }
+            else if (ContainsAny(name, ArmNames)) { frame.TouchArms = 1f; frame.RegionalTouchValid = true; }
+            else if (ContainsAny(name, LegNames)) { frame.TouchLegs = 1f; frame.RegionalTouchValid = true; }
+            else if (ContainsAny(name, CoreNames)) { frame.TouchCore = 1f; frame.RegionalTouchValid = true; }
         }
 
         private static bool IsLostLimb(LimbBehaviour limb)
@@ -952,6 +1002,7 @@ namespace Mod
                         f.VisualApproach = Unit(closing / 10f) * f.Vision;
                     }
                 }
+                if (f.Vision > 0f) ReadVisualGeometry(ref f, closestCollider, origin, targetBody, anchorBody);
                 if (PersonConnectomeProjectileDetection.IsMovingProjectile(closestCollider, closestPhysical))
                 {
                     f.Projectile = Mathf.Max(f.Projectile, f.Vision);
@@ -982,6 +1033,37 @@ namespace Mod
             }
 
             return "object";
+        }
+
+        private static void ReadVisualGeometry(ref SensoryFrame frame, Collider2D collider, Vector2 origin, Rigidbody2D targetBody, Rigidbody2D anchorBody)
+        {
+            if (collider == null || targetBody == null || anchorBody == null || !IsFinite(targetBody.velocity.x) || !IsFinite(targetBody.velocity.y) || !IsFinite(anchorBody.velocity.x) || !IsFinite(anchorBody.velocity.y)) return;
+            var bounds = collider.bounds;
+            var delta = (Vector2)bounds.center - origin;
+            var distance = delta.magnitude;
+            if (!IsFinite(bounds.extents.x) || !IsFinite(bounds.extents.y) || !IsFinite(delta.x) || !IsFinite(delta.y) || !IsFinite(distance) || distance <= .001f) return;
+            var radius = Mathf.Max(Mathf.Abs(bounds.extents.x), Mathf.Abs(bounds.extents.y));
+            if (radius <= .001f) return;
+            var relativeX = targetBody.velocity.x - anchorBody.velocity.x;
+            var relativeY = targetBody.velocity.y - anchorBody.velocity.y;
+            var closing = -(relativeX * delta.x + relativeY * delta.y) / distance;
+            const float DegreesPerRadian = 57.29578f;
+            frame.VisualAngularSize = 2f * (float)Math.Atan(radius / distance) * DegreesPerRadian;
+            frame.VisualExpansion = Mathf.Max(0f, 2f * radius * closing / (distance * distance + radius * radius) * DegreesPerRadian);
+            frame.VisualAngularSpeed = Mathf.Abs(delta.x * relativeY - delta.y * relativeX) / (distance * distance) * DegreesPerRadian;
+            frame.VisualGeometryValid = IsFinite(frame.VisualAngularSize) && IsFinite(frame.VisualExpansion) && IsFinite(frame.VisualAngularSpeed);
+            if (!frame.VisualGeometryValid) frame.VisualAngularSize = frame.VisualExpansion = frame.VisualAngularSpeed = 0f;
+        }
+
+        private static bool ContainsAny(string value, string[] fragments)
+        {
+            foreach (var fragment in fragments) if (value.IndexOf(fragment, StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            return false;
+        }
+
+        private struct LimbHealthSample
+        {
+            public float Health, InitialHealth;
         }
 
         private void ReadExternalTemperature(ref SensoryFrame frame, PhysicalBehaviour physical, float distance)
@@ -1031,11 +1113,39 @@ namespace Mod
             if (signal > frame.Sound)
             {
                 frame.Sound = signal;
+                winningAudioSource = audio;
                 frame.SoundDirection = WorldHorizontalBearing(sourceDelta, out var soundDirectionValid);
                 frame.SoundDirectionValid = soundDirectionValid;
                 var sourceKind = physical.GetComponentInParent<PersonBehaviour>() == null ? "object" : "person";
                 audioSourceSummary = "external " + sourceKind + " " + physical.name + "/" + audio.name + " d=" + sourceDistance.ToString("0.00") + " signal=" + signal.ToString("0.00") + " volume=" + Unit(audio.volume).ToString("0.00");
             }
+        }
+
+        private void ReadWinningSpectrum(ref SensoryFrame frame)
+        {
+            if (winningAudioSource == null || frame.Sound <= 0f) return;
+            var sampleRate = AudioSettings.outputSampleRate;
+            if (sampleRate <= 0) return;
+            Array.Clear(spectrumBuffer, 0, spectrumBuffer.Length);
+            try { winningAudioSource.GetSpectrumData(spectrumBuffer, 0, FFTWindow.Rectangular); }
+            catch (UnityException) { return; }
+            var binWidth = sampleRate / (2.0 * spectrumBuffer.Length);
+            double total = 0, low = 0;
+            for (var i = 1; i < spectrumBuffer.Length; i++)
+            {
+                var amplitude = spectrumBuffer[i];
+                if (!IsFinite(amplitude) || amplitude < 0f) return;
+                var energy = (double)amplitude * amplitude;
+                total += energy;
+                if (i * binWidth < 100.0) low += energy;
+            }
+            // Empty data can mean silence or Unity's not-yet-filled history.
+            // Keep the existing broad playback proxy without guessing a band.
+            if (total <= 0) return;
+            frame.SoundLow = frame.Sound * (float)(low / total);
+            frame.SoundHigh = frame.Sound * (float)((total - low) / total);
+            frame.SoundSpectrumValid = IsFinite(frame.SoundLow) && IsFinite(frame.SoundHigh);
+            if (!frame.SoundSpectrumValid) frame.SoundLow = frame.SoundHigh = 0f;
         }
 
         private static float WorldHorizontalBearing(Vector2 delta, out bool valid)

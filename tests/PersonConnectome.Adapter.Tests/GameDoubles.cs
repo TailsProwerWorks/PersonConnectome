@@ -81,10 +81,12 @@ namespace UnityEngine
     public class Collider2D : Component
     {
         public Vector2 Surface;
+        public Bounds bounds;
         public Vector2 ClosestPoint(Vector2 origin) => Surface;
     }
     public enum RigidbodyType2D { Dynamic, Kinematic, Static }
-    public class Rigidbody2D : Component { public Vector2 velocity; public RigidbodyType2D bodyType = RigidbodyType2D.Dynamic; }
+    public struct Bounds { public Vector3 center, extents; }
+    public class Rigidbody2D : Component { public Vector2 velocity; public float angularVelocity; public RigidbodyType2D bodyType = RigidbodyType2D.Dynamic; }
     public class HingeJoint2D : Component
     {
         public Rigidbody2D connectedBody;
@@ -105,7 +107,14 @@ namespace UnityEngine
         { var count = Math.Min(Hits.Length, buffer.Length); Array.Copy(Hits, buffer, count); return count; }
         public static RaycastHit2D Linecast(Vector2 start, Vector2 end) => LinecastResult;
     }
-    public class AudioSource : Component { public bool isPlaying, mute; public bool isActiveAndEnabled = true; public float volume = 1; }
+    public enum FFTWindow { Rectangular }
+    public static class AudioSettings { public static int outputSampleRate = 48000; }
+    public class UnityException : Exception { }
+    public class AudioSource : Component
+    {
+        public bool isPlaying, mute; public bool isActiveAndEnabled = true; public float volume = 1; public float[] Spectrum = []; public int SpectrumCalls; public float[] LastSpectrumBuffer; public bool ThrowSpectrum;
+        public void GetSpectrumData(float[] samples, int channel, FFTWindow window) { SpectrumCalls++; LastSpectrumBuffer = samples; if (ThrowSpectrum) throw new UnityException(); Array.Clear(samples); Array.Copy(Spectrum, samples, Math.Min(Spectrum.Length, samples.Length)); }
+    }
     public class Collision2D { public Collider2D collider; public Vector2 relativeVelocity; }
     public class RangeAttribute : Attribute { public RangeAttribute(float min, float max) { } }
     public static class Time { public static float fixedDeltaTime = .02f, deltaTime = .02f, unscaledDeltaTime = .02f, realtimeSinceStartup; }

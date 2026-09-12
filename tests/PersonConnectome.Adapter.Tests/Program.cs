@@ -30,7 +30,11 @@ internal static class Program
         ("numbered and cloned Root audio remains conservatively filtered", NumberedRootAudio),
         ("last-heard audio persists without stimulating stale sound", AudioHistory),
             ("visible external objects produce a vision proxy", Vision),
+            ("audio spectra use one current external source and reject invalid data", SpectrumValidity),
+            ("visual geometry and rotation follow finite native measurements", GeometryAndRotation),
             ("directional native sensory readings clear and stay source-bound", DirectionalSensors),
+            ("damage events and regional contact are observed edge samples", ObservedBodySensors),
+            ("expanded sensing preserves environment telemetry", EnvironmentTelemetry),
             ("vibration, proprioception and projectile channels stay distinct", AdditionalSenses),
             ("falling is distinct from walking and floor contact", Falling),
             ("contact impacts do not fabricate hearing", Impacts),
@@ -321,9 +325,10 @@ internal static class Program
     private static void Audio()
     {
         var f = new Fixture(); var other = SoundObject(out var audio); Physics2D.Hits = [other];
-        var frame = f.Adapter.Read(); True(frame.Sound > 0 && frame.Nearby >= 0 && frame.Nearby <= 1); Equal("OBJECT AUDIO", f.Adapter.LiveSignal);
+        audio.Spectrum = new float[512]; audio.Spectrum[1] = 3; audio.Spectrum[3] = 1;
+        var frame = f.Adapter.Read(); True(frame.Sound > 0 && frame.Nearby >= 0 && frame.Nearby <= 1); True(frame.SoundSpectrumValid && frame.SoundLow > frame.SoundHigh); Equal(1, audio.SpectrumCalls); Equal("OBJECT AUDIO", f.Adapter.LiveSignal);
         True(f.Adapter.LiveAudioSummary.Contains("external object Radio"));
-        audio.mute = true; Equal(0, f.Adapter.Read().Sound); Equal("SENSING", f.Adapter.LiveState); audio.mute = false; audio.isActiveAndEnabled = false; Equal(0, f.Adapter.Read().Sound);
+        audio.mute = true; Equal(0, f.Adapter.Read().Sound); True(!f.Adapter.Read().SoundSpectrumValid); Equal("SENSING", f.Adapter.LiveState); audio.mute = false; audio.isActiveAndEnabled = false; Equal(0, f.Adapter.Read().Sound);
         audio.isActiveAndEnabled = true; other.Surface = new Vector2(float.NaN, 0); frame = f.Adapter.Read(); Equal(0, frame.Sound); Equal(0, frame.Nearby);
         var own = f.Limb.gameObject.AddComponent<Collider2D>(); f.Limb.PhysicalBehaviour.MainAudioSource = audio;
         Physics2D.Hits = [own]; Equal(0, f.Adapter.Read().Sound); Equal(0, f.Adapter.Read().Nearby);
@@ -512,15 +517,16 @@ internal static class Program
         var targetBody = visible.AddComponent<Rigidbody2D>(); physical.rigidbody = targetBody;
         targetBody.velocity = new Vector2(-5, 0);
         var target = visible.AddComponent<Collider2D>(); target.Surface = new Vector2(2, 0);
+        target.bounds = new Bounds { center = new Vector3(2, 0, 0), extents = new Vector3(1, 1, 0) };
         visible.transform.position = new Vector3(2, 0, 0);
         RenderSettings.ambientLight = new Color { grayscale = 1f };
         Physics2D.Hits = [target]; Physics2D.LinecastResult = new RaycastHit2D { collider = target };
         frame = f.Adapter.Read();
-        True(frame.VisionDirectionValid); Equal(1f, frame.VisionDirection); True(frame.VisualApproach > 0f);
+        True(frame.VisionDirectionValid); Equal(1f, frame.VisionDirection); True(frame.VisualApproach > 0f); True(frame.VisualGeometryValid); True(frame.VisualAngularSize > 0f && frame.VisualExpansion > 0f);
         target.Surface = new Vector2(-2, 0); // Vision direction follows the current LOS point.
         frame = f.Adapter.Read(); Equal(-1f, frame.VisionDirection);
         target.Surface = new Vector2(2, 0); targetBody.velocity = new Vector2(5, 0); frame = f.Adapter.Read(); Equal(0f, frame.VisualApproach);
-        Physics2D.LinecastResult = default; frame = f.Adapter.Read(); Equal(0f, frame.Vision); True(!frame.VisionDirectionValid); Equal(0f, frame.VisualApproach);
+        Physics2D.LinecastResult = default; frame = f.Adapter.Read(); Equal(0f, frame.Vision); True(!frame.VisionDirectionValid); Equal(0f, frame.VisualApproach); True(!frame.VisualGeometryValid);
 
         var joint = f.Limb.gameObject.AddComponent<HingeJoint2D>();
         joint.connectedBody = new GameObject("Joint body").AddComponent<Rigidbody2D>(); joint.jointAngle = -90f; joint.jointSpeed = -45f; f.Limb.Joint = joint;
@@ -546,6 +552,86 @@ internal static class Program
         loud.transform.position = new Vector3(); Physics2D.Hits = [loud]; frame = f.Adapter.Read();
         True(frame.Sound > 0f && !frame.SoundDirectionValid); Equal(0f, frame.SoundDirection);
     }
+    private static void ObservedBodySensors()
+    {
+        var f = new Fixture();
+        f.Limb.IsOnFloor = true;
+        var frame = f.Adapter.Read(); Equal(0f, frame.DamageEvent); True(frame.RegionalTouchValid); Equal(1f, frame.TouchArms);
+        f.Limb.Health = 50f; frame = f.Adapter.Read(); Equal(.5f, frame.DamageEvent);
+        frame = f.Adapter.Read(); Equal(0f, frame.DamageEvent);
+        f.Limb.Health = 80f; frame = f.Adapter.Read(); Equal(0f, frame.DamageEvent);
+        f.Limb.InitialHealth = 200f; f.Limb.Health = 40f; frame = f.Adapter.Read(); Equal(0f, frame.DamageEvent); // Baseline changes re-prime.
+        f.Limb.Health = float.NaN; frame = f.Adapter.Read(); Equal(0f, frame.DamageEvent);
+        f.Limb.Health = 40f; frame = f.Adapter.Read(); Equal(0f, frame.DamageEvent); // Invalid samples re-prime.
+        f.Limb.IsDismembered = true; f.Limb.Health = 10f; frame = f.Adapter.Read(); Equal(0f, frame.DamageEvent);
+        f.Limb.IsDismembered = false; f.Limb.IsOnFloor = false; f.Limb.PhysicalBehaviour.IsUnderWater = true; frame = f.Adapter.Read(); True(!frame.RegionalTouchValid);
+        f.Limb.Health = 20f; f.Adapter.Read(); f.Limb.Health = 0f; Equal(.1f, f.Adapter.Read().DamageEvent); Equal(0f, f.Adapter.Read().DamageEvent);
+        f.Limb.Health = 100f; f.Adapter.Read(); f.Limb.CirculationBehaviour.IsDisconnected = true; f.Limb.Health = 50f; Equal(0f, f.Adapter.Read().DamageEvent);
+        f.Limb.CirculationBehaviour.IsDisconnected = false; f.Adapter.Read();
+        f.Person.AverageHealth = float.NaN; f.Limb.Health = 40f; Equal(0f, f.Adapter.Read().DamageEvent);
+        f.Person.AverageHealth = 1f; f.Limb.Health = 30f; Equal(0f, f.Adapter.Read().DamageEvent);
+        f.Adapter.Suspend(); f.Limb.Health = 20f; Equal(0f, f.Adapter.Read().DamageEvent);
+        f.Limb.gameObject.name = "MiddleBody"; f.Limb.PhysicalBehaviour.IsTouchingSomething = true;
+        frame = f.Adapter.Read(); True(frame.RegionalTouchValid); Equal(1f, frame.TouchCore);
+        f.Limb.gameObject.name = "MysteryPart"; frame = f.Adapter.Read(); True(!frame.RegionalTouchValid);
+
+    }
+    private static void SpectrumValidity()
+    {
+        var f = new Fixture(); var near = SoundObject(out var audio); var far = SoundObject(out var otherAudio);
+        near.transform.position = new Vector3(1, 0, 0); far.transform.position = new Vector3(4, 0, 0);
+        AudioSettings.outputSampleRate = 48000;
+        audio.Spectrum = new float[512]; audio.Spectrum[0] = 100; audio.Spectrum[1] = 3; audio.Spectrum[3] = 1;
+        Physics2D.Hits = [far, near, near];
+        var frame = f.Adapter.Read(); True(frame.SoundSpectrumValid);
+        True(Math.Abs(frame.SoundLow / frame.Sound - .9f) < .0001f); True(Math.Abs(frame.SoundHigh / frame.Sound - .1f) < .0001f);
+        Equal(1, audio.SpectrumCalls); Equal(0, otherAudio.SpectrumCalls);
+        var buffer = audio.LastSpectrumBuffer; f.Adapter.Read(); True(ReferenceEquals(buffer, audio.LastSpectrumBuffer));
+        foreach (var value in new[] { float.NaN, float.PositiveInfinity, -1f })
+        { audio.Spectrum[1] = value; frame = f.Adapter.Read(); True(!frame.SoundSpectrumValid); Equal(0f, frame.SoundLow); Equal(0f, frame.SoundHigh); True(frame.Sound > 0f); }
+        audio.Spectrum = []; frame = f.Adapter.Read(); True(!frame.SoundSpectrumValid);
+        audio.ThrowSpectrum = true; frame = f.Adapter.Read(); True(!frame.SoundSpectrumValid); audio.ThrowSpectrum = false;
+        AudioSettings.outputSampleRate = 0; var calls = audio.SpectrumCalls; f.Adapter.Read(); Equal(calls, audio.SpectrumCalls); AudioSettings.outputSampleRate = 48000;
+        otherAudio.Spectrum = new float[512]; otherAudio.Spectrum[4] = 1f; audio.mute = true;
+        frame = f.Adapter.Read(); True(frame.SoundSpectrumValid); Equal(0f, frame.SoundLow); Equal(frame.Sound, frame.SoundHigh); Equal(calls, audio.SpectrumCalls);
+        Physics2D.Hits = []; frame = f.Adapter.Read(); True(!frame.SoundSpectrumValid); Equal(0f, frame.SoundHigh);
+    }
+
+    private static void EnvironmentTelemetry()
+    {
+        var f = new Fixture();
+        f.Limb.PhysicalBehaviour.IsUnderWater = true;
+        var frame = f.Adapter.Read();
+        var text = f.Adapter.LiveEnvironmentSummary;
+        foreach (var label in new[] { "fire=", "lava=", "acid=", "burn=", "heat=", "cold=", "ambient-heat=", "ambient-cold=", "light=", "nearby=", "direction-world-x=", "vision=", "sound=", "impact=", "vibration=", "projectile=", "touch=", "contact/held=", "wet=", "submerged-hypoxia=", "liquid=", "hazard-exposure=", "sedative-exposure=", "stimulant-exposure=", "restorative-exposure=", "charge=", "stabbed=", "weightless=", "sliding=" })
+            True(text.Contains(label));
+        True(text.Contains("underwater=" + frame.UnderWater.ToString("0.00")));
+        True(text.Contains("visual bounds geometry=unknown"));
+        True(text.Contains("source spectrum energy (<100 / >=100 Hz)=unavailable"));
+    }
+
+    private static void GeometryAndRotation()
+    {
+        var f = new Fixture(); f.Limb.HasBrain = true;
+        var anchor = f.Limb.gameObject.AddComponent<Rigidbody2D>(); anchor.angularVelocity = -90f;
+        var target = new GameObject("Target"); var physical = target.AddComponent<PhysicalBehaviour>();
+        var body = target.AddComponent<Rigidbody2D>(); physical.rigidbody = body; body.velocity = new Vector2(-1, 2);
+        var collider = target.AddComponent<Collider2D>(); collider.Surface = new Vector2(1, 0);
+        collider.bounds = new Bounds { center = new Vector3(2, 0, 0), extents = new Vector3(1, 1, 0) };
+        Physics2D.Hits = [collider]; Physics2D.LinecastResult = new RaycastHit2D { collider = collider }; RenderSettings.ambientLight = new Color { grayscale = 1f };
+        var frame = f.Adapter.Read(); True(frame.VisualGeometryValid); True(Math.Abs(frame.VisualAngularSize - 53.1301f) < .001f);
+        True(Math.Abs(frame.VisualExpansion - 22.9183f) < .001f); True(Math.Abs(frame.VisualAngularSpeed - 57.2958f) < .001f);
+        True(frame.AngularVelocityValid); Equal(-90f, frame.AngularVelocity);
+        body.velocity = new Vector2(1, 0); frame = f.Adapter.Read(); Equal(0f, frame.VisualExpansion); Equal(0f, frame.VisualAngularSpeed);
+        foreach (var radius in new[] { 0f, float.NaN, float.PositiveInfinity })
+        { collider.bounds = new Bounds { center = new Vector3(2, 0, 0), extents = new Vector3(radius, 0, 0) }; True(!f.Adapter.Read().VisualGeometryValid); }
+        collider.bounds = new Bounds { center = new Vector3(2, 0, 0), extents = new Vector3(1, 1, 0) };
+        anchor.angularVelocity = float.NaN; frame = f.Adapter.Read(); True(!frame.AngularVelocityValid); Equal(0f, frame.AngularVelocity);
+        RenderSettings.ambientLight = default; True(!f.Adapter.Read().VisualGeometryValid);
+        RenderSettings.ambientLight = new Color { grayscale = 1f }; body.velocity = new Vector2(float.NaN, 0); True(!f.Adapter.Read().VisualGeometryValid);
+        Physics2D.LinecastResult = default; True(!f.Adapter.Read().VisualGeometryValid); Physics2D.Hits = []; RenderSettings.ambientLight = default;
+    }
+
     private static void AdditionalSenses()
     {
         var f = new Fixture();

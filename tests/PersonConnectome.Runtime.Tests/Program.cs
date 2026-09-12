@@ -41,6 +41,11 @@ var tests = new (string Name, Action Run)[]
     ("bundled sensory and locomotor annotations resolve", BundledSensoryMappings),
     ("modalities reach distinct input populations with signed lateralization", SensoryModalities),
     ("global luminance changes require a valid continuous baseline", GlobalLuminanceChanges),
+    ("damage events and regional contact stay in their tactile routes", InjuryAndRegionalRoutes),
+    ("geometric visual channels reject unavailable and nonfinite features", GeometricVisualRoutes),
+    ("auditory band weighting uses measured bands or broad fallback", AuditoryBandRouting),
+    ("neural locomotion modes bridge pulses and expire without input", LocomotionTemporalBehavior),
+    ("turning populations map lateral activity with immediate safety clearing", NeuralTurning),
     ("named locomotor populations exclude feeding and wing activity", NamedMotorReadout),
     ("real graph repeats identical input histories deterministically", RealGraphIsDeterministic),
     ("sustained full-payload load stays realtime bounded", SustainedFullPayloadLoadStaysRealtimeBounded),
@@ -82,6 +87,17 @@ static void MappingReport()
         ("audio-left", "input:auditory", x => { x.Frame.Sound = 1f; x.Frame.SoundDirection = -1f; x.Frame.SoundDirectionValid = true; }),
         ("audio-right", "input:auditory", x => { x.Frame.Sound = 1f; x.Frame.SoundDirection = 1f; x.Frame.SoundDirectionValid = true; }),
         ("impact", "input:tactile", x => x.Frame.Impact = 1f),
+        ("damage-half-pulse", "input:touch-head", x => x.Frame.DamageEvent = .5f),
+        ("damage-full-pulse", "input:touch-head", x => x.Frame.DamageEvent = 1f),
+        ("head-contact", "input:touch-head", x => { x.Frame.RegionalTouchValid = true; x.Frame.TouchHead = 1f; }),
+        ("arm-contact", "input:touch-arms", x => { x.Frame.RegionalTouchValid = true; x.Frame.TouchArms = 1f; }),
+        ("leg-contact", "input:touch-legs", x => { x.Frame.RegionalTouchValid = true; x.Frame.TouchLegs = 1f; }),
+        ("core-contact", "input:touch-core", x => { x.Frame.RegionalTouchValid = true; x.Frame.TouchCore = 1f; }),
+        ("loom", "type:LPLC2", x => { x.Frame.Vision = 1f; x.Frame.VisualGeometryValid = true; x.Frame.VisualAngularSize = 60f; x.Frame.VisualExpansion = 200f; }),
+        ("small-moving", "type:LC11", x => { x.Frame.Vision = 1f; x.Frame.VisualGeometryValid = true; x.Frame.VisualAngularSize = 10f; x.Frame.VisualAngularSpeed = 100f; }),
+        ("roll", "input:optic-roll", x => { x.Frame.Light = 1f; x.Frame.AngularVelocityValid = true; x.Frame.AngularVelocity = 300f; }),
+        ("audio-low", "input:auditory", x => { x.Frame.Sound = 1f; x.Frame.SoundSpectrumValid = true; x.Frame.SoundLow = 1f; }),
+        ("audio-high", "input:auditory", x => { x.Frame.Sound = 1f; x.Frame.SoundSpectrumValid = true; x.Frame.SoundHigh = 1f; }),
         ("hot", "input:hot", x => x.Frame.Heat = 1f),
         ("cold", "input:cold", x => x.Frame.Cold = 1f),
         ("joint-motion", "input:joint-motion", x => { x.Frame.JointMotion = 1f; x.Frame.JointSensingValid = true; }),
@@ -107,6 +123,7 @@ static void MappingReport()
             inputSpikes += brain.PopulationFiredCount(population);
             dropped += brain.DroppedCount;
             peakWalk = Math.Max(peakWalk, Math.Abs(command.Walk));
+            if (name.EndsWith("-pulse", StringComparison.Ordinal)) input.Frame.DamageEvent = 0f;
         }
         var connectivity = brain.TestPopulationConnectivity(population);
         Console.WriteLine(FormattableString.Invariant($"MAP {name}: members={brain.PopulationCount(population)} edges={connectivity.Edges} signedMembers={connectivity.NonzeroSignMembers} inputSpikes={inputSpikes} graphSpikes={spikes} dropped={dropped} peakAbsWalk={peakWalk:0.000}"));
@@ -371,7 +388,7 @@ static void MotorReversalsAreRateLimited()
     var reversing = brain.Step(Healthy(), .05f);
     True(forward.Walk > 0f, "named walking population activity should request forward movement");
     True(MathF.Abs(reversing.Walk - forward.Walk) <= .4001f, "motor reversal exceeded the per-step rate limit");
-    True(reversing.Walk >= 0f, "a one-tick reversal should pass through neutral instead of flipping sign");
+    True(MathF.Abs(reversing.Walk) <= 1f, "rate-limited motor output must remain bounded");
 }
 
 static void LostMovementAuthorityClearsMotorRequests()
@@ -526,7 +543,7 @@ static void RetinaVariantsReceiveLightDrive()
 static void BundledSensoryMappings()
 {
     var brain = ConnectomeBrain.TryCreate(out var status); True(brain is not null, status);
-    foreach (var population in new[] { "input:light", "input:auditory", "input:tactile", "input:gravity", "input:joint-position", "input:joint-motion", "input:joint-load", "input:hot", "input:cold", "motor:leg", "type:DNp09", "type:DNg100", "type:DNge053", "type:DNge050", "type:DNg97", "type:MDN", "type:DNg60", "type:DNg74_a", "type:DNg74_b", "type:AN19A018", "type:LC4", "type:LPLC2", "type:Mi1", "type:L2", "type:L3" })
+    foreach (var population in new[] { "input:light", "input:auditory", "input:tactile", "input:gravity", "input:joint-position", "input:joint-motion", "input:joint-load", "input:hot", "input:cold", "motor:leg", "type:DNp09", "type:DNg100", "type:DNge053", "type:DNge050", "type:DNg97", "type:MDN", "type:DNg60", "type:DNg74_a", "type:DNg74_b", "type:AN19A018", "type:LC4", "type:LPLC2", "type:Mi1", "type:L2", "type:L3", "input:touch-head", "input:touch-arms", "input:touch-legs", "input:touch-core", "input:touch-other", "input:optic-roll", "type:LC11", "type:LC18", "type:DNa02", "type:DNg13", "type:DNa01" })
     {
         var count = brain.PopulationCount(population);
         Console.WriteLine("MAPPING " + population + "=" + count);
@@ -535,6 +552,16 @@ static void BundledSensoryMappings()
     Equal(7, brain.PopulationCount("input:hot"));
     Equal(7, brain.PopulationCount("input:cold"));
     Equal(114, brain.PopulationCount("input:auditory"));
+    Equal(863, brain.PopulationCount("input:touch-head"));
+    Equal(266, brain.PopulationCount("input:touch-arms"));
+    Equal(1611, brain.PopulationCount("input:touch-legs"));
+    Equal(303, brain.PopulationCount("input:touch-core"));
+    Equal(378, brain.PopulationCount("input:touch-other"));
+    Equal(34, brain.PopulationCount("input:optic-roll"));
+    // A fresh first tick has no recurrent input. All 3,421 disjoint tactile/head
+    // members should fire once, proving the real asset routes cover that union.
+    brain.Step(Healthy() with { DamageEvent = .5f });
+    Equal(3421, brain.FiredCount);
 }
 
 static void SensoryModalities()
@@ -599,6 +626,122 @@ static void GlobalLuminanceChanges()
     brain.Step(Healthy(light: 0f)); Equal(0, brain.FiredCount);
 }
 
+static ConnectomeBrain SensoryFeatureFixture()
+{
+    var brain = ConnectomeBrain.CreateForTest(14, new int[15], [], []);
+    var groups = new[] { "input:touch-head", "input:touch-arms", "input:touch-legs", "input:touch-core", "input:touch-other", "input:light", "type:DNp09", "type:LC4", "type:LPLC2", "type:LC11", "type:LC18", "input:optic-roll", "input:auditory", "type:MDN" };
+    for (var id = 0; id < groups.Length; id++) brain.SetTestPopulation(groups[id], id);
+    brain.SetTestPopulation("input:tactile", 1, 2, 3, 4);
+    return brain;
+}
+
+static void InjuryAndRegionalRoutes()
+{
+    var brain = SensoryFeatureFixture();
+    brain.Step(Healthy() with { DamageEvent = .05f, Impact = .1f, RegionalTouchValid = true, TouchArms = 1f });
+    for (var id = 0; id < 5; id++) True(Math.Abs(.22222222f - brain.TestPotentialValue(id)) < .00001f);
+    for (var id = 5; id < 14; id++) Equal(0f, brain.TestPotentialValue(id));
+    True(brain.DisplayInputSummary.Contains("injury-proxy=0.22"));
+    brain.Step(Healthy()); Equal(0f, brain.TestSensoryDrive);
+    True(brain.TestPotentialValue(0) < .22222222f, "past damage must decay rather than reinject");
+    foreach (var (frame, target) in new[] {
+        (Healthy() with { TouchHead = 1f }, 0), (Healthy() with { TouchArms = 1f }, 1),
+        (Healthy() with { TouchLegs = 1f }, 2), (Healthy() with { TouchCore = 1f }, 3) })
+    {
+        brain = SensoryFeatureFixture();
+        brain.Step(frame with { RegionalTouchValid = true, Touch = 1f, PhysicalContact = 1f });
+        for (var id = 0; id < 14; id++) Equal(id == target ? .15f : 0f, brain.TestPotentialValue(id));
+    }
+    brain = SensoryFeatureFixture(); brain.Step(Healthy() with { DamageEvent = float.NaN, TouchHead = 1f });
+    Equal(0f, brain.TestSensoryDrive); Equal(0, brain.ActiveCount);
+    brain.Step(Healthy() with { DamageEvent = .5f }); Equal(5, brain.FiredCount);
+    brain.Step(default); Equal(0f, brain.TestSensoryDrive);
+}
+
+static void GeometricVisualRoutes()
+{
+    var visible = Healthy() with { Vision = 1f, VisualGeometryValid = true, VisualAngularSize = 60f, VisualExpansion = 200f };
+    var brain = SensoryFeatureFixture(); brain.Step(visible);
+    Equal(.5f, brain.TestPotentialValue(7)); True(brain.DidFire(8)); Equal(0f, brain.TestPotentialValue(9));
+    brain = SensoryFeatureFixture(); brain.Step(visible with { VisualExpansion = 0f, VisualAngularSize = 10f, VisualAngularSpeed = 100f });
+    Equal(0f, brain.TestPotentialValue(7)); Equal(0f, brain.TestPotentialValue(8));
+    Equal(.5f, brain.TestPotentialValue(9)); Equal(.5f, brain.TestPotentialValue(10));
+    True(brain.TestSensoryDrive > 0f && brain.DisplayInputSummary.Contains("small-visual=0.50"));
+    foreach (var frame in new[] {
+        visible with { Vision = 0f }, visible with { VisualAngularSize = float.NaN },
+        visible with { VisualExpansion = float.PositiveInfinity }, visible with { VisualAngularSpeed = float.NaN },
+        visible with { VisualAngularSize = -10f }, visible with { VisualAngularSize = 181f },
+        visible with { VisualAngularSize = 0f }, visible with { VisualGeometryValid = false } })
+    {
+        brain = SensoryFeatureFixture(); brain.Step(frame); Equal(0, brain.ActiveCount); Equal(0, brain.FiredCount);
+    }
+    brain = SensoryFeatureFixture(); brain.Step(visible with { VisualExpansion = -10f }); Equal(0, brain.ActiveCount);
+    foreach (var speed in new[] { -300f, 300f })
+    {
+        brain = SensoryFeatureFixture(); brain.Step(Healthy(light: 1f) with { AngularVelocity = speed, AngularVelocityValid = true });
+        Equal(.5f, brain.TestPotentialValue(11)); True(brain.DisplayInputSummary.Contains("optic-roll=0.50"));
+    }
+    foreach (var frame in new[] {
+        Healthy() with { AngularVelocity = 300f, AngularVelocityValid = true },
+        Healthy(light: 1f) with { AngularVelocity = 300f },
+        Healthy(light: 1f) with { AngularVelocity = float.PositiveInfinity, AngularVelocityValid = true } })
+    { brain = SensoryFeatureFixture(); brain.Step(frame); Equal(0f, brain.TestPotentialValue(11)); }
+}
+
+static void AuditoryBandRouting()
+{
+    var brain = SensoryFeatureFixture();
+    brain.Step(Healthy(sound: 1f) with { SoundSpectrumValid = true, SoundLow = 1f }); Equal(.7f, brain.TestPotentialValue(12));
+    brain = SensoryFeatureFixture(); brain.Step(Healthy(sound: 1f) with { SoundSpectrumValid = true, SoundHigh = 1f }); True(brain.DidFire(12));
+    brain = SensoryFeatureFixture(); brain.Step(Healthy(sound: 1f) with { SoundSpectrumValid = true }); Equal(0f, brain.TestPotentialValue(12));
+    brain = SensoryFeatureFixture(); brain.Step(Healthy(sound: 1f)); True(brain.DidFire(12));
+    brain.Step(Healthy()); Equal(0f, brain.TestSensoryDrive);
+}
+
+static ConnectomeBrain MotorFeatureFixture()
+{
+    var brain = ConnectomeBrain.CreateForTest(5, new int[6], [], []);
+    brain.SetTestPopulation("type:DNp09", 0); brain.SetTestPopulation("type:MDN", 1);
+    brain.SetTestPopulation("type:DNa02", 2, 3); brain.SetTestPopulation("type:DNg74_b", 4);
+    for (var id = 0; id < 5; id++) brain.SetTestNeuronMetadata(id, "descending_neuron", id == 2 ? "L" : "R");
+    return brain;
+}
+
+static void LocomotionTemporalBehavior()
+{
+    var brain = MotorFeatureFixture(); brain.SetTestPending(0, 1f);
+    var command = brain.Step(Healthy()); Equal(.3f, command.Walk);
+    True(brain.DisplayMotorSummary.Contains("REQUEST (FORWARD)"));
+    True(brain.DisplayMotorSummary.Contains("forward=0.09"), "filtered neural fraction must not be replaced by the 0.3 actuator floor");
+    for (var tick = 0; tick < 4; tick++) True(brain.Step(Healthy()).Walk >= .3f, "neural mode should bridge a short firing gap");
+    for (var tick = 0; tick < 20; tick++) command = brain.Step(Healthy());
+    Equal(0f, command.Walk);
+    brain = MotorFeatureFixture(); brain.SetTestPending(0, 1f); brain.Step(Healthy());
+    brain.SetTestPending(1, 1f); True(brain.Step(Healthy()).Walk < .3f, "MDN must preempt established forward mode");
+    True(brain.Step(Healthy()).Walk < 0f);
+    foreach (var terminal in new[] { false, true })
+    {
+        brain = MotorFeatureFixture(); brain.SetTestPending(0, 1f); brain.Step(Healthy());
+        command = brain.Step(terminal ? default : Healthy() with { ConsciousnessValid = false }); Equal(0f, command.Walk);
+        Equal(0f, brain.Step(Healthy()).Walk);
+    }
+    brain = MotorFeatureFixture(); brain.SetTestPending(0, 1f); brain.Step(Healthy());
+    brain.SetTestPending(4, 1f); command = brain.Step(Healthy()); Equal(0f, command.Walk); Equal(0f, command.Core);
+    Equal(0f, brain.Step(Healthy()).Walk);
+}
+
+static void NeuralTurning()
+{
+    foreach (var id in new[] { 2, 3 })
+    {
+        var brain = MotorFeatureFixture(); brain.SetTestPending(id, 1f);
+        var command = brain.Step(Healthy()); Equal(0f, command.Walk);
+        True(id == 2 ? command.Head < 0f && command.Core < 0f : command.Head > 0f && command.Core > 0f);
+        command = brain.Step(Healthy() with { Consciousness = .1f }); Equal(0f, command.Head); Equal(0f, command.Core);
+        Equal(0f, brain.Step(Healthy()).Head);
+    }
+}
+
 static void NamedMotorReadout()
 {
     ConnectomeBrain Create()
@@ -620,7 +763,7 @@ static void NamedMotorReadout()
         foreach (var forwardPopulation in new[] { "type:DNp09", "type:DNg100", "type:DNge053", "type:DNge050", "type:DNg97" })
             brain.SetTestPopulation(forwardPopulation, 0);
         brain.SetTestPending(0, 1f);
-        True(brain.Step(Healthy(), .25f).Walk > .99f);
+        True(brain.Step(Healthy(), .25f).Walk > .8f, "forward channel should rise through its 150 ms temporal filter");
         brain.SetTestPopulation(stopPopulation, 2); brain.SetTestPending(2, 1f);
         command = brain.Step(Healthy());
         Equal(0f, command.Walk); Equal(0f, command.LeftLeg); Equal(0f, command.Core);

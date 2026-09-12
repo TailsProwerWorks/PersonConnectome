@@ -85,12 +85,12 @@ namespace Mod
                 SkipByteArray(reader, count);
                 SkipByteArray(reader, count);
                 SkipByteArray(reader, count);
-                SkipByteArray(reader, count);
+                var nerves = ReadByteArray(reader, count);
                 var soma = new float[checked(count * 3)];
                 for (var i = 0; i < soma.Length; i++) soma[i] = reader.ReadSingle();
                 SkipInt32Array(reader, count);
                 SkipInt32Array(reader, count);
-                return new RuntimeColumns(types, superclasses, classes, subclasses, signs, sides, soma);
+                return new RuntimeColumns(types, superclasses, classes, subclasses, signs, sides, nerves, soma);
             }
 
             private static RuntimeAsset CreateAsset(RuntimeCounts counts, int[] rows, int[] posts, RuntimeColumns columns)
@@ -131,6 +131,7 @@ namespace Mod
                     var neuronClass = GetTableValue(tables[2], columns.ClassIndexes[i]);
                     var subclass = GetTableValue(tables[3], columns.SubclassIndexes[i]);
                     var type = GetTableValue(tables[0], columns.TypeIndexes[i]);
+                    var nerve = GetTableValue(tables[9], columns.NerveIndexes[i]);
                     asset.Superclasses[i] = superclass;
                     asset.Sides[i] = GetTableValue(tables[5], columns.SideIndexes[i]);
                     Add(buckets, "type:" + type, i);
@@ -143,7 +144,18 @@ namespace Mod
                     {
                         if (neuronClass == "mechanosensory" && subclass == "auditory") Add(buckets, "input:auditory", i);
                         if (neuronClass == "mechanosensory" && subclass == "wind_gravity") Add(buckets, "input:gravity", i);
-                        if (neuronClass == "mechanosensory_tactile") Add(buckets, "input:tactile", i);
+                        if (type.StartsWith("BM_", StringComparison.Ordinal)) Add(buckets, "input:touch-head", i);
+                        if (neuronClass == "mechanosensory_tactile")
+                        {
+                            Add(buckets, "input:tactile", i);
+                            // Human arms use the fly front-leg channel; human legs
+                            // use middle/hind-leg channels. This is an engineering
+                            // body-region projection, not anatomical homology.
+                            if (nerve == "ProLN") Add(buckets, "input:touch-arms", i);
+                            if (nerve == "MesoLN" || nerve == "MetaLN") Add(buckets, "input:touch-legs", i);
+                            if (nerve == "PDMN" || nerve == "DMetaN" || nerve == "AbN3" || nerve == "AbN4") Add(buckets, "input:touch-core", i);
+                            if (nerve != "ProLN" && nerve != "MesoLN" && nerve != "MetaLN" && nerve != "PDMN" && nerve != "DMetaN" && nerve != "AbN3" && nerve != "AbN4") Add(buckets, "input:touch-other", i);
+                        }
                         if (neuronClass == "mechanosensory_proprioceptive")
                         {
                             if (subclass == "hair plate") Add(buckets, "input:joint-position", i);
@@ -153,6 +165,7 @@ namespace Mod
                         if (neuronClass == "thermosensory" && type == "TRN_VP2") Add(buckets, "input:hot", i);
                         if (neuronClass == "thermosensory" && (type == "TRN_VP3a" || type == "TRN_VP3b")) Add(buckets, "input:cold", i);
                     }
+                    if (type.StartsWith("VS", StringComparison.Ordinal) && superclass == "visual_projection") Add(buckets, "input:optic-roll", i);
                     if (superclass == "vnc_motor" && (subclass == "fl" || subclass == "ml" || subclass == "hl")) Add(buckets, "motor:leg", i);
                     Add(buckets, "superclass:" + superclass, i);
                     if (superclass == "ol_sensory" && neuronClass == "visual") Add(buckets, "input:light", i);
@@ -361,7 +374,7 @@ namespace Mod
 
             private sealed class RuntimeColumns
             {
-                public RuntimeColumns(int[] typeIndexes, byte[] superclassIndexes, byte[] classIndexes, ushort[] subclassIndexes, sbyte[] signs, byte[] sideIndexes, float[] soma)
+                public RuntimeColumns(int[] typeIndexes, byte[] superclassIndexes, byte[] classIndexes, ushort[] subclassIndexes, sbyte[] signs, byte[] sideIndexes, byte[] nerveIndexes, float[] soma)
                 {
                     TypeIndexes = typeIndexes;
                     SuperclassIndexes = superclassIndexes;
@@ -369,6 +382,7 @@ namespace Mod
                     SubclassIndexes = subclassIndexes;
                     Signs = signs;
                     SideIndexes = sideIndexes;
+                    NerveIndexes = nerveIndexes;
                     Soma = soma;
                 }
 
@@ -378,6 +392,7 @@ namespace Mod
                 public ushort[] SubclassIndexes { get; }
                 public sbyte[] Signs { get; }
                 public byte[] SideIndexes { get; }
+                public byte[] NerveIndexes { get; }
                 public float[] Soma { get; }
             }
 

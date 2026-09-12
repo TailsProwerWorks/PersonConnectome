@@ -17,6 +17,13 @@ namespace Mod
         // Geometry is a 2D world-axis projection, not biological ear/eye localization.
         public float SoundDirection, VisionDirection, VisualApproach, SignedTilt, JointPosition, JointMotion, VelocityX, VelocityY;
         public bool SoundDirectionValid, VisionDirectionValid, TiltValid, JointSensingValid, VelocityValid, LightValid;
+        // Reference-game adaptations: sampled injury event, regional contact and
+        // geometric visual features. These are proxies, not biological assays.
+        public float DamageEvent, TouchHead, TouchArms, TouchLegs, TouchCore;
+        public float VisualAngularSize, VisualExpansion, VisualAngularSpeed, AngularVelocity;
+        public bool RegionalTouchValid, VisualGeometryValid, AngularVelocityValid;
+        public float SoundLow, SoundHigh;
+        public bool SoundSpectrumValid;
         public float InternalBleeding, Circulation, Disconnected, Wounds;
         public float Lava, BurnProgress, Stabbed, PhysicalContact, Weightless, Sliding;
     }
