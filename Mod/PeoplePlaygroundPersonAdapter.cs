@@ -8,6 +8,9 @@ namespace Mod
     {
         private const float DeathHealthThreshold = .001f;
         private const float ContactImpactAlertThreshold = .15f;
+        private const float NativeWalkingGate = .5f;
+        private const float MinimumWalkingRequest = .55f;
+        private const float ChemistryChangePerSecond = 1f;
         private static readonly string[] HeadNames = { "head", "neck", "brain", "skull" };
         private static readonly string[] ArmNames = { "hand", "finger", "thumb", "palm", "wrist", "arm", "elbow" };
         private static readonly string[] LegNames = { "foot", "toe", "ankle", "leg", "knee", "thigh" };
@@ -233,7 +236,7 @@ namespace Mod
             {
                 foreach (var limb in limbs)
                 {
-                    if (limb != null && limb.HasBrain)
+                    if (IsConnectedLimb(limb) && limb.HasBrain)
                     {
                         return limb.transform;
                     }
@@ -420,7 +423,7 @@ namespace Mod
                 if (limb == null) continue;
                 trackedLimbCount++;
                 var health = ReadLimb(ref frame, limb, out var healthValid);
-                if (healthValid)
+                if (healthValid && IsConnectedLimb(limb))
                 {
                     healthSum += health;
                     healthCount++;
@@ -472,6 +475,7 @@ namespace Mod
             var maximumDownwardSpeed = 0f;
             foreach (var limb in limbs)
             {
+                if (!IsConnectedLimb(limb)) continue;
                 var body = limb == null || limb.PhysicalBehaviour == null ? null : limb.PhysicalBehaviour.rigidbody;
                 if (body == null || !IsFinite(body.velocity.y))
                 {
@@ -484,7 +488,7 @@ namespace Mod
             return Mathf.Clamp01(maximumDownwardSpeed / 12f);
         }
 
-        public void Apply(MotorCommand command, bool chemistry, float jointSpeedDegreesPerSecond = 30f, float walkingRequestGain = 2f)
+        public void Apply(MotorCommand command, bool chemistry, float jointSpeedDegreesPerSecond = 30f, float walkingRequestGain = 2f, float elapsedSeconds = .05f)
         {
             hasAppliedControl = true;
             appliedLimbCount = 0;
@@ -500,18 +504,18 @@ namespace Mod
             // Native walking selects a pose only at |request| >= .5. Convert
             // neural amplitude explicitly, retaining zero and its sign and
             // capping the result at the ordinary unit walking request.
-            var walkGain = IsFinite(walkingRequestGain) ? Mathf.Clamp(walkingRequestGain, 0f, 4f) : 0f;
-            var walk = command.Walk * walkGain * (1f - Unit(command.Avoid) * .25f);
+            var walk = ResolveWalkingRequest(command, walkingRequestGain);
             ApplyWalking(walk);
+            var chemistryElapsed = ElapsedSeconds(elapsedSeconds);
             foreach (var controller in limbControllers)
             {
                 if (controller.Apply(command, jointSpeedDegreesPerSecond)) appliedLimbCount++;
-                controller.ApplyChemistry(command, chemistry);
+                controller.ApplyChemistry(command, chemistry, chemistryElapsed);
             }
 
             if (chemistry)
             {
-                var adrenalineChange = Unit(command.Stimulate) * .05f - Unit(command.Calm) * .05f;
+                var adrenalineChange = (Unit(command.Stimulate) - Unit(command.Calm)) * ChemistryChangePerSecond * chemistryElapsed;
                 if (adrenalineChange != 0f && IsFinite(person.AdrenalineLevel))
                     // Native Update clamps adrenaline to 0..20; only its neural input is unit-clamped.
                     person.AdrenalineLevel = Mathf.Clamp(person.AdrenalineLevel + adrenalineChange, 0f, 20f);
@@ -612,8 +616,9 @@ namespace Mod
 
         private float ReadLimb(ref SensoryFrame frame, LimbBehaviour limb, out bool healthValid)
         {
+            var connected = IsConnectedLimb(limb);
             var joint = limb.Joint;
-            if (joint != null && joint.transform == limb.transform && joint.connectedBody != null && !IsLostLimb(limb) && limb.CirculationBehaviour != null && !limb.CirculationBehaviour.IsDisconnected && IsFinite(joint.jointAngle) && IsFinite(joint.jointSpeed))
+            if (connected && joint != null && joint.transform == limb.transform && joint.connectedBody != null && IsFinite(joint.jointAngle) && IsFinite(joint.jointSpeed))
             {
                 frame.JointSensingValid = true;
                 frame.JointPosition = Mathf.Max(frame.JointPosition, Unit(Mathf.Abs(joint.jointAngle) / 180f));
@@ -625,7 +630,7 @@ namespace Mod
             }
             healthValid = IsFinite(limb.Health) && IsFinite(limb.InitialHealth) && limb.InitialHealth > 0f;
             var health = healthValid ? Unit(limb.Health / Mathf.Max(1f, limb.InitialHealth)) : 0f;
-            if (healthValid && !IsLostLimb(limb) && limb.CirculationBehaviour != null && !limb.CirculationBehaviour.IsDisconnected)
+            if (healthValid && connected)
             {
                 if (healthSamples.TryGetValue(limb, out var previous) && previous.InitialHealth == limb.InitialHealth && health < previous.Health)
                 {
@@ -638,6 +643,17 @@ namespace Mod
             {
                 healthSamples.Remove(limb);
             }
+            if (!connected)
+            {
+                var circulation = limb.CirculationBehaviour;
+                frame.Disconnected = Mathf.Max(frame.Disconnected, circulation != null &&
+                    (circulation.IsDisconnected || !circulation.HasCirculation) ? 1f : 0f);
+                // Retain detached liquid readings for diagnostics, but do not
+                // let their identities become whole-person control inputs.
+                ReadLiquidIdentities(ref frame, limb.CirculationBehaviour, false);
+                return health;
+            }
+
             frame.Breakage = Mathf.Max(frame.Breakage, limb.Broken || limb.CurrentlyShattered != 0 ? 1f : 0f);
             frame.JointStress = Mathf.Max(frame.JointStress, Unit(limb.JointStress / 100f));
             frame.Heat = Mathf.Max(frame.Heat, TemperatureHeat(limb.BodyTemperature));
@@ -662,9 +678,9 @@ namespace Mod
             return health;
         }
 
-        private static void ReadRegionalTouch(ref SensoryFrame frame, LimbBehaviour limb)
+        private void ReadRegionalTouch(ref SensoryFrame frame, LimbBehaviour limb)
         {
-            if (limb == null || IsLostLimb(limb) || limb.CirculationBehaviour == null || limb.CirculationBehaviour.IsDisconnected) return;
+            if (!IsConnectedLimb(limb)) return;
             var physical = limb.PhysicalBehaviour;
             var contact = limb.IsOnFloor || (physical != null && (physical.IsTouchingSomething || physical.beingHeldByGripper));
             if (!contact) return;
@@ -678,6 +694,14 @@ namespace Mod
         private static bool IsLostLimb(LimbBehaviour limb)
         {
             return limb != null && (limb.IsDismembered || (limb.PhysicalBehaviour != null && limb.PhysicalBehaviour.isDisintegrated));
+        }
+
+        private bool IsConnectedLimb(LimbBehaviour limb)
+        {
+            if (limb == null || IsLostLimb(limb) || root == null ||
+                (limb.transform != root.transform && !limb.transform.IsChildOf(root.transform))) return false;
+            var circulation = limb.CirculationBehaviour;
+            return circulation != null && !circulation.IsDisconnected && circulation.HasCirculation;
         }
 
         private void ReadCirculation(ref SensoryFrame frame, CirculationBehaviour circulation)
@@ -805,8 +829,14 @@ namespace Mod
             }
         }
 
-        private void ReadLiquidIdentities(ref SensoryFrame frame, CirculationBehaviour circulation)
+        private void ReadLiquidIdentities(ref SensoryFrame frame, CirculationBehaviour circulation, bool applyEffects = true)
         {
+            if (circulation == null)
+            {
+                invalidLiquidReadings++;
+                return;
+            }
+
             var total = circulation.TotalLiquidAmount;
             if (circulation.LiquidDistribution == null || !IsFinite(total) || total < 0f)
             {
@@ -838,13 +868,16 @@ namespace Mod
                 {
                     liquidReadings[name] = new LiquidReading { Fraction = amount, Kind = kind };
                 }
-                if (kind != LiquidKind.Blood) frame.LiquidExposure = Mathf.Max(frame.LiquidExposure, amount);
-                switch (kind)
+                if (applyEffects && kind != LiquidKind.Blood) frame.LiquidExposure = Mathf.Max(frame.LiquidExposure, amount);
+                if (applyEffects)
                 {
-                    case LiquidKind.Hazard: frame.LiquidHazard = Mathf.Max(frame.LiquidHazard, amount); break;
-                    case LiquidKind.Sedative: frame.LiquidSedation = Mathf.Max(frame.LiquidSedation, amount); break;
-                    case LiquidKind.Stimulant: frame.LiquidStimulation = Mathf.Max(frame.LiquidStimulation, amount); break;
-                    case LiquidKind.Restorative: frame.LiquidHealing = Mathf.Max(frame.LiquidHealing, amount); break;
+                    switch (kind)
+                    {
+                        case LiquidKind.Hazard: frame.LiquidHazard = Mathf.Max(frame.LiquidHazard, amount); break;
+                        case LiquidKind.Sedative: frame.LiquidSedation = Mathf.Max(frame.LiquidSedation, amount); break;
+                        case LiquidKind.Stimulant: frame.LiquidStimulation = Mathf.Max(frame.LiquidStimulation, amount); break;
+                        case LiquidKind.Restorative: frame.LiquidHealing = Mathf.Max(frame.LiquidHealing, amount); break;
+                    }
                 }
             }
         }
@@ -911,6 +944,23 @@ namespace Mod
         {
             appliedWalk = IsFinite(walk) ? Mathf.Clamp(walk, -1f, 1f) : 0f;
             if (person != null) person.DesiredWalkingDirection = appliedWalk;
+        }
+
+        private static float ResolveWalkingRequest(MotorCommand command, float walkingRequestGain)
+        {
+            if (!IsFinite(command.Walk) || !IsFinite(walkingRequestGain)) return 0f;
+            var walkGain = Mathf.Clamp(walkingRequestGain, 0f, 4f);
+            if (walkGain <= 0f || Mathf.Abs(command.Walk) <= .001f) return 0f;
+
+            var walk = command.Walk * walkGain * (1f - Unit(command.Avoid) * .25f);
+            if (!IsFinite(walk) || Mathf.Abs(walk) <= .001f) return 0f;
+            var sign = walk < 0f ? -1f : 1f;
+            return Mathf.Clamp(sign * Mathf.Max(Mathf.Abs(walk), Mathf.Max(NativeWalkingGate + .05f, MinimumWalkingRequest)), -1f, 1f);
+        }
+
+        private static float ElapsedSeconds(float value)
+        {
+            return IsFinite(value) && value > 0f ? Mathf.Clamp(value, 0f, 1f) : .05f;
         }
 
         internal bool IsOwnTransform(Transform candidate)

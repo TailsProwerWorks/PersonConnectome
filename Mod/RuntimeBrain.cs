@@ -130,9 +130,14 @@ namespace Mod
 
         public MotorCommand Step(SensoryFrame sensory, float elapsedSeconds)
         {
-            if (sensory.BrainDead || !sensory.Alive)
+            if (sensory.BrainDead || (sensory.HealthValid && !sensory.Alive))
             {
                 return Stop();
+            }
+
+            if (!sensory.HealthValid)
+            {
+                return SuspendOutput();
             }
 
             if (stopped)
@@ -166,7 +171,7 @@ namespace Mod
             return BuildMotorCommand(sensory, elapsedSeconds);
         }
 
-        private MotorCommand Stop()
+        public MotorCommand Stop()
         {
             if (!stopped)
             {
@@ -193,6 +198,21 @@ namespace Mod
             droppedThisStep = 0;
             lightDrive = audioDrive = touchDrive = damageDrive = regionalTouchDrive = smallVisualDrive = opticRollDrive = gravityDrive = jointDrive = hotDrive = coldDrive = approachDrive = 0f;
             sensoryQueued = 0;
+            lastCommand = new MotorCommand();
+            forwardFilter = backwardFilter = yawFilter = leftLegFilter = rightLegFilter = locomotionDwell = 0f;
+            locomotionMode = 0;
+            return lastCommand;
+        }
+
+        private MotorCommand SuspendOutput()
+        {
+            processedThisStep = 0;
+            droppedThisStep = 0;
+            fired.Clear();
+            firedIds.Clear();
+            LastSensoryDrive = 0f;
+            sensoryQueued = 0;
+            lightDrive = audioDrive = touchDrive = damageDrive = regionalTouchDrive = smallVisualDrive = opticRollDrive = gravityDrive = jointDrive = hotDrive = coldDrive = approachDrive = 0f;
             lastCommand = new MotorCommand();
             forwardFilter = backwardFilter = yawFilter = leftLegFilter = rightLegFilter = locomotionDwell = 0f;
             locomotionMode = 0;
@@ -305,7 +325,7 @@ namespace Mod
         private static void MergePending(Dictionary<int, float> destination, int id, float amount)
         {
             var queued = destination.TryGetValue(id, out var value) ? value : 0f;
-            destination[id] = Clamp(queued + amount, -4f, 4f);
+            destination[id] = queued + amount;
         }
 
         private void SwapPendingState()
@@ -614,7 +634,7 @@ namespace Mod
                 var input = value * gain;
                 if (input <= .001f) continue;
                 var queued = pending.TryGetValue(id, out var valueAtId) ? valueAtId : 0f;
-                pending[id] = Clamp(queued + input, -4f, 4f);
+                pending[id] = queued + input;
                 active.Add(id);
                 if (priority.Add(id)) sensoryQueued++;
             }

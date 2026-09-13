@@ -17,6 +17,7 @@ if (args.Contains("--mapping-report"))
 
 var tests = new (string Name, Action Run)[]
 {
+    ("signed input accumulation is order independent", SignedInputAccumulationIsOrderIndependent),
     ("refractory expires after silent ticks", RefractoryExpiresAfterSilentTicks),
     ("refractory propagation resumes on exact recovery tick", RefractoryPropagationRecovers),
     ("same-tick refractory targets do not consume the budget", SameTickRefractoryTargets),
@@ -27,6 +28,7 @@ var tests = new (string Name, Action Run)[]
     ("overload cursor includes interspersed priority positions", OverloadCursorIncludesInterspersedPriorityPositions),
     ("fresh sensory inputs bypass recurrent backlog", FreshSensoryInputsBypassRecurrentBacklog),
     ("terminal reset clears state and recovers", TerminalResetClearsStateAndRecovers),
+    ("invalid health suspends without resetting neural state", InvalidHealthSuspendsWithoutReset),
     ("healthy standing leaves sensory headroom", HealthyStateLeavesSensoryHeadroom),
     ("injury and native adrenaline do not synthesize endocrine commands", NativeStressDoesNotDriveChemistry),
     ("internal chemistry does not fabricate a sensory receptor", InternalStatesDoNotFabricateReceptors),
@@ -255,7 +257,7 @@ static void TerminalResetClearsStateAndRecovers()
 {
     var brain = OneNeuronBrain();
     brain.SetTestPending(0, 1f);
-    brain.Step(new SensoryFrame { Alive = false });
+    brain.Step(new SensoryFrame { Alive = false, HealthValid = true });
     Equal(0, brain.TestPendingCount);
     Equal(0L, brain.TestSimulationTick);
     Equal(0L, brain.TestBacklogCursor);
@@ -344,6 +346,40 @@ static void HazardCannotForceWalkingWithoutMotorActivity()
         Fire = 1f
     });
     Equal(0f, command.Walk);
+}
+
+static void SignedInputAccumulationIsOrderIndependent()
+{
+    var orders = new[]
+    {
+        new[] { 0, 1, 2 }, new[] { 0, 2, 1 }, new[] { 1, 0, 2 },
+        new[] { 1, 2, 0 }, new[] { 2, 0, 1 }, new[] { 2, 1, 0 }
+    };
+    foreach (var order in orders)
+    {
+        var brain = ConnectomeBrain.CreateForTest(4, [0, 1, 2, 3, 3], [3, 3, 3], [4f, 4f, -4f]);
+        foreach (var source in order) brain.SetTestPending(source, 1f);
+        brain.Step(Healthy());
+        Equal(4f, brain.TestPendingValue(3));
+        brain.Step(Healthy());
+        True(brain.DidFire(3), "mixed excitation/inhibition should produce the same target spike for every source order");
+    }
+}
+
+static void InvalidHealthSuspendsWithoutReset()
+{
+    var brain = OneNeuronBrain();
+    brain.SetTestPending(0, .5f);
+    brain.Step(Healthy());
+    var tick = brain.TestSimulationTick;
+    var potential = brain.TestPotentialValue(0);
+    var invalid = new SensoryFrame { Alive = false, HealthValid = false };
+    Equal(0f, brain.Step(invalid).Walk);
+    Equal(tick, brain.TestSimulationTick);
+    Equal(potential, brain.TestPotentialValue(0));
+    True(!brain.IsStopped, "unavailable health should suspend output rather than stop the neural state");
+    brain.Step(Healthy());
+    Equal(tick + 1, brain.TestSimulationTick);
 }
 
 static void SubmersionWithoutNeuralMotorActivityIsStill()

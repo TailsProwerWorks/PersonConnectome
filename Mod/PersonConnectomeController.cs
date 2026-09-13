@@ -69,7 +69,7 @@ namespace Mod
                 accumulator = Mathf.Max(0f, remaining - skipped);
                 var started = Time.realtimeSinceStartup;
                 var sensory = adapter.Read();
-                adapter.Apply(brain.Step(sensory, sampleElapsed), true, JointSpeedDegreesPerSecond, WalkingRequestGain);
+                adapter.Apply(brain.Step(sensory, sampleElapsed), true, JointSpeedDegreesPerSecond, WalkingRequestGain, sampleElapsed);
                 sampleElapsed = 0f;
                 statusDisplay?.RecordTick((Time.realtimeSinceStartup - started) * 1000f, skipped, brain);
             }
@@ -85,7 +85,7 @@ namespace Mod
             accumulator = 0f;
             sampleElapsed = 0f;
             statusDisplay?.SetActive(false);
-            brain?.Step(default(SensoryFrame));
+            brain?.Stop();
             adapter?.Suspend();
             RestoreNativePoseOptions();
         }

@@ -12,7 +12,7 @@ The game-facing project targets `net48` and references installed People Playgrou
 |---|---|
 | `PersonBehaviour.DesiredWalkingDirection` | Bounded walking request, cleared on stop/disable. |
 | `LimbBehaviour.InfluenceMotorSpeed(float, float)` | The game interpolates joint speed toward the request. Stop uses influence 1, independent of `IsCapable`; no-joint limbs cannot be driven by this API. |
-| `GripBehaviour.Use(ActivationPropagation)` / `DropObject()` | Optional grab/drop. Installed `Use` does not read its propagation argument. Stop releases grips independently of capability. |
+| `GripBehaviour.Use(ActivationPropagation)` / `DropObject()` | Optional grab/drop. Installed `Use` does not read its propagation argument. A zero/invalid active request leaves an existing hold unchanged; stop releases grips explicitly and independently of capability. |
 | `CirculationBehaviour.BloodRegenerationPerSecond` / `LimbBehaviour.RegenerationSpeed` | Bounded boosts never lower an existing baseline. Cleanup restores only an unchanged last assignment owned by this controller. A newer external write wins. |
 | `PersonBehaviour.AdrenalineLevel` | Bounded stimulation/calming during active control. |
 | `PhysicalBehaviour.BurnIntensity` | Bounded reduction during active control. |
@@ -69,7 +69,7 @@ The [official Shady Code Rejection rules](https://wiki.studiominus.nl/details/sh
 
 ## Verified motor and adrenaline boundaries
 
-Installed native IL shows `DetermineActivePose` requires `abs(DesiredWalkingDirection) >= 0.5`; `Update` reduces its magnitude by 1 unit/second and clamps it to -4..4. This adapter conservatively caps submitted walking at -1..1 and defaults `WalkingRequestGain` to 2. A -0.46 neural request submits -0.92 before hazard scaling, rather than remaining below the native pose gate.
+Installed native IL shows `DetermineActivePose` requires `abs(DesiredWalkingDirection) >= 0.5`; `Update` reduces its magnitude by 1 unit/second and clamps it to -4..4. This adapter conservatively caps submitted walking at -1..1, defaults `WalkingRequestGain` to 2, and floors any nonzero usable final request at 0.55 after hazard scaling. Zero neural intent and a disabled gain remain zero. A -0.46 neural request therefore submits at least -0.55 rather than remaining below the native pose gate.
 
 `InfluenceMotorSpeed` interpolates the requested speed into `JointMotor2D.motorSpeed`. [Unity's Hinge Joint 2D manual](https://docs.unity3d.com/2021.3/Documentation/Manual/class-HingeJoint2D.html) specifies degrees per second. The adapter defaults full-scale normalized joint requests to 30 deg/s, with a configurable 0..120 bound. This replaces the accidental +/-1 deg/s target. These are engineering defaults, not measured stock-gait calibration; native torque, strength, pose selection and constraints remain in control. Nonfinite settings stop affected joint requests immediately. The game can randomize native motor application when `PersonBehaviour.BrainDamaged` is true, even though the mod's decoder is deterministic.
 

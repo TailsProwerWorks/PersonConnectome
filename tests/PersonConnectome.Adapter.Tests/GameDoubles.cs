@@ -216,6 +216,7 @@ namespace Mod
         public static ConnectomeBrain TryCreate(out string status) { status = "test"; return new(); }
         public MotorCommand Step(SensoryFrame frame) => default;
         public MotorCommand Step(SensoryFrame frame, float elapsed) { StepCount++; LastElapsed = elapsed; return default; }
+        public void Stop() { }
     }
     internal class PersonConnectomeStatusDisplay
     {

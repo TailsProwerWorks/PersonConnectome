@@ -39,10 +39,12 @@ internal static class Program
             ("falling is distinct from walking and floor contact", Falling),
             ("contact impacts do not fabricate hearing", Impacts),
             ("detached owned limbs remain excluded from collision signals", DetachedOwnCollisions),
+            ("detached limbs remain diagnostic but cannot feed body control", DetachedLimbsDoNotControl),
             ("control clock preserves rate and caps catch-up", ControlClock),
             ("regeneration ownership and cleanup", Chemistry),
             ("front-back hierarchy routes separate channels", SideRouting),
             ("missing grip and joint do not interrupt other limbs", OptionalControls),
+            ("zero grip leaves an existing hold unchanged", NeutralGrip),
             ("broken limbs do not suppress healthy limb control", LocalLimbDamage),
             ("dead limb health stops only its own actuator", LocalDeadLimb),
             ("finite boundary sanitization", FiniteInputs),
@@ -51,7 +53,9 @@ internal static class Program
             ("component disable clears commands and chemistry", Disable),
             ("never-activated cleanup preserves game state", NeverActivated),
             ("neutral chemistry preserves adrenaline", NeutralChemistry),
-            ("active chemistry respects native adrenaline range", NativeAdrenalineRange)
+            ("active chemistry respects native adrenaline range", NativeAdrenalineRange),
+            ("hazard walking keeps the native pose gate", HazardWalkingKeepsNativeGate),
+            ("chemistry interventions scale with elapsed time", ChemistryScalesWithElapsedTime)
         ];
         var failures = 0;
         foreach (var (name, test) in tests)
@@ -230,6 +234,7 @@ internal static class Program
         True(f.Adapter.LiveBodySummary.Contains("damage=unknown")); True(f.Adapter.LiveInjurySummary.Contains("vitality=unknown"));
         f.Adapter.Apply(Moving, false); Equal(0f, f.Limb.MotorSpeed); True(f.Adapter.LiveLimbSummary.Contains("LowerArmFront:invalid-health"));
 
+        f.Limb.Health = 100f;
         var healthy = Fixture.AddLimb(f.Root, "LowerArmBack"); f.Person.Limbs = [f.Limb, healthy]; healthy.IsDismembered = true;
         frame = f.Adapter.Read(); Equal(.5f, frame.LimbLoss); True(frame.DamageValid); True(frame.VitalityValid);
     }
@@ -425,6 +430,25 @@ internal static class Program
         True(probe.IsOwned == null && probe.Report == null && probe.ReportProjectile == null);
     }
 
+    private static void DetachedLimbsDoNotControl()
+    {
+        var f = new Fixture();
+        var detached = Fixture.AddLimb(f.Root, "DetachedArm");
+        f.Person.Limbs = [f.Limb, detached];
+        detached.transform.SetParent(null);
+        detached.IsDismembered = true;
+        detached.PhysicalBehaviour.Temperature = 100f;
+        detached.CirculationBehaviour.LiquidDistribution[new Liquid("KNOCKOUT POISON")] = new() { Raw = .8f };
+        var frame = f.Adapter.Read();
+        Equal(0f, frame.LiquidSedation);
+        Equal(0f, frame.Heat);
+        Equal(.5f, frame.LimbLoss);
+        True(f.Adapter.LiveLiquidSummary.Contains("KNOCKOUT POISON"));
+        f.Adapter.Apply(Moving, false);
+        Equal(1f, f.Person.DesiredWalkingDirection);
+        True(detached.MotorSpeed == 0f);
+    }
+
     private static void LocalDeadLimb()
     {
         var f = new Fixture();
@@ -543,7 +567,7 @@ internal static class Program
         var disconnectedJoint = secondLimb.gameObject.AddComponent<HingeJoint2D>();
         disconnectedJoint.connectedBody = new GameObject("Disconnected joint body").AddComponent<Rigidbody2D>(); disconnectedJoint.jointAngle = 90f; disconnectedJoint.jointSpeed = 90f; secondLimb.Joint = disconnectedJoint;
         secondLimb.IsDismembered = true; secondLimb.CirculationBehaviour.IsDisconnected = true;
-        frame = f.Adapter.Read(); True(!frame.JointSensingValid); Equal(0f, frame.NeuralJointLoad); Equal(1f, frame.JointStress);
+        frame = f.Adapter.Read(); True(!frame.JointSensingValid); Equal(0f, frame.NeuralJointLoad); Equal(0f, frame.JointStress);
 
         RenderSettings.ambientLight = new Color { grayscale = float.NaN };
         frame = f.Adapter.Read(); True(!frame.LightValid); Equal(0f, frame.Light); Equal(0f, frame.VisualApproach);
@@ -692,6 +716,14 @@ internal static class Program
         var f = new Fixture(); f.Limb.GripBehaviour = null; f.Limb.HasJoint = false;
         var foot = Fixture.AddLimb(f.Root, "FootFront"); f.Adapter.Read(); f.Adapter.Apply(Moving, false); True(foot.MotorSpeed > 0); Equal(1, f.Person.DesiredWalkingDirection); True(f.Adapter.LiveLimbSummary.Contains("LowerArmFront:no-joint"));
     }
+    private static void NeutralGrip()
+    {
+        var f = new Fixture(); f.Adapter.Read(); f.Limb.GripBehaviour.isHolding = true;
+        f.Adapter.Apply(default, false);
+        True(f.Limb.GripBehaviour.isHolding);
+        f.Adapter.Stop();
+        True(!f.Limb.GripBehaviour.isHolding);
+    }
     private static void LocalLimbDamage()
     {
         var f = new Fixture(); var healthy = Fixture.AddLimb(f.Root, "LowerArmBack"); f.Person.Limbs = [f.Limb, healthy];
@@ -730,7 +762,7 @@ internal static class Program
         Equal(26.4f, f.Limb.MotorSpeed); // Configured target is capped at 120 degrees/s.
         f.Limb.MotorSpeed = 0f;
         f.Adapter.Apply(new MotorCommand { Walk = -.46f, RightArm = .5f }, false, 1f, 1f);
-        Equal(-.46f, f.Person.DesiredWalkingDirection); Equal(.11f, f.Limb.MotorSpeed);
+        Equal(-.55f, f.Person.DesiredWalkingDirection); Equal(.11f, f.Limb.MotorSpeed);
         foreach (var invalid in new[] { float.NaN, float.PositiveInfinity, float.NegativeInfinity })
         {
             f.Limb.MotorSpeed = 10f;
@@ -766,6 +798,27 @@ internal static class Program
         f.Adapter.Apply(new MotorCommand { Calm = 1f }, true); Equal(0f, f.Person.AdrenalineLevel);
         f.Person.AdrenalineLevel = 2.5f;
         f.Adapter.Apply(new MotorCommand { Calm = 1f }, false); Equal(2.5f, f.Person.AdrenalineLevel);
+    }
+
+    private static void HazardWalkingKeepsNativeGate()
+    {
+        var f = new Fixture(); f.Adapter.Read();
+        f.Adapter.Apply(new MotorCommand { Walk = .3f, Avoid = 1f }, false);
+        Equal(.55f, f.Person.DesiredWalkingDirection);
+    }
+
+    private static void ChemistryScalesWithElapsedTime()
+    {
+        var first = new Fixture(); first.Adapter.Read(); first.Person.AdrenalineLevel = 1f; first.Limb.PhysicalBehaviour.BurnIntensity = 1f;
+        for (var i = 0; i < 5; i++) first.Adapter.Apply(new MotorCommand { Stimulate = 1f, Extinguish = 1f }, true, 30f, 2f, .1f);
+
+        var second = new Fixture(); second.Adapter.Read(); second.Person.AdrenalineLevel = 1f; second.Limb.PhysicalBehaviour.BurnIntensity = 1f;
+        for (var i = 0; i < 10; i++) second.Adapter.Apply(new MotorCommand { Stimulate = 1f, Extinguish = 1f }, true, 30f, 2f, .05f);
+
+        Equal(first.Person.AdrenalineLevel, second.Person.AdrenalineLevel);
+        Equal(first.Limb.PhysicalBehaviour.BurnIntensity, second.Limb.PhysicalBehaviour.BurnIntensity);
+        Equal(.5f, first.Limb.PhysicalBehaviour.BurnIntensity);
+        Equal(1.5f, first.Person.AdrenalineLevel);
     }
     private static void NeverActivated()
     {

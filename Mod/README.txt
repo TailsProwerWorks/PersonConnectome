@@ -15,7 +15,7 @@ The unchanged MaleCNS-derived graph has 176,422 neurons and 6,287,749 retained c
 
 Light changes, external audio, regional contact, joint motion, hot/cold and geometric visual cues feed annotated populations. Newly sampled connected-limb health loss supplies an engineered tactile injury event. The panel's pain and adrenaline values still come from the game, not a measured feeling.
 
-Neural activity drives filtered movement requests through native game APIs. Walking modes bridge brief firing gaps; an active mode has a 0.3 request floor before rate limiting. The adapter defaults to walking gain 2 and a 30 deg/s joint limit. These are engineering settings, not biological calibration or guaranteed walking. Native poses and standing mechanics still contribute.
+Neural activity drives filtered movement requests through native game APIs. Walking modes bridge brief firing gaps; an active mode has a 0.3 neural request floor and the adapter applies a 0.55 final request floor after modifiers so the native 0.5 walking gate retains decay margin. The adapter defaults to walking gain 2 and a 30 deg/s joint limit. These are engineering settings, not biological calibration or guaranteed walking. Native poses and standing mechanics still contribute.
 
 <b><color=#FFD700>LIMITS</color></b>
 This is a thresholded fly graph mapped to a game Human, not a human brain or complete fly mind. Vision uses bounds, motion, line of sight and light; audio uses external playback and coarse frequency bands when available. No semantic sight, sound understanding, smell, taste, flight or biological swimming is claimed.

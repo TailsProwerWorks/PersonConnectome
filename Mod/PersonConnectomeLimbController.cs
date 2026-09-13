@@ -24,6 +24,7 @@ namespace Mod
         }
 
         private readonly LimbBehaviour limb;
+        private readonly Transform root;
         private readonly LimbRole role;
         private readonly LimbSide side;
         private readonly OwnedRegenerationRate bloodRate = new OwnedRegenerationRate();
@@ -32,6 +33,7 @@ namespace Mod
         public PersonConnectomeLimbController(LimbBehaviour limb, Transform root)
         {
             this.limb = limb;
+            this.root = root;
             role = ClassifyRole(limb);
             side = ClassifySide(limb, root);
         }
@@ -164,9 +166,11 @@ namespace Mod
             {
                 request = command.RightGrip;
             }
+            // Zero is an unowned channel: the brain has no validated grasp
+            // mapping, so a healthy controlled person keeps its current grip.
+            // Stop() remains the explicit release path for terminal/disabled state.
             if (float.IsNaN(request) || float.IsInfinity(request) || request < .7f)
             {
-                grip.DropObject();
                 return;
             }
 
@@ -241,7 +245,7 @@ namespace Mod
             return LimbSide.Center;
         }
 
-        public void ApplyChemistry(MotorCommand command, bool enabled)
+        public void ApplyChemistry(MotorCommand command, bool enabled, float elapsedSeconds = .05f)
         {
             if (limb == null) return;
             if (!enabled || !CanDrive)
@@ -257,7 +261,7 @@ namespace Mod
             var physical = limb.PhysicalBehaviour;
             var extinguish = FiniteUnit(command.Extinguish);
             if (physical != null && extinguish > .01f)
-                physical.BurnIntensity = Mathf.Max(0f, physical.BurnIntensity - extinguish * .05f);
+                physical.BurnIntensity = Mathf.Max(0f, physical.BurnIntensity - extinguish * ElapsedSeconds(elapsedSeconds));
         }
 
         private void RestoreChemistry()
@@ -277,6 +281,7 @@ namespace Mod
         private string LocalMotorFailure()
         {
             if (limb == null) return "missing-limb";
+            if (root == null || (limb.transform != root && !limb.transform.IsChildOf(root))) return "detached";
             if (!limb.HasJoint) return "no-joint";
             if (limb.Broken || limb.CurrentlyShattered != 0) return "broken";
             if (limb.IsDismembered) return "dismembered";
@@ -293,6 +298,8 @@ namespace Mod
         }
 
         private static float FiniteUnit(float value) => float.IsNaN(value) || float.IsInfinity(value) ? 0f : Mathf.Clamp01(value);
+
+        private static float ElapsedSeconds(float value) => IsFinite(value) && value > 0f ? Mathf.Clamp(value, 0f, 1f) : .05f;
 
         private static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
 
