@@ -68,7 +68,7 @@ namespace Mod
             new Color(.78f, .59f, .28f), new Color(.7f, .38f, .67f), new Color(.42f, .48f, .54f)
         };
 
-        public PersonConnectomeStatusDisplay(Transform anchor) { SetActive(true); }
+        public PersonConnectomeStatusDisplay(Transform anchor) { }
 
         public void SetActive(bool active)
         {

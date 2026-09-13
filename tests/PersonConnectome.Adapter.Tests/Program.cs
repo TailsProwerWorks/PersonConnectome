@@ -45,6 +45,7 @@ internal static class Program
             ("control clock preserves rate and caps catch-up", ControlClock),
             ("suspension clears transient events", SuspensionClearsTransientEvents),
             ("initially disabled controllers reject events", InitiallyDisabledControllersRejectEvents),
+            ("disabled controllers do not claim telemetry", DisabledControllersDoNotClaimTelemetry),
             ("regeneration ownership and cleanup", Chemistry),
             ("front-back hierarchy routes separate channels", SideRouting),
             ("missing grip and joint do not interrupt other limbs", OptionalControls),
@@ -54,6 +55,8 @@ internal static class Program
             ("finite boundary sanitization", FiniteInputs),
             ("telemetry follows native readings independently of requests", NativeTelemetryTrace),
             ("native motor requests use bounded walking and angular units", NativeMotorUnits),
+            ("freeze cutoff clears actuators consistently", FreezeCutoff),
+            ("walking requests persist between neural ticks", WalkingRequestMaintenance),
             ("component disable clears commands and chemistry", Disable),
             ("never-activated cleanup preserves game state", NeverActivated),
             ("neutral chemistry preserves adrenaline", NeutralChemistry),
@@ -64,7 +67,7 @@ internal static class Program
         var failures = 0;
         foreach (var (name, test) in tests)
         {
-            try { Physics2D.Hits = []; test(); Console.WriteLine("PASS " + name); }
+            try { Physics2D.Hits = []; Physics2D.LinecastHits = []; Physics2D.LinecastResult = default; test(); Console.WriteLine("PASS " + name); }
             catch (Exception e) { failures++; Console.Error.WriteLine("FAIL " + name + ": " + e); }
         }
         return failures;
@@ -206,6 +209,8 @@ internal static class Program
         var controller = f.Root.AddComponent<PersonConnectomeController>();
         var type = typeof(PersonConnectomeController);
         type.GetMethod("Awake", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(controller, null);
+        Equal(3, options.Buttons.Count);
+        type.GetMethod("OnEnable", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(controller, null);
         Equal(1, options.Buttons.Count); True(options.Buttons.Contains(delete));
         type.GetMethod("OnDisable", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(controller, null);
         Equal(3, options.Buttons.Count); True(options.Buttons.Contains(walking)); True(options.Buttons.Contains(sitting));
@@ -586,6 +591,28 @@ internal static class Program
         Equal(0f, frame.Impact); Equal(0f, frame.Vibration); Equal(0f, frame.Projectile);
     }
 
+    private static void DisabledControllersDoNotClaimTelemetry()
+    {
+        PersonConnectomeStatusDisplay.ResetForTest();
+        var disabled = new Fixture();
+        var disabledController = disabled.Root.AddComponent<PersonConnectomeController>();
+        var enabled = new Fixture();
+        var enabledController = enabled.Root.AddComponent<PersonConnectomeController>();
+        var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        var type = typeof(PersonConnectomeController);
+        type.GetMethod("Awake", flags).Invoke(disabledController, null);
+        type.GetMethod("Awake", flags).Invoke(enabledController, null);
+        Equal(0, PersonConnectomeStatusDisplay.ActiveCount);
+        type.GetMethod("OnEnable", flags).Invoke(enabledController, null);
+        Equal(1, PersonConnectomeStatusDisplay.ActiveCount);
+        type.GetMethod("LateUpdate", flags).Invoke(enabledController, null);
+        Equal(1, PersonConnectomeStatusDisplay.RenderedUpdates);
+        type.GetMethod("OnDisable", flags).Invoke(enabledController, null);
+        type.GetMethod("OnDestroy", flags).Invoke(disabledController, null);
+        type.GetMethod("OnDestroy", flags).Invoke(enabledController, null);
+        PersonConnectomeStatusDisplay.ResetForTest();
+    }
+
     private static void Vision()
     {
         var f = new Fixture();
@@ -599,6 +626,14 @@ internal static class Program
         var frame = f.Adapter.Read();
         True(frame.Vision > .0f && frame.Vision <= 1f);
         Equal("VISION", f.Adapter.LiveSignal);
+        var ownCollider = f.Root.AddComponent<Collider2D>();
+        Physics2D.LinecastHits = [new RaycastHit2D { collider = ownCollider }, new RaycastHit2D { collider = collider }];
+        frame = f.Adapter.Read();
+        True(frame.Vision > 0f);
+        var wall = new GameObject("Vision wall").AddComponent<Collider2D>();
+        Physics2D.LinecastHits = [new RaycastHit2D { collider = ownCollider }, new RaycastHit2D { collider = wall }, new RaycastHit2D { collider = collider }];
+        Equal(0f, f.Adapter.Read().Vision);
+        Physics2D.LinecastHits = [];
         Physics2D.LinecastResult = default;
         Equal(0, f.Adapter.Read().Vision);
         RenderSettings.ambientLight = default;
@@ -859,6 +894,41 @@ internal static class Program
             Equal(0f, f.Person.DesiredWalkingDirection); Equal(0f, f.Limb.MotorSpeed);
             True(f.Adapter.LiveLimbSummary.Contains("invalid (stopped)"));
         }
+    }
+
+    private static void FreezeCutoff()
+    {
+        var f = new Fixture(); f.Adapter.Read();
+        f.Limb.MotorSpeed = 10f; f.Limb.GripBehaviour.isHolding = true;
+        f.Adapter.Apply(new MotorCommand { Freeze = .49f }, false);
+        Equal(7.8f, f.Limb.MotorSpeed); True(f.Limb.GripBehaviour.isHolding);
+
+        f.Limb.MotorSpeed = 10f; f.Limb.GripBehaviour.isHolding = true;
+        f.Adapter.Apply(new MotorCommand { Freeze = .5f }, false);
+        Equal(0f, f.Limb.MotorSpeed); True(!f.Limb.GripBehaviour.isHolding);
+
+        f.Limb.MotorSpeed = 10f; f.Limb.GripBehaviour.isHolding = true;
+        f.Adapter.Apply(new MotorCommand { Freeze = .51f }, false);
+        Equal(0f, f.Limb.MotorSpeed); True(!f.Limb.GripBehaviour.isHolding);
+    }
+
+    private static void WalkingRequestMaintenance()
+    {
+        var f = new Fixture(); f.Adapter.Read();
+        f.Adapter.Apply(new MotorCommand { Walk = .26f }, false);
+        Equal(.55f, f.Person.DesiredWalkingDirection);
+        var controller = f.Root.AddComponent<PersonConnectomeController>();
+        var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        var type = typeof(PersonConnectomeController);
+        type.GetField("adapter", flags).SetValue(controller, f.Adapter);
+        f.Person.DesiredWalkingDirection = .45f; // Simulate native decay before the next neural tick.
+        type.GetMethod("LateUpdate", flags).Invoke(controller, null);
+        Equal(.55f, f.Person.DesiredWalkingDirection);
+
+        f.Adapter.Stop();
+        f.Person.DesiredWalkingDirection = .45f;
+        type.GetMethod("LateUpdate", flags).Invoke(controller, null);
+        Equal(.45f, f.Person.DesiredWalkingDirection);
     }
 
     private static void FiniteInputs()

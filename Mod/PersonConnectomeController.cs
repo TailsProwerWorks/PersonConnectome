@@ -35,7 +35,6 @@ namespace Mod
             {
                 Debug.Log("Person Connectome: " + loadStatus + ". Active control is disabled; no fallback graph is substituted.");
             }
-            SuppressNativePoseOptions();
         }
 
         private void Start()
@@ -79,6 +78,7 @@ namespace Mod
 
         private void LateUpdate()
         {
+            adapter?.RefreshWalkingRequest();
             statusDisplay?.Update(Time.unscaledDeltaTime, brain, adapter);
         }
 

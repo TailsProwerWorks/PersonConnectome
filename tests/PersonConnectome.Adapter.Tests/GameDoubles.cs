@@ -103,9 +103,15 @@ namespace UnityEngine
     {
         public static Collider2D[] Hits = [];
         public static RaycastHit2D LinecastResult;
+        public static RaycastHit2D[] LinecastHits = [];
         public static int OverlapCircleNonAlloc(Vector2 position, float radius, Collider2D[] buffer)
         { var count = Math.Min(Hits.Length, buffer.Length); Array.Copy(Hits, buffer, count); return count; }
         public static RaycastHit2D Linecast(Vector2 start, Vector2 end) => LinecastResult;
+        public static int LinecastNonAlloc(Vector2 start, Vector2 end, RaycastHit2D[] buffer)
+        {
+            var hits = LinecastHits.Length > 0 ? LinecastHits : LinecastResult.collider == null ? [] : [LinecastResult];
+            var count = Math.Min(hits.Length, buffer.Length); Array.Copy(hits, buffer, count); return count;
+        }
     }
     public enum FFTWindow { Rectangular }
     public static class AudioSettings { public static int outputSampleRate = 48000; }
@@ -220,10 +226,21 @@ namespace Mod
     }
     internal class PersonConnectomeStatusDisplay
     {
+        private static int activeCount;
+        private static int renderedUpdates;
+        private bool active;
+        public static int ActiveCount => activeCount;
+        public static int RenderedUpdates => renderedUpdates;
+        public static void ResetForTest() { activeCount = 0; renderedUpdates = 0; }
         public PersonConnectomeStatusDisplay(UnityEngine.Transform anchor) { }
-        public void Update(float elapsed, ConnectomeBrain brain, PeoplePlaygroundPersonAdapter adapter) { }
-        public void SetActive(bool active) { }
+        public void Update(float elapsed, ConnectomeBrain brain, PeoplePlaygroundPersonAdapter adapter) { if (active) renderedUpdates++; }
+        public void SetActive(bool value)
+        {
+            if (active == value) return;
+            active = value;
+            activeCount += value ? 1 : -1;
+        }
         public void RecordTick(float milliseconds, float skipped, ConnectomeBrain brain) { }
-        public void Dispose() { }
+        public void Dispose() { SetActive(false); }
     }
 }

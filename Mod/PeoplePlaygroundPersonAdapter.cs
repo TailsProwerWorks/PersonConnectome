@@ -31,9 +31,12 @@ namespace Mod
         private bool hasAppliedControl;
         private readonly float visionRadius;
         private readonly Collider2D[] nearbyColliders = new Collider2D[128];
+        private readonly RaycastHit2D[] visionLinecastHits = new RaycastHit2D[32];
         private float collision;
         private float vibration;
         private float projectile;
+        private float walkingIntent;
+        private bool walkingIntentActive;
         private SensoryFrame lastFrame;
         private float nativeAdrenaline;
         private bool hasReadFrame;
@@ -496,7 +499,7 @@ namespace Mod
             jointSpeedValid = IsFinite(jointSpeedDegreesPerSecond);
             jointSpeedLimit = jointSpeedValid ? Mathf.Clamp(jointSpeedDegreesPerSecond, 0f, 120f) : 0f;
             if (!IsUsable || !hasReadFrame || !lastFrame.Alive || !lastFrame.ConsciousnessValid || lastFrame.Consciousness <= .8f ||
-                !IsFinite(command.Freeze) || command.Freeze > .5f)
+                !IsFinite(command.Freeze) || command.Freeze >= .5f)
             {
                 Stop();
                 return;
@@ -506,6 +509,8 @@ namespace Mod
             // neural amplitude explicitly, retaining zero and its sign and
             // capping the result at the ordinary unit walking request.
             var walk = ResolveWalkingRequest(command, walkingRequestGain);
+            walkingIntent = walk;
+            walkingIntentActive = Mathf.Abs(walk) > .001f;
             ApplyWalking(walk);
             var chemistryElapsed = ElapsedSeconds(elapsedSeconds);
             foreach (var controller in limbControllers)
@@ -523,6 +528,18 @@ namespace Mod
             }
         }
 
+        public void RefreshWalkingRequest()
+        {
+            if (!walkingIntentActive) return;
+            if (!IsUsable || !hasReadFrame || !lastFrame.Alive || !lastFrame.ConsciousnessValid || lastFrame.Consciousness <= .8f)
+            {
+                Stop();
+                return;
+            }
+
+            ApplyWalking(walkingIntent);
+        }
+
         public void Suspend()
         {
             Stop();
@@ -535,6 +552,8 @@ namespace Mod
         public void Stop()
         {
             healthSamples.Clear();
+            walkingIntent = 0f;
+            walkingIntentActive = false;
             // A failed asset load never activates control. Disposing that adapter
             // must not clear native walking, joint or held-object state.
             if (!hasAppliedControl) return;
@@ -1038,7 +1057,7 @@ namespace Mod
                 }
             }
 
-            if (closestCollider != null && Physics2D.Linecast(origin, closestPoint).collider == closestCollider)
+            if (closestCollider != null && HasExternalLineOfSight(origin, closestPoint, closestCollider))
             {
                 f.Vision = Mathf.Clamp01(f.Nearby * f.Light);
                 f.VisionDirection = WorldHorizontalBearing(closestPoint - origin, out var visionDirectionValid);
@@ -1063,6 +1082,19 @@ namespace Mod
                     f.Projectile = Mathf.Max(f.Projectile, f.Vision);
                 }
             }
+        }
+
+        private bool HasExternalLineOfSight(Vector2 origin, Vector2 targetPoint, Collider2D target)
+        {
+            var hitCount = Physics2D.LinecastNonAlloc(origin, targetPoint, visionLinecastHits);
+            for (var i = 0; i < hitCount; i++)
+            {
+                var hit = visionLinecastHits[i].collider;
+                if (hit == null || IsOwnTransform(hit.transform)) continue;
+                return hit == target;
+            }
+
+            return false;
         }
 
         private string ClassifyVisualTarget(PhysicalBehaviour physical, Collider2D collider)
