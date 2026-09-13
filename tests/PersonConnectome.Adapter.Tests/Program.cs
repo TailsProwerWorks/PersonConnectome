@@ -40,8 +40,10 @@ internal static class Program
             ("contact impacts do not fabricate hearing", Impacts),
             ("detached owned limbs remain excluded from collision signals", DetachedOwnCollisions),
             ("detached source probes cannot report collisions", DetachedSourceCollisions),
+            ("connected source probes report projectiles", ConnectedSourceProjectiles),
             ("detached limbs remain diagnostic but cannot feed body control", DetachedLimbsDoNotControl),
             ("control clock preserves rate and caps catch-up", ControlClock),
+            ("suspension clears transient events", SuspensionClearsTransientEvents),
             ("regeneration ownership and cleanup", Chemistry),
             ("front-back hierarchy routes separate channels", SideRouting),
             ("missing grip and joint do not interrupt other limbs", OptionalControls),
@@ -458,6 +460,17 @@ internal static class Program
         Equal(0f, frame.Projectile);
     }
 
+    private static void ConnectedSourceProjectiles()
+    {
+        var f = new Fixture(); f.Adapter.Read();
+        var projectileObject = new GameObject("Connected projectile");
+        projectileObject.AddComponent<ProjectileBehaviour>();
+        var projectile = projectileObject.AddComponent<Collider2D>();
+        var callback = typeof(PersonConnectomeLimbProbe).GetMethod("OnCollisionEnter2D", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        callback.Invoke(f.Limb.GetComponent<PersonConnectomeLimbProbe>(), [new Collision2D { collider = projectile, relativeVelocity = new Vector2(20, 0) }]);
+        Equal(1f, f.Adapter.Read().Projectile);
+    }
+
     private static void DetachedLimbsDoNotControl()
     {
         var f = new Fixture();
@@ -523,6 +536,28 @@ internal static class Program
             Equal(21, brain.StepCount);
         }
         finally { Time.fixedDeltaTime = previousDelta; }
+    }
+
+    private static void SuspensionClearsTransientEvents()
+    {
+        var f = new Fixture(); f.Adapter.Read(); f.Adapter.Apply(Moving, false);
+        f.Adapter.RegisterCollision(20f); f.Adapter.RegisterProjectile(20f); f.Adapter.Suspend();
+        var resumed = f.Adapter.Read();
+        Equal(0f, resumed.Impact); Equal(0f, resumed.Vibration); Equal(0f, resumed.Projectile);
+
+        var controller = f.Root.AddComponent<PersonConnectomeController>();
+        var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        var type = typeof(PersonConnectomeController);
+        type.GetMethod("Awake", flags).Invoke(controller, null);
+        var adapter = (PeoplePlaygroundPersonAdapter)type.GetField("adapter", flags).GetValue(controller);
+        type.GetMethod("OnDisable", flags).Invoke(controller, null);
+        var floor = new GameObject("Disabled floor").AddComponent<Collider2D>();
+        var probeType = typeof(PersonConnectomeLimbProbe);
+        var enter = probeType.GetMethod("OnCollisionEnter2D", flags);
+        enter.Invoke(f.Limb.GetComponent<PersonConnectomeLimbProbe>(), [new Collision2D { collider = floor, relativeVelocity = new Vector2(20, 0) }]);
+        type.GetMethod("OnEnable", flags).Invoke(controller, null);
+        resumed = adapter.Read();
+        Equal(0f, resumed.Impact); Equal(0f, resumed.Vibration); Equal(0f, resumed.Projectile);
     }
 
     private static void Vision()
@@ -880,7 +915,7 @@ internal static class Program
         public Fixture()
         {
             Person = Root.AddComponent<PersonBehaviour>(); Limb = AddLimb(Root, "LowerArmFront"); Limb.Person = Person; Person.Limbs = [Limb];
-            Adapter = new PeoplePlaygroundPersonAdapter(Root, 8, value => Adapter.RegisterCollision(value));
+            Adapter = new PeoplePlaygroundPersonAdapter(Root, 8, value => Adapter.RegisterCollision(value), value => Adapter.RegisterProjectile(value));
         }
         public static LimbBehaviour AddLimb(GameObject parent, string name)
         {

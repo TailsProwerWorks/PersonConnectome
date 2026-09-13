@@ -18,12 +18,14 @@ namespace Mod
         private PersonConnectomeStatusDisplay statusDisplay;
         private float accumulator;
         private float sampleElapsed;
+        private bool acceptingEvents;
         private readonly List<SuppressedContextMenuButton> suppressedContextMenuButtons = [];
         private readonly List<ContextMenuOptionComponent> contextMenuOptions = [];
 
         private void Awake()
         {
             adapter = new PeoplePlaygroundPersonAdapter(gameObject, VisionRadius, RegisterCollision, RegisterProjectile);
+            acceptingEvents = true;
             statusDisplay = new PersonConnectomeStatusDisplay(adapter.StatusAnchor);
             brain = ConnectomeBrain.TryCreate(out var loadStatus);
             if (!adapter.IsUsable)
@@ -46,6 +48,7 @@ namespace Mod
 
         private void OnEnable()
         {
+            acceptingEvents = true;
             statusDisplay?.SetActive(true);
             SuppressNativePoseOptions();
         }
@@ -82,6 +85,7 @@ namespace Mod
 
         private void OnDisable()
         {
+            acceptingEvents = false;
             accumulator = 0f;
             sampleElapsed = 0f;
             statusDisplay?.SetActive(false);
@@ -92,6 +96,7 @@ namespace Mod
 
         private void OnDestroy()
         {
+            acceptingEvents = false;
             RestoreNativePoseOptions();
             adapter?.Dispose();
             statusDisplay?.Dispose();
@@ -182,8 +187,15 @@ namespace Mod
             }
         }
 
-        private void RegisterCollision(float magnitude) => adapter?.RegisterCollision(magnitude);
-        private void RegisterProjectile(float magnitude) => adapter?.RegisterProjectile(magnitude);
+        private void RegisterCollision(float magnitude)
+        {
+            if (acceptingEvents) adapter?.RegisterCollision(magnitude);
+        }
+
+        private void RegisterProjectile(float magnitude)
+        {
+            if (acceptingEvents) adapter?.RegisterProjectile(magnitude);
+        }
     }
 
     // Collision callbacks arrive on limb GameObjects, so probes forward a bounded

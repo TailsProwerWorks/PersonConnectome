@@ -526,6 +526,9 @@ namespace Mod
         public void Suspend()
         {
             Stop();
+            collision = 0f;
+            vibration = 0f;
+            projectile = 0f;
             hasReadFrame = false;
         }
 
