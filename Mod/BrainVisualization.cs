@@ -5,7 +5,6 @@ namespace Mod
     // Diagnostics only. The sample never changes the simulated graph or its inputs.
     internal sealed class BrainMapSample
     {
-        public const int MaximumPoints = 8192;
         public readonly BrainMapPoint[] Points;
         public readonly int LocatedCount;
         public readonly int NeuronCount;
@@ -22,18 +21,13 @@ namespace Mod
             var count = soma.Length / 3;
             var located = 0;
             for (var id = 0; id < count; id++) if (HasPosition(soma, id)) located++;
-            var points = new BrainMapPoint[Math.Min(located, MaximumPoints)];
-            var ordinal = 0;
+            var points = new BrainMapPoint[located];
             var selected = 0;
-            for (var id = 0; id < count && selected < points.Length; id++)
+            for (var id = 0; id < count; id++)
             {
                 if (!HasPosition(soma, id)) continue;
-                // Evenly sample the valid soma sequence, which retains source neuron IDs.
-                if (ordinal == (long)selected * located / points.Length)
-                {
-                    points[selected++] = new BrainMapPoint(id, soma[id * 3], soma[id * 3 + 2], Category(superclasses[id]));
-                }
-                ordinal++;
+                // Keep every finite soma position and retain its source neuron ID.
+                points[selected++] = new BrainMapPoint(id, soma[id * 3], soma[id * 3 + 2], Category(superclasses[id]));
             }
             return new BrainMapSample(points, located, count);
         }

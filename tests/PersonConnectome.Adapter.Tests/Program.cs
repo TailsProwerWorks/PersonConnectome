@@ -765,7 +765,7 @@ internal static class Program
             True(text.Contains(label));
         True(text.Contains("underwater=" + frame.UnderWater.ToString("0.00")));
         True(text.Contains("visual bounds geometry=unknown"));
-        True(text.Contains("source spectrum energy (<100 / >=100 Hz)=unavailable"));
+        True(text.Contains("source spectrum energy (below 100 / 100+ Hz)=unavailable"));
     }
 
     private static void GeometryAndRotation()

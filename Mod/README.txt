@@ -8,10 +8,10 @@ The screen panel starts at the top center. Prev / Next selects a person; its num
 <b><color=#FFD700>READ THE PANEL</color></b>
 Overview: native body state, local limb capability and requested movement. Requests are not measured motion; filtered neural activity is shown separately.
 Senses: game readings and engineered proxies. Audio retains the last source with seconds since detection; current sound clears when playback stops. Liquid percentages are the highest concentration in a tracked limb, not dose or effect strength.
-Brain: workload, actual spikes and sampled source soma positions. White points fired in the displayed capture; dark/omitted points do not prove inactivity.
+Brain: workload, actual spikes and all located source soma positions. Colored flashes mark fired points in the displayed capture; dark points do not prove inactivity.
 
 <b><color=#FFD700>HOW IT WORKS</color></b>
-The unchanged MaleCNS-derived graph has 176,422 neurons and 6,287,749 retained connections. The map displays up to 8,192 located neurons; all graph neurons remain in the simulation.
+The unchanged MaleCNS-derived graph has 176,422 neurons and 6,287,749 retained connections. The map displays all 141,781 located neurons; all graph neurons remain in the simulation.
 
 Light changes, external audio, regional contact, joint motion, hot/cold and geometric visual cues feed annotated populations. Newly sampled connected-limb health loss supplies an engineered tactile injury event. The panel's pain and adrenaline values still come from the game, not a measured feeling.
 

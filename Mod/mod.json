@@ -1,7 +1,7 @@
 {
   "Name": "Person Connectome",
   "Author": "ShadowNineX",
-  "Description": "A bounded MaleCNS-derived Human controller with per-limb motor routing, screen telemetry and a sampled brain activity map.",
+  "Description": "A bounded MaleCNS-derived Human controller with per-limb motor routing, screen telemetry and a full located-soma brain activity map.",
   "ModVersion": "1.0",
   "GameVersion": "1.27.17",
   "ThumbnailPath": "thumb.png",

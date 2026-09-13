@@ -1016,8 +1016,8 @@ static void BundledPayloadIdentity()
     True(status.Contains("loaded", StringComparison.OrdinalIgnoreCase), status);
     True(brain.BrainMap != null, "real asset soma map unavailable");
     Equal(176422, brain.BrainMap.NeuronCount);
-    Equal(8192, brain.BrainMap.Points.Length);
-    Console.WriteLine("SOMA located=" + brain.BrainMap.LocatedCount + " sampled=" + brain.BrainMap.Points.Length);
+    Equal(141781, brain.BrainMap.Points.Length);
+    Console.WriteLine("SOMA located=" + brain.BrainMap.LocatedCount + " displayed=" + brain.BrainMap.Points.Length);
 
     var corrupted = Carrier(bytes);
     var firstPayloadPixel = (corrupted.height - 1) * corrupted.width;
@@ -1038,7 +1038,7 @@ static void SomaSample()
     var soma = new float[20000 * 3];
     for (var i = 0; i < soma.Length; i++) soma[i] = i;
     sample = BrainMapSample.Create(soma, new string[20000]);
-    Equal(8192, sample.Points.Length);
+    Equal(20000, sample.Points.Length);
     Equal(20000, sample.LocatedCount);
     for (var i = 1; i < sample.Points.Length; i++)
     {

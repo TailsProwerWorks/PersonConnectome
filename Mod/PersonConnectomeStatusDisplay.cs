@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Text;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -34,10 +35,17 @@ namespace Mod
         private ScrollRect scroll;
         private Scrollbar scrollbar;
         private TextMeshProUGUI title, toggleLabel, location, state, timing, body;
+        private readonly List<TextMeshProUGUI> telemetryHeadings = new List<TextMeshProUGUI>();
+        private readonly List<TelemetryRow> telemetryRows = new List<TelemetryRow>();
+        private readonly List<GameObject> telemetryElements = new List<GameObject>();
         private readonly TextMeshProUGUI[] tabLabels = new TextMeshProUGUI[4];
         private readonly Button[] tabs = new Button[4];
         private Button toggle, previous, next, smaller, larger;
         private TextMeshProUGUI motorHeading, historyHeading, historyScale, mapHeading, mapCaption, populationHeading, provenance;
+        private RectTransform mapViewport;
+        private Button mapZoomOut, mapReset, mapZoomIn;
+        private float mapZoom = 1f;
+        private Vector2 mapPan;
         private readonly TextMeshProUGUI[] motorLabels = new TextMeshProUGUI[7];
         private readonly Image[] motorTracks = new Image[7], motorFills = new Image[7], motorCenters = new Image[7];
         private readonly TextMeshProUGUI[] populationLabels = new TextMeshProUGUI[8];
@@ -58,6 +66,7 @@ namespace Mod
         private RawImage mapImage;
         private Texture2D mapTexture;
         private Color32[] mapBackground, mapPixels;
+        private Color32[] mapFlashColors;
         private byte[] mapFlashAges;
         private int[] mapIndexes;
         private BrainMapSample map;
@@ -71,6 +80,7 @@ namespace Mod
         private static readonly Color Track = new Color(.1f, .15f, .19f, 1f);
         private static readonly Color Foreground = new Color(.91f, .95f, .97f, 1f);
         private static readonly Color Accent = new Color(.4f, .86f, .95f, 1f);
+        private static readonly Color TelemetryStripe = new Color(.065f, .105f, .135f, 1f);
         private static readonly Color LatestBar = new Color(.98f, 1f, 1f, 1f);
         private static readonly Color EmptyBar = new Color(.12f, .25f, .3f, 1f);
         private static readonly Color ActiveControl = new Color(.18f, .55f, .65f, 1f);
@@ -194,7 +204,14 @@ namespace Mod
             scrollbar.direction = Scrollbar.Direction.BottomToTop;
             scroll.verticalScrollbar = scrollbar;
             scroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
-            body = CreateText(content, "Waiting for the first native sample.", 14f, Foreground);
+            body = CreateText(content, "Waiting for the first native sample.", 13f, Foreground);
+            body.richText = true;
+            for (var i = 0; i < 8; i++)
+            {
+                var heading = CreateText(content, "", 13f, Accent);
+                telemetryHeadings.Add(heading);
+                telemetryElements.Add(heading.gameObject);
+            }
             motorHeading = AddText(motorElements, "REQUESTED MOTOR OUTPUT · -1 TO +1", Accent);
             for (var i = 0; i < motorLabels.Length; i++)
             {
@@ -208,23 +225,41 @@ namespace Mod
             historyBackground = AddImage(brainElements, Track);
             for (var i = 0; i < spikeBars.Length; i++) spikeBars[i] = AddImage(brainElements, Accent);
             mapHeading = AddText(brainElements, "SOMA MAP · RAW X/Z PROJECTION", Accent);
-            mapImage = CreateRect(content, "Soma image").gameObject.AddComponent<RawImage>();
+            mapViewport = CreateRect(content, "Soma map preview");
+            var mapBackgroundImage = mapViewport.gameObject.AddComponent<Image>();
+            mapBackgroundImage.color = new Color(.025f, .04f, .055f, 1f);
+            mapBackgroundImage.raycastTarget = true;
+            mapViewport.gameObject.AddComponent<RectMask2D>();
+            var mapEvents = mapViewport.gameObject.AddComponent<EventTrigger>();
+            var mapDrag = new EventTrigger.Entry { eventID = EventTriggerType.Drag };
+            mapDrag.callback.AddListener(data => PanMap(data));
+            mapEvents.triggers.Add(mapDrag);
+            var mapScroll = new EventTrigger.Entry { eventID = EventTriggerType.Scroll };
+            mapScroll.callback.AddListener(data => ZoomMapFromScroll(data));
+            mapEvents.triggers.Add(mapScroll);
+            mapImage = CreateRect(mapViewport, "Soma image").gameObject.AddComponent<RawImage>();
             mapImage.raycastTarget = false;
-            brainElements.Add(mapImage.gameObject);
+            mapZoomOut = CreateButton(content, "-", () => SetMapZoom(mapZoom - .25f), out _);
+            mapReset = CreateButton(content, "1:1", ResetMapView, out _);
+            mapZoomIn = CreateButton(content, "+", () => SetMapZoom(mapZoom + .25f), out _);
+            brainElements.Add(mapViewport.gameObject);
+            brainElements.Add(mapZoomOut.gameObject);
+            brainElements.Add(mapReset.gameObject);
+            brainElements.Add(mapZoomIn.gameObject);
             mapCaption = AddText(brainElements, "", Foreground);
             for (var i = 0; i < Legend.Length; i++)
             {
                 legendColors[i] = AddImage(brainElements, MapColors[i]);
                 legendLabels[i] = AddText(brainElements, Legend[i], Foreground);
             }
-            populationHeading = AddText(brainElements, "POPULATIONS · FIRED / MEMBERS\nCounts in the captured tick, not biological Hz.", Accent);
+            populationHeading = AddText(brainElements, "POPULATIONS · FIRED / MEMBERS", Accent);
             for (var i = 0; i < populationLabels.Length; i++)
             {
                 populationLabels[i] = AddText(brainElements, "", Foreground);
                 populationTracks[i] = AddImage(brainElements, Track);
                 populationFills[i] = AddImage(brainElements, Accent);
             }
-            provenance = AddText(brainElements, "MaleCNS v1.0 · thresholded derivative\nNo anatomical human-brain or biological-realism claim.", Foreground);
+            provenance = AddText(brainElements, "MaleCNS v1.0", Foreground);
             BuildStimulationUi();
             interactionHint = CreateText(expanded, "Drag title to move | Drag corner to resize", 11f, Foreground);
             resizeArea = CreateDragArea(expanded, "Resize panel", ResizePanel);
@@ -496,23 +531,39 @@ namespace Mod
             SetVisible(motorElements, hasSample && brain != null && page == 0);
             SetVisible(brainElements, hasSample && brain != null && page == 2);
             SetVisible(stimulationElements, showStimulation);
+            SetVisible(telemetryElements, !showStimulation);
+            HideTelemetryRows();
             body.gameObject.SetActive(!showStimulation);
-            string text;
+            var telemetryIntro = "";
+            var telemetrySections = new List<string>();
             if (!hasSample)
             {
-                text = "No native sample available.\n" + (brain == null ? "The connectome is unavailable; active control is disabled. Check the game mod log." : "Waiting for a usable person and its first physics sample.");
+                telemetryIntro = "No native sample available.\n" + (brain == null ? "The connectome is unavailable; active control is disabled. Check the game mod log." : "Waiting for a usable person and its first physics sample.");
             }
             else if (page == 0)
             {
-                text = "Body signals are normalized unless marked raw. Requests are not measured movement.\n\n" + adapter.LiveBodySummary + "\n\n" + adapter.LiveLimbSummary + "\n\n" + (brain == null ? "REQUEST: unavailable" : brain.DisplayMotorSummary);
+                telemetryIntro = "";
+                telemetrySections.Add(adapter.LiveBodySummary);
+                telemetrySections.Add(adapter.LiveLimbSummary);
+                telemetrySections.Add(brain == null ? "REQUEST: unavailable" : brain.DisplayMotorSummary);
             }
             else if (page == 1)
             {
-                text = "NORMALIZED GAME READINGS\n0..1 signals unless signed or marked raw; not physical units. Unknown means unavailable.\n\n" + adapter.LiveBodySummary + "\n\n" + adapter.LiveInjurySummary + "\n\n" + adapter.LiveEnvironmentSummary + "\n\n" + adapter.LiveLiquidSummary + "\n\n" + adapter.LiveAudioSummary +
-                    "\n\nDERIVED PROXIES\nDamage/blood loss, temperature bands, falling, vibration, proprioception and submerged hypoxia combine native readings.\nVision is nearest-collider line of sight × ambient light. Audio is external object playback. No semantic sight or smell.\nVitality uses valid health when its native baseline is unavailable.";
+                telemetryIntro = "";
+                telemetrySections.Add("NORMALIZED GAME READINGS\n" + adapter.LiveBodySummary);
+                telemetrySections.Add(adapter.LiveInjurySummary);
+                telemetrySections.Add(adapter.LiveEnvironmentSummary);
+                telemetrySections.Add(adapter.LiveLiquidSummary);
+                telemetrySections.Add(adapter.LiveAudioSummary);
+                telemetrySections.Add("DERIVED PROXIES\nDamage/blood loss, temperature bands, falling, vibration, proprioception and submerged hypoxia combine native readings.\nVision is nearest-collider line of sight × ambient light. Audio is external object playback. No semantic sight or smell.\nVitality uses valid health when its native baseline is unavailable.");
             }
-            else text = brain == null ? "NEURAL: unavailable" : brain.DisplaySummary + "\n\nDERIVED INPUT DRIVES\n" + brain.DisplayInputSummary;
-            if (!showStimulation) PlaceText(body, 0f, ref contentY, contentWidth, text);
+            else
+            {
+                telemetryIntro = "";
+                telemetrySections.Add(brain == null ? "NEURAL: unavailable" : brain.DisplaySummary);
+                if (brain != null) telemetrySections.Add("DERIVED INPUT DRIVES\n" + brain.DisplayInputSummary);
+            }
+            if (!showStimulation) LayoutTelemetry(telemetryIntro, telemetrySections, contentWidth, ref contentY);
             if (hasSample && brain != null && page == 0) LayoutMotors(contentWidth, ref contentY);
             if (hasSample && brain != null && page == 2) LayoutBrain(contentWidth, ref contentY);
             if (showStimulation) LayoutStimulation(contentWidth, ref contentY);
@@ -524,11 +575,254 @@ namespace Mod
 
         private static TelemetryLayout CurrentLayout() => TelemetryLayout.Create(Screen.width, Screen.height, textScale, collapsed, panelWidth, panelHeight);
 
+        private static string FormatTelemetryText(string text)
+        {
+            if (String.IsNullOrEmpty(text)) return text;
+            var lines = text.Split('\n');
+            for (var i = 0; i < lines.Length; i++)
+            {
+                var trimmed = lines[i].Trim();
+                var escaped = EscapeTelemetryText(lines[i]);
+                if (trimmed.EndsWith(":", StringComparison.Ordinal) ||
+                    trimmed.StartsWith("NORMALIZED ", StringComparison.Ordinal) ||
+                    trimmed.StartsWith("DERIVED ", StringComparison.Ordinal) ||
+                    trimmed.StartsWith("NEURAL:", StringComparison.Ordinal) ||
+                    trimmed.StartsWith("REQUEST", StringComparison.Ordinal) ||
+                    trimmed.StartsWith("FILTERED ", StringComparison.Ordinal))
+                {
+                    lines[i] = "<color=#63D9F0><b>" + escaped + "</b></color>";
+                }
+                else
+                {
+                    lines[i] = escaped;
+                }
+            }
+            return String.Join("\n", lines);
+        }
+
+        private static string EscapeTelemetryText(string text)
+        {
+            return text.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
+        }
+
+        private static List<string> SplitTelemetryFields(string line)
+        {
+            var fields = new List<string>();
+            var start = 0;
+            for (var i = 0; i <= line.Length; i++)
+            {
+                var delimiter = i == line.Length || (line[i] == ' ' && i + 1 < line.Length && line[i + 1] == ' ');
+                if (!delimiter) continue;
+                var field = line.Substring(start, i - start).Trim();
+                if (field.Length > 0) fields.Add(field);
+                if (i < line.Length)
+                {
+                    var next = i + 1;
+                    while (next < line.Length && line[next] == ' ') next++;
+                    start = next;
+                    i = next - 1;
+                }
+            }
+            return fields;
+        }
+
+        private static bool TrySplitTelemetryField(string field, out string key, out string value)
+        {
+            var equals = field.IndexOf('=');
+            if (equals <= 0)
+            {
+                key = value = "";
+                return false;
+            }
+            key = field.Substring(0, equals).Trim();
+            value = field.Substring(equals + 1).Trim();
+            return key.Length > 0;
+        }
+
+        private static bool IsUnavailableValue(string value)
+        {
+            return value.Equals("unknown", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("unavailable", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals("invalid", StringComparison.OrdinalIgnoreCase) ||
+                value.StartsWith("unknown ", StringComparison.OrdinalIgnoreCase) ||
+                value.StartsWith("unavailable ", StringComparison.OrdinalIgnoreCase) ||
+                value.StartsWith("invalid ", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private void LayoutTelemetry(string intro, List<string> sections, float width, ref float y)
+        {
+            body.gameObject.SetActive(!String.IsNullOrEmpty(intro));
+            if (!String.IsNullOrEmpty(intro)) PlaceText(body, 0f, ref y, width, FormatTelemetryText(intro));
+            var rowIndex = 0;
+            for (var i = 0; i < telemetryHeadings.Count; i++)
+            {
+                var heading = telemetryHeadings[i];
+                if (i >= sections.Count)
+                {
+                    heading.gameObject.SetActive(false);
+                    continue;
+                }
+
+                var section = sections[i] ?? "";
+                var lineBreak = section.IndexOf('\n');
+                var headingText = lineBreak < 0 ? section : section.Substring(0, lineBreak);
+                var detailText = lineBreak < 0 ? "" : section.Substring(lineBreak + 1);
+                var color = TelemetrySectionColor(headingText);
+                heading.gameObject.SetActive(true);
+                heading.color = color;
+                PlaceText(heading, 0f, ref y, width, headingText);
+                if (!String.IsNullOrEmpty(detailText))
+                {
+                    var lines = detailText.Split('\n');
+                    var stripeIndex = 0;
+                    foreach (var line in lines) LayoutTelemetryLine(line, width, color, ref rowIndex, ref stripeIndex, ref y);
+                }
+                y += 4f;
+            }
+            for (var i = rowIndex; i < telemetryRows.Count; i++) telemetryRows[i].Root.SetActive(false);
+        }
+
+        private void LayoutTelemetryLine(string line, float width, Color sectionColor, ref int rowIndex, ref int stripeIndex, ref float y)
+        {
+            var fields = SplitTelemetryFields(line);
+            var fieldCount = 0;
+            foreach (var field in fields)
+            {
+                string key, value;
+                if (!TrySplitTelemetryField(field, out key, out value)) continue;
+                fieldCount++;
+                var row = TakeTelemetryRow(ref rowIndex);
+                row.Key.gameObject.SetActive(true);
+                row.Value.gameObject.SetActive(true);
+                row.Detail.gameObject.SetActive(false);
+                row.Key.text = "<color=#00E5FF><b>" + EscapeTelemetryText(key) + "</b></color>";
+                var valueColor = IsUnavailableValue(value) ? "#FFB285" : "#F2F7FA";
+                row.Value.text = "<color=#AFC7CE>=</color> <color=" + valueColor + ">" + EscapeTelemetryText(value) + "</color>";
+                var valueX = Mathf.Clamp(width * .56f, 184f, width - 108f);
+                var keyWidth = Mathf.Max(70f, valueX - 8f);
+                var valueWidth = Mathf.Max(80f, width - valueX);
+                var keyHeight = row.Key.GetPreferredValues(row.Key.text, keyWidth, float.PositiveInfinity).y;
+                var valueHeight = row.Value.GetPreferredValues(row.Value.text, valueWidth, float.PositiveInfinity).y;
+                var height = Mathf.Max(row.Key.fontSize + 4f, Mathf.Max(keyHeight, valueHeight) + 3f);
+                SetRect(row.Root.transform as RectTransform, 0f, y, width, height);
+                SetRect(row.Key.rectTransform, 0f, 0f, keyWidth, height);
+                SetRect(row.Value.rectTransform, valueX, 0f, valueWidth, height);
+                row.Background.color = stripeIndex++ % 2 == 1 ? TelemetryStripe : Color.clear;
+                y += height + 2f;
+            }
+            if (fieldCount != 0) return;
+            var detailRow = TakeTelemetryRow(ref rowIndex);
+            detailRow.Key.gameObject.SetActive(false);
+            detailRow.Value.gameObject.SetActive(false);
+            detailRow.Detail.gameObject.SetActive(true);
+            detailRow.Background.color = Color.clear;
+            detailRow.Detail.color = Color.Lerp(Foreground, sectionColor, .18f);
+            var detailText = FormatTelemetryText(line);
+            var detailHeight = Mathf.Max(detailRow.Detail.fontSize + 4f, detailRow.Detail.GetPreferredValues(detailText, width, float.PositiveInfinity).y + 4f);
+            SetRect(detailRow.Root.transform as RectTransform, 0f, y, width, detailHeight);
+            SetRect(detailRow.Detail.rectTransform, 0f, 0f, width, detailHeight);
+            detailRow.Detail.text = detailText;
+            y += detailHeight + 8f;
+        }
+
+        private TelemetryRow TakeTelemetryRow(ref int rowIndex)
+        {
+            if (rowIndex >= telemetryRows.Count) telemetryRows.Add(new TelemetryRow(content));
+            var row = telemetryRows[rowIndex++];
+            row.Root.SetActive(true);
+            return row;
+        }
+
+        private void HideTelemetryRows()
+        {
+            foreach (var row in telemetryRows) row.Root.SetActive(false);
+        }
+
+        private static Color TelemetrySectionColor(string heading)
+        {
+            if (heading.StartsWith("INJURY", StringComparison.Ordinal) || heading.StartsWith("REQUEST", StringComparison.Ordinal))
+            {
+                return new Color(1f, .63f, .5f, 1f);
+            }
+            if (heading.StartsWith("ENVIRONMENT", StringComparison.Ordinal) || heading.StartsWith("CIRCULATING", StringComparison.Ordinal))
+            {
+                return new Color(1f, .8f, .42f, 1f);
+            }
+            if (heading.StartsWith("AUDIO", StringComparison.Ordinal))
+            {
+                return new Color(.55f, .78f, 1f, 1f);
+            }
+            if (heading.StartsWith("NEURAL", StringComparison.Ordinal) || heading.StartsWith("DERIVED", StringComparison.Ordinal))
+            {
+                return new Color(.75f, .65f, 1f, 1f);
+            }
+            return Accent;
+        }
+
         private void ApplyPanelPosition(TelemetryLayout layout)
         {
             panelX = layout.ClampHorizontal(Screen.width, panelX);
             panelTop = layout.ClampVertical(Screen.height, panelTop);
             panel.anchoredPosition = new Vector2(panelX / layout.Scale, -panelTop / layout.Scale);
+        }
+
+        private void PanMap(BaseEventData data)
+        {
+            var pointer = data as PointerEventData;
+            if (pointer == null || pointer.button != PointerEventData.InputButton.Left || mapViewport == null || mapImage == null || !mapImage.enabled) return;
+            var scale = canvas == null ? 1f : Mathf.Max(1f, canvas.scaleFactor);
+            mapPan += new Vector2(pointer.delta.x, -pointer.delta.y) / scale;
+            var view = mapViewport.rect;
+            var image = mapImage.rectTransform.rect;
+            mapPan = ClampMapPan(mapPan, view.width, view.height, image.width, image.height);
+            SetRect(mapImage.rectTransform, mapPan.x, mapPan.y, image.width, image.height);
+        }
+
+        private void SetMapZoom(float zoom)
+        {
+            if (mapViewport == null || mapImage == null) return;
+            var view = mapViewport.rect;
+            ApplyMapZoom(zoom, new Vector2(view.width, view.height) * .5f);
+        }
+
+        private void ZoomMapFromScroll(BaseEventData data)
+        {
+            var pointer = data as PointerEventData;
+            if (pointer == null || mapViewport == null || mapImage == null || !mapImage.enabled) return;
+            var amount = pointer.scrollDelta.y;
+            if (Mathf.Abs(amount) < .01f) amount = pointer.scrollDelta.x;
+            if (Mathf.Abs(amount) < .01f) return;
+            Vector2 localPoint;
+            if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(mapViewport, pointer.position, pointer.pressEventCamera, out localPoint)) return;
+            var focus = new Vector2(localPoint.x, -localPoint.y);
+            ApplyMapZoom(mapZoom + Mathf.Sign(amount) * .25f, focus);
+        }
+
+        private void ApplyMapZoom(float zoom, Vector2 focus)
+        {
+            var view = mapViewport.rect;
+            var oldZoom = Mathf.Max(.01f, mapZoom);
+            var imagePoint = (focus - mapPan) / oldZoom;
+            mapZoom = Mathf.Clamp(zoom, 1f, 4f);
+            mapPan = focus - imagePoint * mapZoom;
+            var imageWidth = view.width;
+            var imageHeight = imageWidth * MapHeight / MapWidth;
+            mapPan = ClampMapPan(mapPan, view.width, view.height, imageWidth * mapZoom, imageHeight * mapZoom);
+            RefreshUi();
+        }
+
+        private void ResetMapView()
+        {
+            mapZoom = 1f;
+            mapPan = Vector2.zero;
+            RefreshUi();
+        }
+
+        private static Vector2 ClampMapPan(Vector2 pan, float viewportWidth, float viewportHeight, float imageWidth, float imageHeight)
+        {
+            var minX = Mathf.Min(0f, viewportWidth - imageWidth);
+            var minY = Mathf.Min(0f, viewportHeight - imageHeight);
+            return new Vector2(Mathf.Clamp(pan.x, minX, 0f), Mathf.Clamp(pan.y, minY, 0f));
         }
 
         private void MovePanel(BaseEventData data)
@@ -585,7 +879,7 @@ namespace Mod
         private void LayoutBrain(float width, ref float y)
         {
             RefreshMap();
-            PlaceText(historyHeading, 0f, ref y, width, "SPIKES / NEURAL TICK\nWhole graph · latest " + historyCount + " ticks");
+            PlaceText(historyHeading, 0f, ref y, width, "SPIKES / NEURAL TICK");
             var peak = 0f;
             for (var i = 0; i < historyCount; i++) peak = Mathf.Max(peak, history[i]);
             var latest = historyCount == 0 ? 0f : history[(historyIndex - 1 + history.Length) % history.Length];
@@ -599,14 +893,24 @@ namespace Mod
                 SetRect(spikeBars[i].rectTransform, i * width / history.Length, y + 64f - h, Mathf.Max(1f, width / history.Length - 1f), h);
             }
             y += 76f;
-            PlaceText(mapHeading, 0f, ref y, width, "SOMA ACTIVITY · RAW X/Z PROJECTION\n" + (map == null ? "No located soma data" : map.Points.Length + " sampled / " + map.LocatedCount + " located / " + map.NeuronCount + " neurons"));
+            PlaceText(mapHeading, 0f, ref y, width, "SOMA ACTIVITY · RAW X/Z PROJECTION\n" + (map == null ? "No located soma data" : map.Points.Length + " displayed / " + map.LocatedCount + " located / " + map.NeuronCount + " neurons"));
             var imageWidth = Mathf.Min(width, MapWidth);
             var imageHeight = imageWidth * MapHeight / MapWidth;
-            SetRect(mapImage.rectTransform, (width - imageWidth) * .5f, y, imageWidth, imageHeight);
+            var previewHeight = Mathf.Min(imageHeight, Mathf.Max(220f, width * .78f));
+            var imageX = (width - imageWidth) * .5f;
+            SetRect((RectTransform)mapZoomOut.transform, imageX + imageWidth - 132f, y, 38f, 24f);
+            SetRect((RectTransform)mapReset.transform, imageX + imageWidth - 90f, y, 48f, 24f);
+            SetRect((RectTransform)mapZoomIn.transform, imageX + imageWidth - 38f, y, 30f, 24f);
+            y += 32f;
+            SetRect(mapViewport, (width - imageWidth) * .5f, y, imageWidth, previewHeight);
+            var scaledWidth = imageWidth * mapZoom;
+            var scaledHeight = imageHeight * mapZoom;
+            mapPan = ClampMapPan(mapPan, imageWidth, previewHeight, scaledWidth, scaledHeight);
+            SetRect(mapImage.rectTransform, mapPan.x, mapPan.y, scaledWidth, scaledHeight);
             mapImage.texture = mapTexture;
             mapImage.enabled = mapTexture != null;
-            y += imageHeight + 10f;
-            PlaceText(mapCaption, 0f, ref y, width, "LIVE CAPTURE · TICK " + capturedTick + " · " + latest.ToString("0") + " graph spikes\nWhite = latest captured fires · cyan = recent captured activity · dark points are not proof of inactivity. Sampling changes only this view.");
+            y += previewHeight + 10f;
+            PlaceText(mapCaption, 0f, ref y, width, "TICK " + capturedTick + " · " + latest.ToString("0") + " graph spikes\nDrag to pan · scroll or use - / + to zoom · 1:1 resets.");
             for (var i = 0; i < Legend.Length; i++)
             {
                 SetRect(legendColors[i].rectTransform, 0f, y + 3f, 9f, 9f);
@@ -744,6 +1048,26 @@ namespace Mod
             {
                 Descriptor = descriptor;
                 Root = CreateRect(parent, "Stimulation row " + descriptor.Label).gameObject;
+            }
+        }
+
+        private sealed class TelemetryRow
+        {
+            public readonly GameObject Root;
+            public readonly Image Background;
+            public readonly TextMeshProUGUI Key, Value, Detail;
+
+            public TelemetryRow(Transform parent)
+            {
+                Root = CreateRect(parent, "Telemetry field row").gameObject;
+                Background = Root.AddComponent<Image>();
+                Background.raycastTarget = false;
+                Background.color = Color.clear;
+                Key = CreateText(Root.transform, "", 12.5f, Accent);
+                Value = CreateText(Root.transform, "", 12.5f, Foreground);
+                Detail = CreateText(Root.transform, "", 12.5f, Foreground);
+                Key.richText = Value.richText = Detail.richText = true;
+                Root.SetActive(false);
             }
         }
 
@@ -896,6 +1220,9 @@ namespace Mod
             canvasObject = null;
             motorElements.Clear();
             brainElements.Clear();
+            telemetryHeadings.Clear();
+            telemetryRows.Clear();
+            telemetryElements.Clear();
             stimulationElements.Clear();
             stimulationSections.Clear();
             Array.Clear(stimulationRows, 0, stimulationRows.Length);
@@ -912,6 +1239,7 @@ namespace Mod
             mapTexture = null;
             map = null;
             mapBackground = mapPixels = null;
+            mapFlashColors = null;
             mapFlashAges = null;
             mapIndexes = null;
         }
@@ -932,11 +1260,11 @@ namespace Mod
             Array.Copy(mapBackground, mapPixels, mapPixels.Length);
             for (var i = 0; i < map.Points.Length; i++)
             {
-                if (brain.DidFire(map.Points[i].NeuronId)) MarkMapFlash(mapIndexes[i]);
+                if (brain.DidFire(map.Points[i].NeuronId)) MarkMapFlash(mapIndexes[i], MapColors[map.Points[i].Category]);
             }
             for (var i = 0; i < mapPixels.Length; i++)
             {
-                if (mapFlashAges[i] > 0) mapPixels[i] = MapFlashColor(mapFlashAges[i]);
+                if (mapFlashAges[i] > 0) mapPixels[i] = MapFlashColor(mapFlashAges[i], mapFlashColors[i]);
             }
             capturedTick = brain.SimulationTick;
             mapTexture.SetPixels32(mapPixels);
@@ -950,6 +1278,7 @@ namespace Mod
             mapTexture.filterMode = FilterMode.Point;
             mapBackground = new Color32[MapWidth * MapHeight];
             mapPixels = new Color32[mapBackground.Length];
+            mapFlashColors = new Color32[mapBackground.Length];
             mapFlashAges = new byte[mapBackground.Length];
             for (var i = 0; i < mapBackground.Length; i++) mapBackground[i] = new Color32(9, 14, 19, 255);
             mapIndexes = new int[map.Points.Length];
@@ -975,7 +1304,7 @@ namespace Mod
             }
         }
 
-        private void MarkMapFlash(int index)
+        private void MarkMapFlash(int index, Color color)
         {
             var centerX = index % MapWidth;
             var centerY = index / MapWidth;
@@ -988,17 +1317,22 @@ namespace Mod
                     if (distance > 1) continue;
                     var age = distance == 0 ? MapFlashLifetime : (byte)(MapFlashLifetime - 2);
                     var target = y * MapWidth + x;
-                    if (mapFlashAges[target] < age) mapFlashAges[target] = age;
+                    if (mapFlashAges[target] < age)
+                    {
+                        mapFlashAges[target] = age;
+                        mapFlashColors[target] = (Color32)color;
+                    }
                 }
             }
         }
 
-        private static Color32 MapFlashColor(byte age)
+        private static Color32 MapFlashColor(byte age, Color32 categoryColor)
         {
-            if (age >= MapFlashLifetime) return new Color32(255, 255, 255, 255);
-            if (age >= 3) return new Color32(150, 244, 255, 255);
-            if (age >= 2) return new Color32(68, 188, 232, 255);
-            return new Color32(32, 112, 158, 255);
+            var category = (Color)categoryColor;
+            var brightness = Mathf.Clamp01(age / (float)MapFlashLifetime);
+            var flash = Color.Lerp(category, Color.white, .25f + brightness * .4f);
+            flash.a = 1f;
+            return (Color32)flash;
         }
     }
 }
