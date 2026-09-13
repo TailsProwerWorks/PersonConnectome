@@ -551,6 +551,7 @@ internal static class Program
         var type = typeof(PersonConnectomeController);
         type.GetMethod("Awake", flags).Invoke(controller, null);
         var adapter = (PeoplePlaygroundPersonAdapter)type.GetField("adapter", flags).GetValue(controller);
+        type.GetMethod("OnEnable", flags).Invoke(controller, null);
         type.GetMethod("OnDisable", flags).Invoke(controller, null);
         var floor = new GameObject("Disabled floor").AddComponent<Collider2D>();
         var projectileObject = new GameObject("Disabled projectile");
