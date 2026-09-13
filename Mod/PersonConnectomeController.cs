@@ -20,11 +20,13 @@ namespace Mod
         private float accumulator;
         private float sampleElapsed;
         private bool acceptingEvents;
+        private bool pendingPoseSweep;
         private readonly List<SuppressedContextMenuButton> suppressedContextMenuButtons = [];
         private readonly List<ContextMenuOptionComponent> contextMenuOptions = [];
 
         private void Awake()
         {
+            pendingPoseSweep = true;
             adapter = new PeoplePlaygroundPersonAdapter(gameObject, VisionRadius, RegisterCollision, RegisterProjectile);
             statusDisplay = new PersonConnectomeStatusDisplay(adapter.StatusAnchor);
             brain = ConnectomeBrain.TryCreate(out var loadStatus);
@@ -40,14 +42,15 @@ namespace Mod
 
         private void Start()
         {
-            // LimbBehaviour creates its native pose buttons during startup; repeat
-            // once after all child Start methods have run so the menu is consistent.
-            SuppressNativePoseOptions();
+            // The controller runs early for walking maintenance; defer the sweep
+            // until LateUpdate so later native Start methods have created buttons.
+            pendingPoseSweep = true;
         }
 
         private void OnEnable()
         {
             acceptingEvents = true;
+            pendingPoseSweep = true;
             statusDisplay?.SetActive(true);
             SuppressNativePoseOptions();
         }
@@ -79,6 +82,11 @@ namespace Mod
 
         private void LateUpdate()
         {
+            if (pendingPoseSweep)
+            {
+                pendingPoseSweep = false;
+                SuppressNativePoseOptions();
+            }
             adapter?.RefreshWalkingRequest();
             statusDisplay?.Update(Time.unscaledDeltaTime, brain, adapter);
         }

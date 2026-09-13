@@ -213,8 +213,17 @@ internal static class Program
         Equal(3, options.Buttons.Count);
         type.GetMethod("OnEnable", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(controller, null);
         Equal(1, options.Buttons.Count); True(options.Buttons.Contains(delete));
+        type.GetMethod("Start", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(controller, null);
+        var lateOptions = f.Root.AddComponent<ContextMenuOptionComponent>();
+        lateOptions.Buttons.Add(new ContextMenuButton("startWalking", "Forces the walking animation override"));
+        lateOptions.Buttons.Add(new ContextMenuButton("startSit", "Forces the sitting animation override"));
+        lateOptions.Buttons.Add(new ContextMenuButton("delete", "Delete"));
+        Equal(3, lateOptions.Buttons.Count);
+        type.GetMethod("LateUpdate", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(controller, null);
+        Equal(1, lateOptions.Buttons.Count); True(lateOptions.Buttons.Any(button => button.Identity == "delete"));
         type.GetMethod("OnDisable", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(controller, null);
         Equal(3, options.Buttons.Count); True(options.Buttons.Contains(walking)); True(options.Buttons.Contains(sitting));
+        Equal(3, lateOptions.Buttons.Count);
     }
     private static void BloodAndVitality()
     {
