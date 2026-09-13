@@ -17,6 +17,7 @@ namespace Mod
         private ConnectomeBrain brain;
         private PeoplePlaygroundPersonAdapter adapter;
         private PersonConnectomeStatusDisplay statusDisplay;
+        private readonly ManualInputState manualInput = new ManualInputState();
         private float accumulator;
         private float sampleElapsed;
         private bool acceptingEvents;
@@ -28,7 +29,7 @@ namespace Mod
         {
             pendingPoseSweep = true;
             adapter = new PeoplePlaygroundPersonAdapter(gameObject, VisionRadius, RegisterCollision, RegisterProjectile);
-            statusDisplay = new PersonConnectomeStatusDisplay(adapter.StatusAnchor);
+            statusDisplay = new PersonConnectomeStatusDisplay(adapter.StatusAnchor, manualInput);
             brain = ConnectomeBrain.TryCreate(out var loadStatus);
             if (!adapter.IsUsable)
             {
@@ -74,7 +75,7 @@ namespace Mod
                 accumulator = Mathf.Max(0f, remaining - skipped);
                 var started = Time.realtimeSinceStartup;
                 var sensory = adapter.Read();
-                adapter.Apply(brain.Step(sensory, sampleElapsed), true, JointSpeedDegreesPerSecond, WalkingRequestGain, sampleElapsed);
+                adapter.Apply(brain.Step(sensory, sampleElapsed, manualInput), true, JointSpeedDegreesPerSecond, WalkingRequestGain, sampleElapsed);
                 sampleElapsed = 0f;
                 statusDisplay?.RecordTick((Time.realtimeSinceStartup - started) * 1000f, skipped, brain);
             }
@@ -97,6 +98,7 @@ namespace Mod
             accumulator = 0f;
             sampleElapsed = 0f;
             statusDisplay?.SetActive(false);
+            manualInput.Deactivate();
             brain?.Stop();
             adapter?.Suspend();
             RestoreNativePoseOptions();
@@ -105,6 +107,7 @@ namespace Mod
         private void OnDestroy()
         {
             acceptingEvents = false;
+            manualInput.Deactivate();
             RestoreNativePoseOptions();
             adapter?.Dispose();
             statusDisplay?.Dispose();

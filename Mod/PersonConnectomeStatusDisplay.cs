@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
@@ -33,8 +34,8 @@ namespace Mod
         private ScrollRect scroll;
         private Scrollbar scrollbar;
         private TextMeshProUGUI title, toggleLabel, location, state, timing, body;
-        private readonly TextMeshProUGUI[] tabLabels = new TextMeshProUGUI[3];
-        private readonly Button[] tabs = new Button[3];
+        private readonly TextMeshProUGUI[] tabLabels = new TextMeshProUGUI[4];
+        private readonly Button[] tabs = new Button[4];
         private Button toggle, previous, next, smaller, larger;
         private TextMeshProUGUI motorHeading, historyHeading, historyScale, mapHeading, mapCaption, populationHeading, provenance;
         private readonly TextMeshProUGUI[] motorLabels = new TextMeshProUGUI[7];
@@ -47,6 +48,13 @@ namespace Mod
         private readonly float[] motorValues = new float[7];
         private readonly List<GameObject> motorElements = new List<GameObject>();
         private readonly List<GameObject> brainElements = new List<GameObject>();
+        private readonly List<GameObject> stimulationElements = new List<GameObject>();
+        private readonly List<TextMeshProUGUI> stimulationSections = new List<TextMeshProUGUI>();
+        private readonly StimulationRow[] stimulationRows = new StimulationRow[(int)ManualInputChannel.Count];
+        private readonly ManualInputState manualInput;
+        private readonly Transform anchor;
+        private GameObject worldLabelObject;
+        private TextMeshProUGUI worldLabel;
         private Image historyBackground;
         private RawImage mapImage;
         private Texture2D mapTexture;
@@ -56,7 +64,7 @@ namespace Mod
         private BrainMapSample map;
         private const int MapWidth = 256, MapHeight = 320;
         private const byte MapFlashLifetime = 4;
-        private static readonly string[] Pages = { "Overview", "Senses", "Brain" };
+        private static readonly string[] Pages = { "Overview", "Senses", "Brain", "Stimulation" };
         private static readonly string[] MotorNames = { "Walk", "Left arm", "Right arm", "Left leg", "Right leg", "Core", "Head" };
         private static readonly string[] PopulationNames = { "type:DNp09", "type:MDN", "type:DNp01", "type:MN9", "type:LC4", "type:LPLC2", "type:R1-R6", "motor" };
         private static readonly string[] Legend = { "Optic intrinsic / sensory", "Central brain intrinsic", "Ventral nerve cord intrinsic", "Motor / descending", "Other annotated classes" };
@@ -66,20 +74,35 @@ namespace Mod
         private static readonly Color Accent = new Color(.4f, .86f, .95f, 1f);
         private static readonly Color LatestBar = new Color(.98f, 1f, 1f, 1f);
         private static readonly Color EmptyBar = new Color(.12f, .25f, .3f, 1f);
+        private static readonly Color ActiveControl = new Color(.18f, .55f, .65f, 1f);
         private static readonly Color[] MapColors =
         {
             new Color(.18f, .65f, .66f), new Color(.52f, .6f, .82f),
             new Color(.78f, .59f, .28f), new Color(.7f, .38f, .67f), new Color(.42f, .48f, .54f)
         };
 
-        public PersonConnectomeStatusDisplay(Transform anchor) { }
+        private TextMeshProUGUI stimulationHeading, stimulationPerson, stimulationStatus, stimulationExplanation, stimulationResponse, stimulationModeHeading;
+        private Button stimulationMaster;
+        private TextMeshProUGUI stimulationMasterLabel;
+        private Button mixedMode, manualOnlyMode, zeroManual, returnToLive;
+
+        public PersonConnectomeStatusDisplay(Transform anchor, ManualInputState inputState)
+        {
+            this.anchor = anchor;
+            manualInput = inputState ?? new ManualInputState();
+        }
 
         public void SetActive(bool active)
         {
-            if (active && !displays.Contains(this)) displays.Add(this);
+            if (active && !displays.Contains(this))
+            {
+                displays.Add(this);
+                CreateWorldLabel();
+            }
             if (!active)
             {
                 displays.Remove(this);
+                ReleaseWorldLabel();
                 ReleaseUi();
                 Array.Clear(history, 0, history.Length);
                 historyIndex = historyCount = 0;
@@ -109,6 +132,7 @@ namespace Mod
         {
             brain = source;
             adapter = personAdapter;
+            UpdateWorldLabel();
             if (selected != this || Screen.width <= 0 || Screen.height <= 0) return;
             if (canvasObject == null) BuildUi();
             refreshTimer -= Mathf.Max(0f, elapsedSeconds);
@@ -203,12 +227,214 @@ namespace Mod
                 populationFills[i] = AddImage(brainElements, Accent);
             }
             provenance = AddText(brainElements, "MaleCNS v1.0 · thresholded derivative\nNo anatomical human-brain or biological-realism claim.", Foreground);
+            BuildStimulationUi();
             interactionHint = CreateText(expanded, "Drag title to move | Drag corner to resize", 11f, Foreground);
             resizeArea = CreateDragArea(expanded, "Resize panel", ResizePanel);
             var resizeLabel = CreateText(resizeArea, "//", 16f, Accent);
             resizeLabel.alignment = TextAlignmentOptions.Center;
             SetRect(resizeLabel.rectTransform, 0f, 0f, 28f, 24f);
             refreshTimer = 0f;
+        }
+
+        private void BuildStimulationUi()
+        {
+            stimulationHeading = AddText(stimulationElements, "MANUAL INPUT STIMULATION", Accent);
+            stimulationPerson = AddText(stimulationElements, "", Foreground);
+            stimulationStatus = AddText(stimulationElements, "", Accent);
+            stimulationExplanation = AddText(stimulationElements, "Overrides neural input stimulation, not the body's physical state.", Foreground);
+            stimulationMaster = CreateToggleButton(content, "Manual override", () => manualInput.OverrideEnabled, value =>
+            {
+                manualInput.SetOverrideEnabled(value);
+                refreshTimer = 0f;
+            }, out stimulationMasterLabel);
+            stimulationElements.Add(stimulationMaster.gameObject);
+            stimulationModeHeading = AddText(stimulationElements, "Input mode · Mixed or Manual only", Accent);
+            mixedMode = CreateButton(content, "Mixed", () =>
+            {
+                manualInput.SetMode(ManualInputMode.Mixed);
+                refreshTimer = 0f;
+            }, out _);
+            manualOnlyMode = CreateButton(content, "Manual only", () =>
+            {
+                manualInput.SetMode(ManualInputMode.ManualOnly);
+                refreshTimer = 0f;
+            }, out _);
+            stimulationElements.Add(mixedMode.gameObject);
+            stimulationElements.Add(manualOnlyMode.gameObject);
+            zeroManual = CreateButton(content, "Zero manual values", () =>
+            {
+                manualInput.ZeroManualValues();
+                refreshTimer = 0f;
+            }, out _);
+            returnToLive = CreateButton(content, "Return to live", () =>
+            {
+                manualInput.ReturnToLive();
+                refreshTimer = 0f;
+            }, out _);
+            stimulationElements.Add(zeroManual.gameObject);
+            stimulationElements.Add(returnToLive.gameObject);
+            stimulationResponse = AddText(stimulationElements, "", Foreground);
+
+            for (var i = 0; i < ManualInputCatalog.All.Length; i++)
+            {
+                if (i == 0) AddStimulationSection("LIGHT");
+                if (i == 3) AddStimulationSection("AUDITORY");
+                if (i == 4) AddStimulationSection("TACTILE");
+                if (i == 9) AddStimulationSection("BODY / JOINT PROXIES");
+                if (i == 15) AddStimulationSection("ENGINEERED VISUAL FEATURES");
+
+                var descriptor = ManualInputCatalog.All[i];
+                var channel = descriptor.Channel;
+                var row = new StimulationRow(content, descriptor);
+                row.Name = CreateText(row.Root.transform, descriptor.Label, 13f, Accent);
+                row.Details = CreateText(row.Root.transform, descriptor.Details, 11f, Foreground);
+                row.Override = CreateToggleButton(row.Root.transform, "Override", () => manualInput.IsSelected(channel), value =>
+                {
+                    manualInput.SetSelected(channel, value);
+                    refreshTimer = 0f;
+                }, out _);
+                row.Strength = CreateSlider(row.Root.transform, 0f, 1f, value =>
+                {
+                    manualInput.SetValue(channel, value);
+                    refreshTimer = 0f;
+                });
+                row.Value = CreateNumericField(row.Root.transform, value =>
+                {
+                    if (TryParseUnit(value, out var parsed)) manualInput.SetValue(channel, parsed);
+                    refreshTimer = 0f;
+                });
+                row.LiveEffective = CreateText(row.Root.transform, "", 11f, Foreground);
+                if (descriptor.Directional)
+                {
+                    row.Direction = CreateSlider(row.Root.transform, -1f, 1f, value =>
+                    {
+                        manualInput.SetDirection(channel, value);
+                        refreshTimer = 0f;
+                    });
+                    row.DirectionValue = CreateText(row.Root.transform, "", 11f, Foreground);
+                }
+                row.Continuous = CreateButton(row.Root.transform, "Continuous", () =>
+                {
+                    manualInput.SetWaveform(channel, ManualInputWaveform.Continuous);
+                    refreshTimer = 0f;
+                }, out _);
+                row.Pulse = CreateButton(row.Root.transform, "Pulse", () =>
+                {
+                    manualInput.SetWaveform(channel, ManualInputWaveform.Pulse);
+                    refreshTimer = 0f;
+                }, out _);
+                row.PulseLength = CreateNumericField(row.Root.transform, value =>
+                {
+                    if (int.TryParse(value, NumberStyles.Integer, CultureInfo.CurrentCulture, out var parsed)) manualInput.SetPulseLength(channel, parsed);
+                    refreshTimer = 0f;
+                });
+                row.PulseHint = CreateText(row.Root.transform, "ticks", 11f, Foreground);
+                row.Trigger = CreateButton(row.Root.transform, "Fire pulse", () =>
+                {
+                    manualInput.TriggerPulse(channel);
+                    refreshTimer = 0f;
+                }, out _);
+                stimulationRows[i] = row;
+                stimulationElements.Add(row.Root);
+            }
+        }
+
+        private void AddStimulationSection(string text)
+        {
+            var heading = AddText(stimulationElements, text, Accent);
+            heading.fontSize = 12f;
+            stimulationSections.Add(heading);
+        }
+
+        private void LayoutStimulation(float width, ref float y)
+        {
+            PlaceText(stimulationHeading, 0f, ref y, width, stimulationHeading.text);
+            PlaceText(stimulationPerson, 0f, ref y, width, "Editing person #" + id + " · settings are session-local and independent");
+            var statusText = !adapter.HasSample ? "INACTIVE · waiting for native sample" :
+                adapter.IsTerminal ? "SUSPENDED · native terminal state" :
+                adapter.LiveState.IndexOf("INVALID", StringComparison.OrdinalIgnoreCase) >= 0 ? "SUSPENDED · native health data unavailable" :
+                !manualInput.OverrideEnabled ? "INACTIVE · live input" :
+                "ACTIVE · " + (manualInput.Mode == ManualInputMode.ManualOnly ? "Manual only" : "Mixed");
+            PlaceText(stimulationStatus, 0f, ref y, width, statusText);
+            PlaceText(stimulationExplanation, 0f, ref y, width, stimulationExplanation.text);
+            SetRect(stimulationMaster.transform as RectTransform, 0f, y, width, 26f);
+            SetButtonColor(stimulationMaster, manualInput.OverrideEnabled ? ActiveControl : Track);
+            y += 34f;
+            PlaceText(stimulationModeHeading, 0f, ref y, width, stimulationModeHeading.text);
+            SetRect(mixedMode.transform as RectTransform, 0f, y, width * .28f, 26f);
+            SetRect(manualOnlyMode.transform as RectTransform, width * .3f, y, width * .34f, 26f);
+            SetButtonColor(mixedMode, manualInput.Mode == ManualInputMode.Mixed ? ActiveControl : Track);
+            SetButtonColor(manualOnlyMode, manualInput.Mode == ManualInputMode.ManualOnly ? ActiveControl : Track);
+            y += 34f;
+            SetRect(zeroManual.transform as RectTransform, 0f, y, width * .48f, 26f);
+            SetRect(returnToLive.transform as RectTransform, width * .52f, y, width * .48f, 26f);
+            y += 34f;
+            PlaceText(stimulationResponse, 0f, ref y, width, "LATEST NEURAL RESPONSE\n" + brain.DisplaySummary + "\n" + brain.DisplayMotorSummary);
+
+            var sectionIndex = 0;
+            for (var i = 0; i < stimulationRows.Length; i++)
+            {
+                if (i == 0 || i == 3 || i == 4 || i == 9 || i == 15)
+                {
+                    var section = stimulationSections[sectionIndex++];
+                    PlaceText(section, 0f, ref y, width, section.text);
+                }
+                var row = stimulationRows[i];
+                if (row == null) continue;
+                LayoutStimulationRow(row, width, ref y);
+            }
+        }
+
+        private void LayoutStimulationRow(StimulationRow row, float width, ref float y)
+        {
+            var height = row.Descriptor.Directional ? 92f : 70f;
+            SetRect(row.Root.transform as RectTransform, 0f, y, width, height);
+            var labelWidth = width * .34f;
+            SetRect(row.Name.rectTransform, 0f, 0f, labelWidth, 19f);
+            SetRect(row.Details.rectTransform, 0f, 20f, width * .66f, 18f);
+            SetRect(row.Override.transform as RectTransform, width * .8f, 0f, width * .2f, 22f);
+            SetRect(row.Strength.transform as RectTransform, width * .35f, 2f, width * .28f, 18f);
+            SetRect(row.Value.textComponent.rectTransform, width * .67f, 0f, width * .12f, 22f);
+            SetRect(row.Value.transform as RectTransform, width * .67f, 0f, width * .12f, 22f);
+            SetRect(row.LiveEffective.rectTransform, width * .35f, 21f, width * .45f, 18f);
+            var lowerY = 44f;
+            if (row.Descriptor.Directional)
+            {
+                SetRect(row.Direction.transform as RectTransform, width * .35f, lowerY, width * .28f, 18f);
+                SetRect(row.DirectionValue.rectTransform, width * .67f, lowerY, width * .13f, 18f);
+                lowerY += 22f;
+            }
+            SetRect(row.Continuous.transform as RectTransform, 0f, lowerY, width * .25f, 22f);
+            SetRect(row.Pulse.transform as RectTransform, width * .27f, lowerY, width * .2f, 22f);
+            SetRect(row.PulseLength.textComponent.rectTransform, width * .5f, lowerY, width * .12f, 22f);
+            SetRect(row.PulseLength.transform as RectTransform, width * .5f, lowerY, width * .12f, 22f);
+            SetRect(row.PulseHint.rectTransform, width * .63f, lowerY, width * .08f, 22f);
+            SetRect(row.Trigger.transform as RectTransform, width * .72f, lowerY, width * .23f, 22f);
+            var reading = manualInput.GetReading(row.Descriptor.Channel);
+            var availability = reading.Available ? "" : " · UNAVAILABLE";
+            var pulseStatus = manualInput.GetPulseRemaining(row.Descriptor.Channel) > 0 ? " · pulse " + manualInput.GetPulseRemaining(row.Descriptor.Channel) + " ticks" : "";
+            row.LiveEffective.text = "LIVE " + Format(reading.Live) + "  →  EFFECTIVE " + Format(reading.Effective) + pulseStatus + availability;
+            if (row.Descriptor.Directional) row.DirectionValue.text = "dir " + FormatSigned(reading.EffectiveDirection);
+            SetButtonColor(row.Override, manualInput.OverrideEnabled && manualInput.IsSelected(row.Descriptor.Channel) ? ActiveControl : Track);
+            row.Strength.SetValueWithoutNotify(manualInput.GetValue(row.Descriptor.Channel));
+            row.Strength.interactable = manualInput.OverrideEnabled;
+            row.Value.interactable = manualInput.OverrideEnabled;
+            row.Override.interactable = manualInput.OverrideEnabled;
+            row.Continuous.interactable = manualInput.OverrideEnabled;
+            row.Pulse.interactable = manualInput.OverrideEnabled;
+            row.PulseLength.interactable = manualInput.OverrideEnabled;
+            row.Trigger.interactable = manualInput.OverrideEnabled && manualInput.IsSelected(row.Descriptor.Channel) && manualInput.GetWaveform(row.Descriptor.Channel) == ManualInputWaveform.Pulse;
+            if (!row.Value.isFocused) row.Value.text = Format(manualInput.GetValue(row.Descriptor.Channel));
+            if (!row.PulseLength.isFocused) row.PulseLength.text = manualInput.GetPulseLength(row.Descriptor.Channel).ToString(CultureInfo.CurrentCulture);
+            if (row.Descriptor.Directional)
+            {
+                row.Direction.SetValueWithoutNotify(manualInput.GetDirection(row.Descriptor.Channel));
+                row.Direction.interactable = manualInput.OverrideEnabled;
+            }
+            SetButtonColor(row.Continuous, manualInput.GetWaveform(row.Descriptor.Channel) == ManualInputWaveform.Continuous ? ActiveControl : Track);
+            SetButtonColor(row.Pulse, manualInput.GetWaveform(row.Descriptor.Channel) == ManualInputWaveform.Pulse ? ActiveControl : Track);
+            row.Name.color = manualInput.OverrideEnabled ? Accent : Foreground;
+            y += height + 4f;
         }
 
         private void RefreshUi()
@@ -223,6 +449,7 @@ namespace Mod
             ApplyPanelPosition(layout);
             panel.sizeDelta = new Vector2(width, height);
             SetRect(title.rectTransform, 12f, 10f, width - 110f, 28f);
+            title.text = "Person Connectome · #" + id + (manualInput.OverrideEnabled ? " · MANUAL INPUT" : "");
             SetRect(titleDragArea, 0f, 0f, width - 100f, 48f);
             SetRect((RectTransform)toggle.transform, width - 92f, 9f, 80f, 28f);
             toggleLabel.text = collapsed ? "Expand" : "Collapse";
@@ -238,12 +465,13 @@ namespace Mod
             location.text = displays.Count + " controlled" + (anchor == null ? "" : " · at " + anchor.position.x.ToString("0.0") + ", " + anchor.position.y.ToString("0.0"));
             var y = 36f;
             state.color = hasSample && (adapter.IsTerminal || adapter.LiveThreat > .05f) ? new Color(1f, .63f, .5f) : Accent;
-            PlaceText(state, 12f, ref y, width - 24f, !hasSample ? "WAITING FOR NATIVE SAMPLE" : adapter.LiveState + " · " + adapter.LiveSignal + " " + adapter.LiveSignalValue.ToString("0.00"));
+            var manualIndicator = manualInput.OverrideEnabled ? " · MANUAL INPUT ACTIVE" : "";
+            PlaceText(state, 12f, ref y, width - 24f, (!hasSample ? "WAITING FOR NATIVE SAMPLE" : adapter.LiveState + " · " + adapter.LiveSignal + " " + adapter.LiveSignalValue.ToString("0.00")) + manualIndicator);
             var age = lastSampleTime < 0f ? "not sampled" : (Time.unscaledTime - lastSampleTime).ToString("0.00") + " s ago";
             PlaceText(timing, 12f, ref y, width - 24f, "Input: " + age + " · loop " + stepMilliseconds.ToString("0.0") + " ms\nSkipped game time: " + droppedSeconds.ToString("0.000") + " s · scroll below for more");
             for (var i = 0; i < tabs.Length; i++)
             {
-                SetRect((RectTransform)tabs[i].transform, 12f + i * (width - 24f) / 3f, y, (width - 24f) / 3f - 4f, 30f);
+                SetRect((RectTransform)tabs[i].transform, 12f + i * (width - 24f) / Pages.Length, y, (width - 24f) / Pages.Length - 4f, 30f);
                 tabLabels[i].color = page == i ? Accent : Foreground;
             }
             y += 38f;
@@ -254,6 +482,8 @@ namespace Mod
             var contentY = 0f;
             SetVisible(motorElements, hasSample && brain != null && page == 0);
             SetVisible(brainElements, hasSample && brain != null && page == 2);
+            SetVisible(stimulationElements, hasSample && brain != null && page == 3);
+            body.gameObject.SetActive(page != 3);
             string text;
             if (!hasSample)
             {
@@ -269,9 +499,10 @@ namespace Mod
                     "\n\nDERIVED PROXIES\nDamage/blood loss, temperature bands, falling, vibration, proprioception and submerged hypoxia combine native readings.\nVision is nearest-collider line of sight × ambient light. Audio is external object playback. No semantic sight or smell.\nVitality uses valid health when its native baseline is unavailable.";
             }
             else text = brain == null ? "NEURAL: unavailable" : brain.DisplaySummary + "\n\nDERIVED INPUT DRIVES\n" + brain.DisplayInputSummary;
-            PlaceText(body, 0f, ref contentY, contentWidth, text);
+            if (page != 3) PlaceText(body, 0f, ref contentY, contentWidth, text);
             if (hasSample && brain != null && page == 0) LayoutMotors(contentWidth, ref contentY);
             if (hasSample && brain != null && page == 2) LayoutBrain(contentWidth, ref contentY);
+            if (hasSample && brain != null && page == 3) LayoutStimulation(contentWidth, ref contentY);
             // Preserve the current scroll position while changing the content extent.
             content.sizeDelta = new Vector2(contentWidth, contentY + 8f);
             SetRect(interactionHint.rectTransform, 12f, height - 48f - 22f, width - 54f, 18f);
@@ -381,6 +612,98 @@ namespace Mod
             PlaceText(provenance, 0f, ref y, width, provenance.text);
         }
 
+        private static Button CreateToggleButton(Transform parent, string text, Func<bool> isOn, Action<bool> changed, out TextMeshProUGUI label)
+        {
+            var rect = CreateRect(parent, text + " toggle");
+            var background = rect.gameObject.AddComponent<Image>();
+            background.color = Track;
+            var toggle = rect.gameObject.AddComponent<Button>();
+            toggle.targetGraphic = background;
+            label = CreateText(rect, text, 12f, Foreground);
+            SetRect(label.rectTransform, 8f, 0f, 100f, 26f);
+            toggle.onClick.AddListener(() => changed(!isOn()));
+            return toggle;
+        }
+
+        private static Slider CreateSlider(Transform parent, float minimum, float maximum, Action<float> changed)
+        {
+            var rect = CreateRect(parent, "Stimulation slider");
+            var track = rect.gameObject.AddComponent<Image>();
+            track.color = Track;
+            var fillRect = CreateRect(rect, "Slider fill");
+            var fill = fillRect.gameObject.AddComponent<Image>();
+            fill.color = Accent;
+            fillRect.anchorMin = new Vector2(0f, 0f);
+            fillRect.anchorMax = new Vector2(.5f, 1f);
+            fillRect.offsetMin = fillRect.offsetMax = Vector2.zero;
+            var handleRect = CreateRect(rect, "Slider handle");
+            var handle = handleRect.gameObject.AddComponent<Image>();
+            handle.color = LatestBar;
+            handleRect.sizeDelta = new Vector2(8f, 22f);
+            var slider = rect.gameObject.AddComponent<Slider>();
+            slider.minValue = minimum;
+            slider.maxValue = maximum;
+            slider.value = minimum;
+            slider.direction = Slider.Direction.LeftToRight;
+            slider.fillRect = fillRect;
+            slider.handleRect = handleRect;
+            slider.targetGraphic = handle;
+            slider.onValueChanged.AddListener(value => changed(value));
+            return slider;
+        }
+
+        private static TMP_InputField CreateNumericField(Transform parent, Action<string> endEdit)
+        {
+            var rect = CreateRect(parent, "Numeric stimulation value");
+            var background = rect.gameObject.AddComponent<Image>();
+            background.color = Track;
+            var field = rect.gameObject.AddComponent<TMP_InputField>();
+            var text = CreateText(rect, "", 12f, Foreground);
+            text.alignment = TextAlignmentOptions.Center;
+            text.enableWordWrapping = false;
+            text.rectTransform.anchorMin = Vector2.zero;
+            text.rectTransform.anchorMax = Vector2.one;
+            text.rectTransform.offsetMin = text.rectTransform.offsetMax = Vector2.zero;
+            field.textComponent = text;
+            field.lineType = TMP_InputField.LineType.SingleLine;
+            field.contentType = TMP_InputField.ContentType.DecimalNumber;
+            field.onEndEdit.AddListener(value => endEdit(value));
+            return field;
+        }
+
+        private static void SetButtonColor(Button button, Color color)
+        {
+            var image = button == null ? null : button.GetComponent<Image>();
+            if (image != null) image.color = color;
+        }
+
+        private static bool TryParseUnit(string text, out float value)
+        {
+            return float.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out value) && IsFinite(value);
+        }
+
+        private static string Format(float value) => value.ToString("0.00", CultureInfo.CurrentCulture);
+        private static string FormatSigned(float value) => value.ToString("+0.00;-0.00;0.00", CultureInfo.CurrentCulture);
+        private static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
+
+        private sealed class StimulationRow
+        {
+            public readonly ManualInputChannelDescriptor Descriptor;
+            public readonly GameObject Root;
+            public TextMeshProUGUI Name, Details, LiveEffective, DirectionValue;
+            public Button Override;
+            public Slider Strength, Direction;
+            public TMP_InputField Value, PulseLength;
+            public Button Continuous, Pulse, Trigger;
+            public TextMeshProUGUI PulseHint;
+
+            public StimulationRow(Transform parent, ManualInputChannelDescriptor descriptor)
+            {
+                Descriptor = descriptor;
+                Root = CreateRect(parent, "Stimulation row " + descriptor.Label).gameObject;
+            }
+        }
+
         private static RectTransform CreateRect(Transform parent, string name)
         {
             var rect = (RectTransform)new GameObject(name, typeof(RectTransform)).transform;
@@ -477,6 +800,47 @@ namespace Mod
         }
 
         public void Dispose() { SetActive(false); }
+
+        private void CreateWorldLabel()
+        {
+            if (worldLabelObject != null || anchor == null) return;
+            worldLabelObject = new GameObject("Person Connectome Hover Label #" + id, typeof(RectTransform));
+            var labelCanvas = worldLabelObject.AddComponent<Canvas>();
+            labelCanvas.renderMode = RenderMode.WorldSpace;
+            labelCanvas.sortingOrder = short.MaxValue;
+            worldLabel = CreateText(worldLabelObject.transform, "#" + id, 24f, Accent);
+            worldLabel.alignment = TextAlignmentOptions.Center;
+            worldLabel.rectTransform.anchorMin = Vector2.zero;
+            worldLabel.rectTransform.anchorMax = Vector2.one;
+            worldLabel.rectTransform.pivot = new Vector2(.5f, .5f);
+            worldLabel.rectTransform.offsetMin = worldLabel.rectTransform.offsetMax = Vector2.zero;
+            var rect = (RectTransform)worldLabelObject.transform;
+            rect.sizeDelta = new Vector2(180f, 30f);
+            worldLabelObject.transform.localScale = Vector3.one * .01f;
+            UpdateWorldLabel();
+        }
+
+        private void UpdateWorldLabel()
+        {
+            if (worldLabelObject == null) return;
+            if (anchor == null)
+            {
+                worldLabelObject.SetActive(false);
+                return;
+            }
+
+            worldLabelObject.SetActive(true);
+            worldLabelObject.transform.position = anchor.position + new Vector3(0f, 1.35f, 0f);
+            worldLabel.text = "#" + id + (manualInput.OverrideEnabled ? "  MANUAL" : "");
+            worldLabel.color = manualInput.OverrideEnabled ? LatestBar : Accent;
+        }
+
+        private void ReleaseWorldLabel()
+        {
+            if (worldLabelObject != null) UnityEngine.Object.Destroy(worldLabelObject);
+            worldLabelObject = null;
+            worldLabel = null;
+        }
 
         private void ReleaseUi()
         {

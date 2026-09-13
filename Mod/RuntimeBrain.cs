@@ -88,7 +88,7 @@ namespace Mod
         }
 
         public string DisplayInputSummary => stopped ? "INPUT: STOPPED" :
-            "ENCODER REQUESTS (normalized amplitudes, not Hz):\n  light=" + Format(lightDrive) + "  audio=" + Format(audioDrive) +
+            "LIVE ENCODER REQUESTS (normalized amplitudes, not Hz):\n  light=" + Format(lightDrive) + "  audio=" + Format(audioDrive) +
             "  broad-touch=" + Format(touchDrive) + "  injury-proxy=" + Format(damageDrive) + "  regional-touch=" + Format(regionalTouchDrive) +
             "\n  gravity-proxy=" + Format(gravityDrive) + "  joints=" + Format(jointDrive) + "  small-visual=" + Format(smallVisualDrive) + "  optic-roll=" + Format(opticRollDrive) +
             "\n  global light-change ON=" + Format(lightOnDrive) + "  OFF=" + Format(lightOffDrive) +
@@ -126,17 +126,21 @@ namespace Mod
             return count;
         }
 
-        public MotorCommand Step(SensoryFrame sensory) => Step(sensory, DefaultStepSeconds);
+        public MotorCommand Step(SensoryFrame sensory) => Step(sensory, DefaultStepSeconds, null);
 
-        public MotorCommand Step(SensoryFrame sensory, float elapsedSeconds)
+        public MotorCommand Step(SensoryFrame sensory, float elapsedSeconds) => Step(sensory, elapsedSeconds, null);
+
+        public MotorCommand Step(SensoryFrame sensory, float elapsedSeconds, ManualInputState manualInput)
         {
             if (sensory.BrainDead || (sensory.HealthValid && !sensory.Alive))
             {
+                manualInput?.Deactivate();
                 return Stop();
             }
 
             if (!sensory.HealthValid)
             {
+                manualInput?.Deactivate();
                 return SuspendOutput();
             }
 
@@ -155,7 +159,7 @@ namespace Mod
             nextPending.Clear();
             nextActive.Clear();
             priority.Clear();
-            DriveSensoryPopulations(sensory);
+            DriveSensoryPopulations(sensory, manualInput);
 
             ProcessActiveNeurons(nextPending, nextActive);
             // A target can fire after an earlier source queued it this tick.
@@ -167,6 +171,7 @@ namespace Mod
             }
             SwapPendingState();
             priority.Clear();
+            manualInput?.FinishTick();
 
             return BuildMotorCommand(sensory, elapsedSeconds);
         }
@@ -522,7 +527,7 @@ namespace Mod
             return superclass == "descending_neuron" || superclass == "vnc_motor" || superclass == "cb_motor";
         }
 
-        private void DriveSensoryPopulations(SensoryFrame sensory)
+        private void DriveSensoryPopulations(SensoryFrame sensory, ManualInputState manualInput)
         {
             // Population choices follow the upstream sensory encoder and adult-fly
             // annotations. Our discrete amplitude model is not its Poisson/Hz model.
@@ -553,42 +558,44 @@ namespace Mod
             var damagePower = (float)Math.Pow(damage / .2f, 1.5);
             damageDrive = Unit(2f * damagePower / (1f + damagePower));
             regionalTouchDrive = sensory.RegionalTouchValid ? Math.Max(Math.Max(Unit(sensory.TouchHead), Unit(sensory.TouchArms)), Math.Max(Unit(sensory.TouchLegs), Unit(sensory.TouchCore))) * .15f : 0f;
-            LastSensoryDrive = Unit(lightDrive + lightOnDrive + lightOffDrive + audioDrive + touchDrive + damageDrive + regionalTouchDrive + gravityDrive + jointDrive + hotDrive + coldDrive + approachDrive + smallVisualDrive + opticRollDrive);
-
+            var effectiveTotal = 0f;
             // Broadband light only: these inputs do not claim color/UV sensing or
             // a per-column retina. No body-state stimulus is painted onto the eyes.
-            Drive("input:light", lightDrive);
+            effectiveTotal += DriveChannel(manualInput, ManualInputChannel.Light, lightDrive, 0f);
             // Reference ON/OFF entries adapted to measured global luminance
             // changes only. No per-column image or invented dark tonic current.
-            Drive("type:Mi1", lightOnDrive);
-            Drive("type:L2", lightOffDrive);
-            Drive("type:L3", lightOffDrive);
-            Drive("input:auditory", audioDrive, sensory.SoundDirectionValid ? Signed(sensory.SoundDirection) : 0f);
+            effectiveTotal += DriveChannel(manualInput, ManualInputChannel.LightOn, lightOnDrive, 0f);
+            effectiveTotal += DriveChannel(manualInput, ManualInputChannel.LightOff, lightOffDrive, 0f);
+            effectiveTotal += DriveChannel(manualInput, ManualInputChannel.Auditory, audioDrive,
+                sensory.SoundDirectionValid ? Signed(sensory.SoundDirection) : 0f);
             // Regions partition tactile neurons. Merge broad impact, measured
             // injury and local contact by maximum so one cell is not injected twice.
             var broadTouch = Math.Max(touchDrive, damageDrive);
             if (asset.Population("input:touch-head").Count == 0 && asset.Population("input:touch-arms").Count == 0)
             {
-                Drive("input:tactile", broadTouch);
+                effectiveTotal += DriveChannel(manualInput, ManualInputChannel.TouchOther, broadTouch, 0f);
             }
             else
             {
-                Drive("input:touch-head", Math.Max(broadTouch, sensory.RegionalTouchValid ? Unit(sensory.TouchHead) * .15f : 0f));
-                Drive("input:touch-arms", Math.Max(broadTouch, sensory.RegionalTouchValid ? Unit(sensory.TouchArms) * .15f : 0f));
-                Drive("input:touch-legs", Math.Max(broadTouch, sensory.RegionalTouchValid ? Unit(sensory.TouchLegs) * .15f : 0f));
-                Drive("input:touch-core", Math.Max(broadTouch, sensory.RegionalTouchValid ? Unit(sensory.TouchCore) * .15f : 0f));
-                Drive("input:touch-other", broadTouch);
+                effectiveTotal += DriveChannel(manualInput, ManualInputChannel.TouchHead, Math.Max(broadTouch, sensory.RegionalTouchValid ? Unit(sensory.TouchHead) * .15f : 0f), 0f);
+                effectiveTotal += DriveChannel(manualInput, ManualInputChannel.TouchArms, Math.Max(broadTouch, sensory.RegionalTouchValid ? Unit(sensory.TouchArms) * .15f : 0f), 0f);
+                effectiveTotal += DriveChannel(manualInput, ManualInputChannel.TouchLegs, Math.Max(broadTouch, sensory.RegionalTouchValid ? Unit(sensory.TouchLegs) * .15f : 0f), 0f);
+                effectiveTotal += DriveChannel(manualInput, ManualInputChannel.TouchCore, Math.Max(broadTouch, sensory.RegionalTouchValid ? Unit(sensory.TouchCore) * .15f : 0f), 0f);
+                effectiveTotal += DriveChannel(manualInput, ManualInputChannel.TouchOther, broadTouch, 0f);
             }
-            Drive("input:gravity", gravityDrive, sensory.TiltValid ? Signed(sensory.SignedTilt) : 0f);
-            Drive("input:joint-position", jointPosition);
-            Drive("input:joint-motion", jointMotion);
-            Drive("input:joint-load", jointLoad);
-            Drive("input:hot", hotDrive);
-            Drive("input:cold", coldDrive);
+            effectiveTotal += DriveChannel(manualInput, ManualInputChannel.Gravity, gravityDrive, sensory.TiltValid ? Signed(sensory.SignedTilt) : 0f);
+            effectiveTotal += DriveChannel(manualInput, ManualInputChannel.JointPosition, jointPosition, 0f);
+            effectiveTotal += DriveChannel(manualInput, ManualInputChannel.JointMotion, jointMotion, 0f);
+            effectiveTotal += DriveChannel(manualInput, ManualInputChannel.JointLoad, jointLoad, 0f);
+            effectiveTotal += DriveChannel(manualInput, ManualInputChannel.Warm, hotDrive, 0f);
+            effectiveTotal += DriveChannel(manualInput, ManualInputChannel.Cool, coldDrive, 0f);
             // Object geometry is only used when the adapter measured it. These
             // are feature encoders, not semantic object recognition.
             var visualDirection = sensory.VisionDirectionValid ? Signed(sensory.VisionDirection) : 0f;
             var existingVision = Unit(sensory.Vision);
+            var liveExpandingVisual = 0f;
+            var liveLoomingVisual = 0f;
+            var liveSmallMovingVisual = 0f;
             if (sensory.VisualGeometryValid && existingVision > 0f && IsFinite(sensory.VisualExpansion) && IsFinite(sensory.VisualAngularSize) && IsFinite(sensory.VisualAngularSpeed) && sensory.VisualAngularSize > 0f && sensory.VisualAngularSize <= 180f && sensory.VisualAngularSpeed >= 0f)
             {
                 var expansion = Math.Max(0f, sensory.VisualExpansion);
@@ -599,26 +606,58 @@ namespace Mod
                     sensory.VisualAngularSpeed / (sensory.VisualAngularSpeed + 100f) * existingVision : 0f;
                 smallVisualDrive = small;
                 approachDrive = Math.Max(lc4, lplc2);
-                Drive("type:LC4", lc4, visualDirection);
-                Drive("type:LPLC2", lplc2, visualDirection);
-                Drive("type:LC11", small, visualDirection);
-                Drive("type:LC18", small, visualDirection);
+                liveExpandingVisual = lc4;
+                liveLoomingVisual = lplc2;
+                liveSmallMovingVisual = small;
             }
             else if (!sensory.VisualGeometryValid)
             {
-                Drive("type:LC4", approachDrive, visualDirection);
-                Drive("type:LPLC2", approachDrive, visualDirection);
+                liveExpandingVisual = approachDrive;
+                liveLoomingVisual = approachDrive;
             }
+            effectiveTotal += DriveChannel(manualInput, ManualInputChannel.ExpandingVisual, liveExpandingVisual, visualDirection);
+            effectiveTotal += DriveChannel(manualInput, ManualInputChannel.LoomingVisual, liveLoomingVisual, visualDirection);
+            effectiveTotal += DriveChannel(manualInput, ManualInputChannel.SmallMovingVisual, liveSmallMovingVisual, visualDirection);
             if (lightValid && lightDrive > 0f && sensory.AngularVelocityValid && IsFinite(sensory.AngularVelocity))
             {
                 var roll = Math.Abs(sensory.AngularVelocity) / (Math.Abs(sensory.AngularVelocity) + 300f) * lightDrive;
                 opticRollDrive = roll;
-                Drive("input:optic-roll", roll);
             }
-            LastSensoryDrive = Unit(lightDrive + lightOnDrive + lightOffDrive + audioDrive + touchDrive + damageDrive + regionalTouchDrive + gravityDrive + jointDrive + hotDrive + coldDrive + approachDrive + smallVisualDrive + opticRollDrive);
+            effectiveTotal += DriveChannel(manualInput, ManualInputChannel.OpticRoll, opticRollDrive, 0f);
+            LastSensoryDrive = Unit(effectiveTotal);
         }
 
         private float LastSensoryDrive { get; set; }
+
+        private float DriveChannel(ManualInputState manualInput, ManualInputChannel channel, float live, float direction)
+        {
+            var descriptor = ManualInputCatalog.For(channel);
+            var primaryAvailable = false;
+            for (var i = 0; i < descriptor.Targets.Length; i++)
+            {
+                if (asset.Population(descriptor.Targets[i]).Count > 0)
+                {
+                    primaryAvailable = true;
+                    break;
+                }
+            }
+
+            var fallbackAvailable = !primaryAvailable && !string.IsNullOrEmpty(descriptor.FallbackTarget) && asset.Population(descriptor.FallbackTarget).Count > 0;
+            var effective = manualInput == null ? Unit(live) : manualInput.Resolve(channel, live, direction, primaryAvailable || fallbackAvailable);
+            var effectiveDirection = manualInput == null ? direction : manualInput.GetReading(channel).EffectiveDirection;
+            if (effective <= .001f || (!primaryAvailable && !fallbackAvailable)) return effective;
+
+            if (primaryAvailable)
+            {
+                for (var i = 0; i < descriptor.Targets.Length; i++) Drive(descriptor.Targets[i], effective, effectiveDirection);
+            }
+            else
+            {
+                Drive(descriptor.FallbackTarget, effective, effectiveDirection);
+            }
+
+            return effective;
+        }
 
         private void Drive(string population, float value, float direction = 0f)
         {

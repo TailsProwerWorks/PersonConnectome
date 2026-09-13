@@ -57,7 +57,13 @@ var tests = new (string Name, Action Run)[]
     ("soma sample retains real IDs and omits missing positions", SomaSample),
     ("diagnostic spikes match actual runtime and reset", DiagnosticSpikes),
     ("telemetry fits supported screens with corner clearance", TelemetryFitsScreens),
-    ("telemetry drag stays reachable and resizing can shrink", TelemetryDragAndResize)
+    ("telemetry drag stays reachable and resizing can shrink", TelemetryDragAndResize),
+    ("manual input resolves mixed and manual-only routes", ManualInputModes),
+    ("manual feature routes work without natural stimuli", ManualFeatureRoutes),
+    ("manual directional input follows world-axis weighting", ManualDirection),
+    ("manual pulses consume only valid neural ticks", ManualPulses),
+    ("manual state stays finite, isolated and cancellable", ManualStateSafety),
+    ("invalid health disarms manual input", InvalidHealthDisarmsManualInput)
 };
 
 var failures = 0;
@@ -365,6 +371,149 @@ static void SignedInputAccumulationIsOrderIndependent()
         brain.Step(Healthy());
         True(brain.DidFire(3), "mixed excitation/inhibition should produce the same target spike for every source order");
     }
+}
+
+static void ManualInputModes()
+{
+    var frame = Healthy(sound: .25f) with { Heat = .4f };
+    var disabledManual = new ManualInputState();
+    disabledManual.SetSelected(ManualInputChannel.Auditory, true);
+    disabledManual.SetValue(ManualInputChannel.Auditory, 1f);
+    var disabledBrain = ConnectomeBrain.CreateForTest(2, new int[3], [], []);
+    disabledBrain.SetTestPopulation("input:auditory", 0);
+    disabledBrain.SetTestPopulation("input:hot", 1);
+    disabledBrain.Step(frame, .05f, disabledManual);
+    Equal(.25f, disabledBrain.TestPotentialValue(0));
+    Equal(.4f, disabledBrain.TestPotentialValue(1));
+
+    var noSelection = new ManualInputState();
+    noSelection.SetOverrideEnabled(true);
+    var noSelectionBrain = ConnectomeBrain.CreateForTest(2, new int[3], [], []);
+    noSelectionBrain.SetTestPopulation("input:auditory", 0);
+    noSelectionBrain.SetTestPopulation("input:hot", 1);
+    noSelectionBrain.Step(frame, .05f, noSelection);
+    Equal(.25f, noSelectionBrain.TestPotentialValue(0));
+    Equal(.4f, noSelectionBrain.TestPotentialValue(1));
+
+    var live = ConnectomeBrain.CreateForTest(2, new int[3], [], []);
+    live.SetTestPopulation("input:auditory", 0);
+    live.SetTestPopulation("input:hot", 1);
+    live.Step(frame, .05f);
+    Equal(.25f, live.TestPotentialValue(0));
+    Equal(.4f, live.TestPotentialValue(1));
+
+    var mixed = new ManualInputState();
+    mixed.SetSelected(ManualInputChannel.Auditory, true);
+    mixed.SetValue(ManualInputChannel.Auditory, .8f);
+    mixed.SetOverrideEnabled(true);
+    var mixedBrain = ConnectomeBrain.CreateForTest(2, new int[3], [], []);
+    mixedBrain.SetTestPopulation("input:auditory", 0);
+    mixedBrain.SetTestPopulation("input:hot", 1);
+    mixedBrain.Step(frame, .05f, mixed);
+    Equal(.8f, mixedBrain.TestPotentialValue(0));
+    Equal(.4f, mixedBrain.TestPotentialValue(1));
+    True(mixed.GetReading(ManualInputChannel.Auditory).Selected);
+    Equal(.25f, mixed.GetReading(ManualInputChannel.Auditory).Live);
+    Equal(.8f, mixed.GetReading(ManualInputChannel.Auditory).Effective);
+
+    mixed.SetMode(ManualInputMode.ManualOnly);
+    var isolated = ConnectomeBrain.CreateForTest(2, new int[3], [], []);
+    isolated.SetTestPopulation("input:auditory", 0);
+    isolated.SetTestPopulation("input:hot", 1);
+    isolated.Step(frame, .05f, mixed);
+    Equal(.8f, isolated.TestPotentialValue(0));
+    Equal(0f, isolated.TestPotentialValue(1));
+}
+
+static void ManualFeatureRoutes()
+{
+    var manual = new ManualInputState();
+    manual.SetSelected(ManualInputChannel.LoomingVisual, true);
+    manual.SetValue(ManualInputChannel.LoomingVisual, .6f);
+    manual.SetOverrideEnabled(true);
+    var brain = ConnectomeBrain.CreateForTest(1, new int[2], [], []);
+    brain.SetTestPopulation("type:LPLC2", 0);
+    brain.Step(Healthy(), .05f, manual);
+    Equal(.6f, brain.TestPotentialValue(0));
+    Equal(0f, manual.GetReading(ManualInputChannel.LoomingVisual).Live);
+    Equal(.6f, manual.GetReading(ManualInputChannel.LoomingVisual).Effective);
+}
+
+static void ManualDirection()
+{
+    var manual = new ManualInputState();
+    manual.SetSelected(ManualInputChannel.Auditory, true);
+    manual.SetValue(ManualInputChannel.Auditory, .5f);
+    manual.SetDirection(ManualInputChannel.Auditory, 1f);
+    manual.SetOverrideEnabled(true);
+    var brain = ConnectomeBrain.CreateForTest(2, new int[3], [], []);
+    brain.SetTestPopulation("input:auditory", 0, 1);
+    brain.SetTestNeuronMetadata(0, "cb_sensory", "L");
+    brain.SetTestNeuronMetadata(1, "cb_sensory", "R");
+    brain.Step(Healthy(), .05f, manual);
+    Equal(0f, brain.TestPotentialValue(0));
+    Equal(.5f, brain.TestPotentialValue(1));
+    Equal(1f, manual.GetReading(ManualInputChannel.Auditory).EffectiveDirection);
+}
+
+static void ManualPulses()
+{
+    var manual = new ManualInputState();
+    manual.SetSelected(ManualInputChannel.Warm, true);
+    manual.SetValue(ManualInputChannel.Warm, .5f);
+    manual.SetWaveform(ManualInputChannel.Warm, ManualInputWaveform.Pulse);
+    manual.SetPulseLength(ManualInputChannel.Warm, 2);
+    manual.SetOverrideEnabled(true);
+    manual.TriggerPulse(ManualInputChannel.Warm);
+    var brain = ConnectomeBrain.CreateForTest(1, new int[2], [], []);
+    brain.SetTestPopulation("input:hot", 0);
+    brain.Step(Healthy(), .05f, manual);
+    Equal(.5f, manual.GetReading(ManualInputChannel.Warm).Effective);
+    Equal(1, manual.GetPulseRemaining(ManualInputChannel.Warm));
+    brain.Step(Healthy(), .05f, manual);
+    Equal(.5f, manual.GetReading(ManualInputChannel.Warm).Effective);
+    Equal(0, manual.GetPulseRemaining(ManualInputChannel.Warm));
+    brain.Step(Healthy(), .05f, manual);
+    Equal(0f, manual.GetReading(ManualInputChannel.Warm).Effective);
+    manual.TriggerPulse(ManualInputChannel.Warm);
+    Equal(2, manual.GetPulseRemaining(ManualInputChannel.Warm));
+    manual.SetWaveform(ManualInputChannel.Warm, ManualInputWaveform.Continuous);
+    Equal(0, manual.GetPulseRemaining(ManualInputChannel.Warm));
+}
+
+static void ManualStateSafety()
+{
+    True(ManualInputCatalog.All.Length == (int)ManualInputChannel.Count, "catalog must cover every stable channel");
+    var first = new ManualInputState();
+    var second = new ManualInputState();
+    first.SetValue(ManualInputChannel.Cool, float.NaN);
+    first.SetDirection(ManualInputChannel.Auditory, float.PositiveInfinity);
+    Equal(0f, first.GetValue(ManualInputChannel.Cool));
+    Equal(0f, first.GetDirection(ManualInputChannel.Auditory));
+    first.SetSelected(ManualInputChannel.Cool, true);
+    first.SetValue(ManualInputChannel.Cool, .9f);
+    first.SetOverrideEnabled(true);
+    True(!second.OverrideEnabled && !second.IsSelected(ManualInputChannel.Cool), "manual state leaked between people");
+    first.TriggerPulse(ManualInputChannel.Cool);
+    first.ReturnToLive();
+    True(!first.OverrideEnabled && first.GetPulseRemaining(ManualInputChannel.Cool) == 0, "return to live must cancel pulses");
+}
+
+static void InvalidHealthDisarmsManualInput()
+{
+    var manual = new ManualInputState();
+    manual.SetSelected(ManualInputChannel.Warm, true);
+    manual.SetValue(ManualInputChannel.Warm, .8f);
+    manual.SetWaveform(ManualInputChannel.Warm, ManualInputWaveform.Pulse);
+    manual.SetPulseLength(ManualInputChannel.Warm, 4);
+    manual.SetOverrideEnabled(true);
+    manual.TriggerPulse(ManualInputChannel.Warm);
+
+    var brain = ConnectomeBrain.CreateForTest(1, new int[2], [], []);
+    brain.SetTestPopulation("input:hot", 0);
+    brain.Step(new SensoryFrame { Alive = true, HealthValid = false }, .05f, manual);
+    True(!manual.OverrideEnabled, "invalid health must disarm manual input");
+    Equal(0, manual.GetPulseRemaining(ManualInputChannel.Warm));
 }
 
 static void InvalidHealthSuspendsWithoutReset()

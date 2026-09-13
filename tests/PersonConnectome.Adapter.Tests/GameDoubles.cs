@@ -227,6 +227,7 @@ namespace Mod
         public static ConnectomeBrain TryCreate(out string status) { status = "test"; return new(); }
         public MotorCommand Step(SensoryFrame frame) => default;
         public MotorCommand Step(SensoryFrame frame, float elapsed) { StepCount++; LastElapsed = elapsed; return default; }
+        public MotorCommand Step(SensoryFrame frame, float elapsed, ManualInputState manualInput) { StepCount++; LastElapsed = elapsed; return default; }
         public void Stop() { }
     }
     internal class PersonConnectomeStatusDisplay
@@ -237,7 +238,7 @@ namespace Mod
         public static int ActiveCount => activeCount;
         public static int RenderedUpdates => renderedUpdates;
         public static void ResetForTest() { activeCount = 0; renderedUpdates = 0; }
-        public PersonConnectomeStatusDisplay(UnityEngine.Transform anchor) { }
+        public PersonConnectomeStatusDisplay(UnityEngine.Transform anchor, ManualInputState manualInput) { }
         public void Update(float elapsed, ConnectomeBrain brain, PeoplePlaygroundPersonAdapter adapter) { if (active) renderedUpdates++; }
         public void SetActive(bool value)
         {

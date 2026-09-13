@@ -12,6 +12,7 @@
     "ConnectomeRuntimeAsset.cs",
     "ConnectomeRuntimeAssetReader.cs",
     "RuntimeTypes.cs",
+    "ManualInput.cs",
     "RuntimeBrain.cs",
     "BrainVisualization.cs",
     "TelemetryLayout.cs",

@@ -12,5 +12,6 @@
     <Compile Include="../../Mod/PersonConnectomeLimbController.cs" Link="Runtime/PersonConnectomeLimbController.cs" />
     <Compile Include="../../Mod/PersonConnectomeController.cs" Link="Runtime/PersonConnectomeController.cs" />
     <Compile Include="../../Mod/RuntimeTypes.cs" Link="Runtime/RuntimeTypes.cs" />
+    <Compile Include="../../Mod/ManualInput.cs" Link="Runtime/ManualInput.cs" />
   </ItemGroup>
 </Project>
