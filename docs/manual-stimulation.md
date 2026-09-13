@@ -21,7 +21,7 @@ Check **Manual override**, select **Mixed** or **Manual only**, then use a chann
 
 - **Override** selects that channel for manual resolution.
 - The strength slider and numeric field use finite normalized amplitude from `0.00` to `1.00`. They edit the same value.
-- **LIVE → EFFECTIVE** shows the live encoded value and the value resolved at the latest processed neural tick. An unavailable route is labeled unavailable; no replacement neurons are invented.
+- **LIVE -> EFFECTIVE** shows the live encoded value and the value resolved at the latest processed neural tick. An unavailable route is labeled unavailable; no replacement neurons are invented.
 - Direction controls appear only for routes with existing lateral weighting. They use `-1.00` for left-biased, `0.00` for bilateral and `+1.00` for right-biased world-horizontal weighting. This is an engineering projection, not verified anatomical localization.
 - **Continuous** offers the selected value on every valid neural tick. **Pulse** keeps the selected value at zero between triggers. Set a pulse length from 1 to 200 **neural ticks**, then press **Fire pulse**. A trigger arms the next valid tick; another trigger replaces the current pulse rather than queuing more work.
 

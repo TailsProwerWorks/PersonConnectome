@@ -52,7 +52,6 @@ namespace Mod
         private readonly List<TextMeshProUGUI> stimulationSections = new List<TextMeshProUGUI>();
         private readonly StimulationRow[] stimulationRows = new StimulationRow[(int)ManualInputChannel.Count];
         private readonly ManualInputState manualInput;
-        private readonly Transform anchor;
         private GameObject worldLabelObject;
         private TextMeshProUGUI worldLabel;
         private Image historyBackground;
@@ -88,7 +87,6 @@ namespace Mod
 
         public PersonConnectomeStatusDisplay(Transform anchor, ManualInputState inputState)
         {
-            this.anchor = anchor;
             manualInput = inputState ?? new ManualInputState();
         }
 
@@ -288,6 +286,7 @@ namespace Mod
                 var row = new StimulationRow(content, descriptor);
                 row.Name = CreateText(row.Root.transform, descriptor.Label, 13f, Accent);
                 row.Details = CreateText(row.Root.transform, descriptor.Details, 11f, Foreground);
+                row.ManualLabel = CreateText(row.Root.transform, "MANUAL", 10f, Accent);
                 row.Override = CreateToggleButton(row.Root.transform, "Override", () => manualInput.IsSelected(channel), value =>
                 {
                     manualInput.SetSelected(channel, value);
@@ -306,6 +305,7 @@ namespace Mod
                 row.LiveEffective = CreateText(row.Root.transform, "", 11f, Foreground);
                 if (descriptor.Directional)
                 {
+                    row.DirectionLabel = CreateText(row.Root.transform, "DIRECTION", 10f, Accent);
                     row.Direction = CreateSlider(row.Root.transform, -1f, 1f, value =>
                     {
                         manualInput.SetDirection(channel, value);
@@ -369,7 +369,7 @@ namespace Mod
             SetRect(zeroManual.transform as RectTransform, 0f, y, width * .48f, 26f);
             SetRect(returnToLive.transform as RectTransform, width * .52f, y, width * .48f, 26f);
             y += 34f;
-            PlaceText(stimulationResponse, 0f, ref y, width, "LATEST NEURAL RESPONSE\n" + brain.DisplaySummary + "\n" + brain.DisplayMotorSummary);
+            PlaceText(stimulationResponse, 0f, ref y, width, FormatStimulationResponse());
 
             var sectionIndex = 0;
             for (var i = 0; i < stimulationRows.Length; i++)
@@ -387,31 +387,35 @@ namespace Mod
 
         private void LayoutStimulationRow(StimulationRow row, float width, ref float y)
         {
-            var height = row.Descriptor.Directional ? 102f : 78f;
+            var detailsHeight = Mathf.Max(18f, row.Details.GetPreferredValues(row.Details.text, width, float.PositiveInfinity).y + 2f);
+            var manualY = 28f + detailsHeight;
+            var liveY = manualY + 24f;
+            var directionY = liveY + 24f;
+            var lowerY = row.Descriptor.Directional ? directionY + 24f : liveY + 24f;
+            var height = lowerY + 26f + 4f;
             SetRect(row.Root.transform as RectTransform, 0f, y, width, height);
-            var labelWidth = width * .34f;
-            SetRect(row.Name.rectTransform, 0f, 0f, labelWidth, 19f);
-            SetRect(row.Details.rectTransform, 0f, 20f, labelWidth, 38f);
-            SetRect(row.Override.transform as RectTransform, width * .8f, 0f, width * .2f, 22f);
-            SetRect(row.Strength.transform as RectTransform, width * .35f, 2f, width * .28f, 18f);
-            SetRect(row.Value.transform as RectTransform, width * .67f, 0f, width * .12f, 22f);
-            SetRect(row.LiveEffective.rectTransform, width * .35f, 22f, width * .45f, 18f);
-            var lowerY = 48f;
+            SetRect(row.Name.rectTransform, 0f, 0f, width * .7f, 22f);
+            SetRect(row.Override.transform as RectTransform, width * .76f, 0f, width * .24f, 22f);
+            SetRect(row.Details.rectTransform, 0f, 25f, width, detailsHeight);
+            SetRect(row.ManualLabel.rectTransform, 0f, manualY + 2f, width * .18f, 18f);
+            SetRect(row.Strength.transform as RectTransform, width * .2f, manualY, width * .55f, 18f);
+            SetRect(row.Value.transform as RectTransform, width * .78f, manualY - 2f, width * .14f, 22f);
+            SetRect(row.LiveEffective.rectTransform, 0f, liveY, width, 18f);
             if (row.Descriptor.Directional)
             {
-                SetRect(row.Direction.transform as RectTransform, width * .35f, lowerY, width * .28f, 18f);
-                SetRect(row.DirectionValue.rectTransform, width * .67f, lowerY, width * .13f, 18f);
-                lowerY += 22f;
+                SetRect(row.DirectionLabel.rectTransform, 0f, directionY + 2f, width * .18f, 18f);
+                SetRect(row.Direction.transform as RectTransform, width * .2f, directionY, width * .55f, 18f);
+                SetRect(row.DirectionValue.rectTransform, width * .78f, directionY, width * .18f, 18f);
             }
-            SetRect(row.Continuous.transform as RectTransform, 0f, lowerY, width * .25f, 22f);
-            SetRect(row.Pulse.transform as RectTransform, width * .27f, lowerY, width * .2f, 22f);
-            SetRect(row.PulseLength.transform as RectTransform, width * .5f, lowerY, width * .12f, 22f);
-            SetRect(row.PulseHint.rectTransform, width * .63f, lowerY, width * .08f, 22f);
-            SetRect(row.Trigger.transform as RectTransform, width * .72f, lowerY, width * .23f, 22f);
+            SetRect(row.Continuous.transform as RectTransform, 0f, lowerY, width * .27f, 26f);
+            SetRect(row.Pulse.transform as RectTransform, width * .29f, lowerY, width * .22f, 26f);
+            SetRect(row.PulseLength.transform as RectTransform, width * .53f, lowerY, width * .12f, 26f);
+            SetRect(row.PulseHint.rectTransform, width * .66f, lowerY + 2f, width * .08f, 22f);
+            SetRect(row.Trigger.transform as RectTransform, width * .76f, lowerY, width * .24f, 26f);
             var reading = manualInput.GetReading(row.Descriptor.Channel);
             var availability = reading.Available ? "" : " · UNAVAILABLE";
             var pulseStatus = manualInput.GetPulseRemaining(row.Descriptor.Channel) > 0 ? " · pulse " + manualInput.GetPulseRemaining(row.Descriptor.Channel) + " ticks" : "";
-            row.LiveEffective.text = "LIVE " + Format(reading.Live) + "  →  EFFECTIVE " + Format(reading.Effective) + pulseStatus + availability;
+            row.LiveEffective.text = "LIVE " + Format(reading.Live) + "  ->  EFFECTIVE " + Format(reading.Effective) + pulseStatus + availability;
             if (row.Descriptor.Directional) row.DirectionValue.text = "dir " + FormatSigned(reading.EffectiveDirection);
             SetButtonColor(row.Override, manualInput.OverrideEnabled && manualInput.IsSelected(row.Descriptor.Channel) ? ActiveControl : Track);
             row.Strength.SetValueWithoutNotify(manualInput.GetValue(row.Descriptor.Channel));
@@ -433,6 +437,16 @@ namespace Mod
             SetButtonColor(row.Pulse, manualInput.GetWaveform(row.Descriptor.Channel) == ManualInputWaveform.Pulse ? ActiveControl : Track);
             row.Name.color = manualInput.OverrideEnabled ? Accent : Foreground;
             y += height + 4f;
+        }
+
+        private string FormatStimulationResponse()
+        {
+            var command = brain.LastCommand;
+            return "LATEST NEURAL TICK\n" +
+                "tick " + brain.SimulationTick + " · fired " + brain.FiredCount + " · processed " + brain.ProcessedCount +
+                " · queued " + brain.PendingCount + " · dropped " + brain.DroppedCount +
+                "\nREQUEST · walk " + FormatSigned(command.Walk) + " · arms " + FormatSigned(command.LeftArm) + "/" + FormatSigned(command.RightArm) +
+                " · legs " + FormatSigned(command.LeftLeg) + "/" + FormatSigned(command.RightLeg);
         }
 
         private void RefreshUi()
@@ -478,10 +492,11 @@ namespace Mod
             SetRect((RectTransform)scrollbar.transform, width - 24f, y, 12f, viewportHeight);
             var contentWidth = width - 50f;
             var contentY = 0f;
+            var showStimulation = page == 3 && hasSample && brain != null;
             SetVisible(motorElements, hasSample && brain != null && page == 0);
             SetVisible(brainElements, hasSample && brain != null && page == 2);
-            SetVisible(stimulationElements, hasSample && brain != null && page == 3);
-            body.gameObject.SetActive(page != 3);
+            SetVisible(stimulationElements, showStimulation);
+            body.gameObject.SetActive(!showStimulation);
             string text;
             if (!hasSample)
             {
@@ -497,10 +512,10 @@ namespace Mod
                     "\n\nDERIVED PROXIES\nDamage/blood loss, temperature bands, falling, vibration, proprioception and submerged hypoxia combine native readings.\nVision is nearest-collider line of sight × ambient light. Audio is external object playback. No semantic sight or smell.\nVitality uses valid health when its native baseline is unavailable.";
             }
             else text = brain == null ? "NEURAL: unavailable" : brain.DisplaySummary + "\n\nDERIVED INPUT DRIVES\n" + brain.DisplayInputSummary;
-            if (page != 3) PlaceText(body, 0f, ref contentY, contentWidth, text);
+            if (!showStimulation) PlaceText(body, 0f, ref contentY, contentWidth, text);
             if (hasSample && brain != null && page == 0) LayoutMotors(contentWidth, ref contentY);
             if (hasSample && brain != null && page == 2) LayoutBrain(contentWidth, ref contentY);
-            if (hasSample && brain != null && page == 3) LayoutStimulation(contentWidth, ref contentY);
+            if (showStimulation) LayoutStimulation(contentWidth, ref contentY);
             // Preserve the current scroll position while changing the content extent.
             content.sizeDelta = new Vector2(contentWidth, contentY + 8f);
             SetRect(interactionHint.rectTransform, 12f, height - 48f - 22f, width - 54f, 18f);
@@ -618,7 +633,11 @@ namespace Mod
             var toggle = rect.gameObject.AddComponent<Button>();
             toggle.targetGraphic = background;
             label = CreateText(rect, text, 12f, Foreground);
-            SetRect(label.rectTransform, 8f, 0f, 100f, 26f);
+            label.alignment = TextAlignmentOptions.Center;
+            label.rectTransform.anchorMin = Vector2.zero;
+            label.rectTransform.anchorMax = Vector2.one;
+            label.rectTransform.pivot = new Vector2(.5f, .5f);
+            label.rectTransform.offsetMin = label.rectTransform.offsetMax = Vector2.zero;
             toggle.onClick.AddListener(() => changed(!isOn()));
             return toggle;
         }
@@ -626,25 +645,43 @@ namespace Mod
         private static Slider CreateSlider(Transform parent, float minimum, float maximum, Action<float> changed)
         {
             var rect = CreateRect(parent, "Stimulation slider");
-            var track = rect.gameObject.AddComponent<Image>();
+            var background = rect.gameObject.AddComponent<Image>();
+            background.color = Color.clear;
+            var trackRect = CreateRect(rect, "Slider track");
+            trackRect.anchorMin = new Vector2(0f, .5f);
+            trackRect.anchorMax = new Vector2(1f, .5f);
+            trackRect.pivot = new Vector2(.5f, .5f);
+            trackRect.sizeDelta = new Vector2(0f, 8f);
+            var track = trackRect.gameObject.AddComponent<Image>();
             track.color = Track;
-            var fillRect = CreateRect(rect, "Slider fill");
+            track.raycastTarget = false;
+            var fillRect = CreateRect(trackRect, "Slider fill");
             var fill = fillRect.gameObject.AddComponent<Image>();
             fill.color = Accent;
-            fillRect.anchorMin = new Vector2(0f, 0f);
-            fillRect.anchorMax = new Vector2(.5f, 1f);
-            fillRect.offsetMin = fillRect.offsetMax = Vector2.zero;
-            var handleRect = CreateRect(rect, "Slider handle");
+            fill.raycastTarget = false;
+            fillRect.anchorMin = new Vector2(0f, .5f);
+            fillRect.anchorMax = new Vector2(0f, .5f);
+            fillRect.pivot = new Vector2(0f, .5f);
+            fillRect.sizeDelta = new Vector2(0f, 8f);
+            var handleArea = CreateRect(rect, "Slider handle area");
+            handleArea.anchorMin = new Vector2(0f, 0f);
+            handleArea.anchorMax = new Vector2(0f, 1f);
+            handleArea.pivot = new Vector2(.5f, .5f);
+            handleArea.sizeDelta = Vector2.zero;
+            var handleRect = CreateRect(handleArea, "Slider thumb");
+            handleRect.anchorMin = new Vector2(.5f, .5f);
+            handleRect.anchorMax = new Vector2(.5f, .5f);
+            handleRect.pivot = new Vector2(.5f, .5f);
             var handle = handleRect.gameObject.AddComponent<Image>();
-            handle.color = LatestBar;
-            handleRect.sizeDelta = new Vector2(8f, 22f);
+            handle.color = Foreground;
+            handleRect.sizeDelta = new Vector2(10f, 22f);
             var slider = rect.gameObject.AddComponent<Slider>();
             slider.minValue = minimum;
             slider.maxValue = maximum;
             slider.value = minimum;
             slider.direction = Slider.Direction.LeftToRight;
             slider.fillRect = fillRect;
-            slider.handleRect = handleRect;
+            slider.handleRect = handleArea;
             slider.targetGraphic = handle;
             slider.onValueChanged.AddListener(value => changed(value));
             return slider;
@@ -696,7 +733,7 @@ namespace Mod
         {
             public readonly ManualInputChannelDescriptor Descriptor;
             public readonly GameObject Root;
-            public TextMeshProUGUI Name, Details, LiveEffective, DirectionValue;
+            public TextMeshProUGUI Name, Details, ManualLabel, LiveEffective, DirectionLabel, DirectionValue;
             public Button Override;
             public Slider Strength, Direction;
             public TMP_InputField Value, PulseLength;
@@ -809,7 +846,7 @@ namespace Mod
 
         private void CreateWorldLabel()
         {
-            if (worldLabelObject != null || anchor == null) return;
+            if (worldLabelObject != null) return;
             worldLabelObject = new GameObject("Person Connectome Hover Label #" + id, typeof(RectTransform));
             var labelCanvas = worldLabelObject.AddComponent<Canvas>();
             labelCanvas.renderMode = RenderMode.WorldSpace;
@@ -829,14 +866,15 @@ namespace Mod
         private void UpdateWorldLabel()
         {
             if (worldLabelObject == null) return;
-            if (anchor == null)
+            var currentAnchor = adapter?.StatusAnchor;
+            if (currentAnchor == null)
             {
                 worldLabelObject.SetActive(false);
                 return;
             }
 
             worldLabelObject.SetActive(true);
-            worldLabelObject.transform.position = anchor.position + new Vector3(0f, 1.35f, 0f);
+            worldLabelObject.transform.position = currentAnchor.position + new Vector3(0f, 1.35f, 0f);
             worldLabel.text = "#" + id + (manualInput.OverrideEnabled ? "  MANUAL" : "");
             worldLabel.color = manualInput.OverrideEnabled ? LatestBar : Accent;
         }
