@@ -44,6 +44,7 @@ internal static class Program
             ("detached limbs remain diagnostic but cannot feed body control", DetachedLimbsDoNotControl),
             ("control clock preserves rate and caps catch-up", ControlClock),
             ("suspension clears transient events", SuspensionClearsTransientEvents),
+            ("initially disabled controllers reject events", InitiallyDisabledControllersRejectEvents),
             ("regeneration ownership and cleanup", Chemistry),
             ("front-back hierarchy routes separate channels", SideRouting),
             ("missing grip and joint do not interrupt other limbs", OptionalControls),
@@ -552,12 +553,36 @@ internal static class Program
         var adapter = (PeoplePlaygroundPersonAdapter)type.GetField("adapter", flags).GetValue(controller);
         type.GetMethod("OnDisable", flags).Invoke(controller, null);
         var floor = new GameObject("Disabled floor").AddComponent<Collider2D>();
+        var projectileObject = new GameObject("Disabled projectile");
+        projectileObject.AddComponent<ProjectileBehaviour>();
+        var projectile = projectileObject.AddComponent<Collider2D>();
         var probeType = typeof(PersonConnectomeLimbProbe);
         var enter = probeType.GetMethod("OnCollisionEnter2D", flags);
         enter.Invoke(f.Limb.GetComponent<PersonConnectomeLimbProbe>(), [new Collision2D { collider = floor, relativeVelocity = new Vector2(20, 0) }]);
+        enter.Invoke(f.Limb.GetComponent<PersonConnectomeLimbProbe>(), [new Collision2D { collider = projectile, relativeVelocity = new Vector2(20, 0) }]);
         type.GetMethod("OnEnable", flags).Invoke(controller, null);
         resumed = adapter.Read();
         Equal(0f, resumed.Impact); Equal(0f, resumed.Vibration); Equal(0f, resumed.Projectile);
+        enter.Invoke(f.Limb.GetComponent<PersonConnectomeLimbProbe>(), [new Collision2D { collider = projectile, relativeVelocity = new Vector2(20, 0) }]);
+        Equal(1f, adapter.Read().Projectile);
+    }
+
+    private static void InitiallyDisabledControllersRejectEvents()
+    {
+        var f = new Fixture();
+        var controller = f.Root.AddComponent<PersonConnectomeController>();
+        var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        var type = typeof(PersonConnectomeController);
+        type.GetMethod("Awake", flags).Invoke(controller, null);
+        var adapter = (PeoplePlaygroundPersonAdapter)type.GetField("adapter", flags).GetValue(controller);
+        var projectileObject = new GameObject("Startup projectile");
+        projectileObject.AddComponent<ProjectileBehaviour>();
+        var projectile = projectileObject.AddComponent<Collider2D>();
+        var enter = typeof(PersonConnectomeLimbProbe).GetMethod("OnCollisionEnter2D", flags);
+        enter.Invoke(f.Limb.GetComponent<PersonConnectomeLimbProbe>(), [new Collision2D { collider = projectile, relativeVelocity = new Vector2(20, 0) }]);
+        type.GetMethod("OnEnable", flags).Invoke(controller, null);
+        var frame = adapter.Read();
+        Equal(0f, frame.Impact); Equal(0f, frame.Vibration); Equal(0f, frame.Projectile);
     }
 
     private static void Vision()

@@ -25,7 +25,6 @@ namespace Mod
         private void Awake()
         {
             adapter = new PeoplePlaygroundPersonAdapter(gameObject, VisionRadius, RegisterCollision, RegisterProjectile);
-            acceptingEvents = true;
             statusDisplay = new PersonConnectomeStatusDisplay(adapter.StatusAnchor);
             brain = ConnectomeBrain.TryCreate(out var loadStatus);
             if (!adapter.IsUsable)
