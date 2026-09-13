@@ -124,7 +124,11 @@ namespace Mod
         }
 
         public bool IsSelected(ManualInputChannel channel) => selected[(int)channel];
-        public void SetSelected(ManualInputChannel channel, bool value) => selected[(int)channel] = value;
+        public void SetSelected(ManualInputChannel channel, bool value)
+        {
+            selected[(int)channel] = value;
+            if (!value) pulseRemaining[(int)channel] = 0;
+        }
         public float GetValue(ManualInputChannel channel) => values[(int)channel];
         public void SetValue(ManualInputChannel channel, float value) => values[(int)channel] = Unit(value);
         public float GetDirection(ManualInputChannel channel) => directions[(int)channel];
@@ -180,12 +184,11 @@ namespace Mod
             var index = (int)channel;
             live = Unit(live);
             liveDirection = Signed(liveDirection);
-            var overrideHasSelection = OverrideEnabled && HasSelectedChannels;
-            var selectedNow = overrideHasSelection && selected[index];
+            var selectedNow = OverrideEnabled && selected[index];
             var pulseActive = selectedNow && waveforms[index] == ManualInputWaveform.Pulse && pulseRemaining[index] > 0;
             var effective = live;
             var effectiveDirection = liveDirection;
-            if (overrideHasSelection)
+            if (OverrideEnabled)
             {
                 if (selected[index])
                 {

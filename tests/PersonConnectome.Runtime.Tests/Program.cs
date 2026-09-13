@@ -387,13 +387,14 @@ static void ManualInputModes()
     Equal(.4f, disabledBrain.TestPotentialValue(1));
 
     var noSelection = new ManualInputState();
+    noSelection.SetMode(ManualInputMode.ManualOnly);
     noSelection.SetOverrideEnabled(true);
     var noSelectionBrain = ConnectomeBrain.CreateForTest(2, new int[3], [], []);
     noSelectionBrain.SetTestPopulation("input:auditory", 0);
     noSelectionBrain.SetTestPopulation("input:hot", 1);
     noSelectionBrain.Step(frame, .05f, noSelection);
-    Equal(.25f, noSelectionBrain.TestPotentialValue(0));
-    Equal(.4f, noSelectionBrain.TestPotentialValue(1));
+    Equal(0f, noSelectionBrain.TestPotentialValue(0));
+    Equal(0f, noSelectionBrain.TestPotentialValue(1));
 
     var live = ConnectomeBrain.CreateForTest(2, new int[3], [], []);
     live.SetTestPopulation("input:auditory", 0);
@@ -475,6 +476,26 @@ static void ManualPulses()
     Equal(0, manual.GetPulseRemaining(ManualInputChannel.Warm));
     brain.Step(Healthy(), .05f, manual);
     Equal(0f, manual.GetReading(ManualInputChannel.Warm).Effective);
+    var cancelled = new ManualInputState();
+    cancelled.SetSelected(ManualInputChannel.Warm, true);
+    cancelled.SetValue(ManualInputChannel.Warm, .5f);
+    cancelled.SetWaveform(ManualInputChannel.Warm, ManualInputWaveform.Pulse);
+    cancelled.SetPulseLength(ManualInputChannel.Warm, 5);
+    cancelled.SetOverrideEnabled(true);
+    cancelled.TriggerPulse(ManualInputChannel.Warm);
+    var cancelledBrain = ConnectomeBrain.CreateForTest(1, new int[2], [], []);
+    cancelledBrain.SetTestPopulation("input:hot", 0);
+    cancelledBrain.Step(Healthy(), .05f, cancelled);
+    Equal(4, cancelled.GetPulseRemaining(ManualInputChannel.Warm));
+    cancelled.SetSelected(ManualInputChannel.Warm, false);
+    for (var i = 0; i < 3; i++) cancelledBrain.Step(Healthy(), .05f, cancelled);
+    cancelled.SetSelected(ManualInputChannel.Warm, true);
+    cancelledBrain.Step(Healthy(), .05f, cancelled);
+    Equal(0, cancelled.GetPulseRemaining(ManualInputChannel.Warm));
+    Equal(0f, cancelled.GetReading(ManualInputChannel.Warm).Effective);
+    cancelled.TriggerPulse(ManualInputChannel.Warm);
+    cancelledBrain.Step(Healthy(), .05f, cancelled);
+    Equal(.5f, cancelled.GetReading(ManualInputChannel.Warm).Effective);
     manual.TriggerPulse(ManualInputChannel.Warm);
     Equal(2, manual.GetPulseRemaining(ManualInputChannel.Warm));
     manual.SetWaveform(ManualInputChannel.Warm, ManualInputWaveform.Continuous);
@@ -492,9 +513,12 @@ static void ManualStateSafety()
     Equal(0f, first.GetDirection(ManualInputChannel.Auditory));
     first.SetSelected(ManualInputChannel.Cool, true);
     first.SetValue(ManualInputChannel.Cool, .9f);
+    first.SetWaveform(ManualInputChannel.Cool, ManualInputWaveform.Pulse);
+    first.SetPulseLength(ManualInputChannel.Cool, 3);
     first.SetOverrideEnabled(true);
     True(!second.OverrideEnabled && !second.IsSelected(ManualInputChannel.Cool), "manual state leaked between people");
     first.TriggerPulse(ManualInputChannel.Cool);
+    True(first.GetPulseRemaining(ManualInputChannel.Cool) == 3, "pulse should arm in Pulse mode");
     first.ReturnToLive();
     True(!first.OverrideEnabled && first.GetPulseRemaining(ManualInputChannel.Cool) == 0, "return to live must cancel pulses");
 }

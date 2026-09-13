@@ -387,17 +387,16 @@ namespace Mod
 
         private void LayoutStimulationRow(StimulationRow row, float width, ref float y)
         {
-            var height = row.Descriptor.Directional ? 92f : 70f;
+            var height = row.Descriptor.Directional ? 102f : 78f;
             SetRect(row.Root.transform as RectTransform, 0f, y, width, height);
             var labelWidth = width * .34f;
             SetRect(row.Name.rectTransform, 0f, 0f, labelWidth, 19f);
-            SetRect(row.Details.rectTransform, 0f, 20f, width * .66f, 18f);
+            SetRect(row.Details.rectTransform, 0f, 20f, labelWidth, 38f);
             SetRect(row.Override.transform as RectTransform, width * .8f, 0f, width * .2f, 22f);
             SetRect(row.Strength.transform as RectTransform, width * .35f, 2f, width * .28f, 18f);
-            SetRect(row.Value.textComponent.rectTransform, width * .67f, 0f, width * .12f, 22f);
             SetRect(row.Value.transform as RectTransform, width * .67f, 0f, width * .12f, 22f);
-            SetRect(row.LiveEffective.rectTransform, width * .35f, 21f, width * .45f, 18f);
-            var lowerY = 44f;
+            SetRect(row.LiveEffective.rectTransform, width * .35f, 22f, width * .45f, 18f);
+            var lowerY = 48f;
             if (row.Descriptor.Directional)
             {
                 SetRect(row.Direction.transform as RectTransform, width * .35f, lowerY, width * .28f, 18f);
@@ -406,7 +405,6 @@ namespace Mod
             }
             SetRect(row.Continuous.transform as RectTransform, 0f, lowerY, width * .25f, 22f);
             SetRect(row.Pulse.transform as RectTransform, width * .27f, lowerY, width * .2f, 22f);
-            SetRect(row.PulseLength.textComponent.rectTransform, width * .5f, lowerY, width * .12f, 22f);
             SetRect(row.PulseLength.transform as RectTransform, width * .5f, lowerY, width * .12f, 22f);
             SetRect(row.PulseHint.rectTransform, width * .63f, lowerY, width * .08f, 22f);
             SetRect(row.Trigger.transform as RectTransform, width * .72f, lowerY, width * .23f, 22f);
@@ -658,12 +656,20 @@ namespace Mod
             var background = rect.gameObject.AddComponent<Image>();
             background.color = Track;
             var field = rect.gameObject.AddComponent<TMP_InputField>();
-            var text = CreateText(rect, "", 12f, Foreground);
+            var viewport = CreateRect(rect, "Numeric text viewport");
+            viewport.anchorMin = Vector2.zero;
+            viewport.anchorMax = Vector2.one;
+            viewport.pivot = new Vector2(.5f, .5f);
+            viewport.offsetMin = new Vector2(4f, 2f);
+            viewport.offsetMax = new Vector2(-4f, -2f);
+            viewport.gameObject.AddComponent<RectMask2D>();
+            var text = CreateText(viewport, "", 12f, Foreground);
             text.alignment = TextAlignmentOptions.Center;
             text.enableWordWrapping = false;
             text.rectTransform.anchorMin = Vector2.zero;
             text.rectTransform.anchorMax = Vector2.one;
             text.rectTransform.offsetMin = text.rectTransform.offsetMax = Vector2.zero;
+            field.textViewport = viewport;
             field.textComponent = text;
             field.lineType = TMP_InputField.LineType.SingleLine;
             field.contentType = TMP_InputField.ContentType.DecimalNumber;
@@ -852,6 +858,12 @@ namespace Mod
             canvasObject = null;
             motorElements.Clear();
             brainElements.Clear();
+            stimulationElements.Clear();
+            stimulationSections.Clear();
+            Array.Clear(stimulationRows, 0, stimulationRows.Length);
+            stimulationHeading = stimulationPerson = stimulationStatus = stimulationExplanation = stimulationResponse = stimulationModeHeading = null;
+            stimulationMaster = mixedMode = manualOnlyMode = zeroManual = returnToLive = null;
+            stimulationMasterLabel = null;
             ReleaseMap();
         }
 

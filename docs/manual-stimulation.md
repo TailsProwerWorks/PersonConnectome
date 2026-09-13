@@ -10,7 +10,7 @@ The tab reports one of these states:
 
 - **INACTIVE · live input**: the master override is off, so normal native sensing is used.
 - **ACTIVE · Mixed**: checked channels replace their live encoded values; unchecked channels remain live.
-- **ACTIVE · Manual only**: once one or more channels are checked, those channels use their manual values and all other supported external input routes contribute zero new stimulation. With no channels selected, enabling the master alone leaves live input unchanged.
+- **ACTIVE · Manual only**: checked channels use their manual values and all unselected supported external input routes contribute zero new stimulation, including when no channels are selected.
 - **SUSPENDED**: the existing native lifecycle has stopped or suspended input, such as terminal state or unavailable health data.
 
 The header also shows **MANUAL INPUT** while the selected person's override is active, including when the panel is collapsed and while viewing another tab.
