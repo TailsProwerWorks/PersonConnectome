@@ -212,6 +212,8 @@ namespace Mod
             firedIds.Clear();
             LastSensoryDrive = 0f;
             sensoryQueued = 0;
+            hasPreviousLight = false;
+            previousLight = lightOnDrive = lightOffDrive = 0f;
             lightDrive = audioDrive = touchDrive = damageDrive = regionalTouchDrive = smallVisualDrive = opticRollDrive = gravityDrive = jointDrive = hotDrive = coldDrive = approachDrive = 0f;
             lastCommand = new MotorCommand();
             forwardFilter = backwardFilter = yawFilter = leftLegFilter = rightLegFilter = locomotionDwell = 0f;

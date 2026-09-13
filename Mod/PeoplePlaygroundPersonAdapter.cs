@@ -217,15 +217,16 @@ namespace Mod
             if (limb == null || limbs.Contains(limb)) return;
             limbs.Add(limb);
             limbControllers.Add(new PersonConnectomeLimbController(limb, root.transform));
-            AttachProbe(limb.gameObject, root.transform, reportCollision, reportProjectile);
+            AttachProbe(limb.gameObject, root.transform, reportCollision, reportProjectile, () => IsConnectedLimb(limb));
         }
 
-        private void AttachProbe(GameObject limbObject, Transform ownerRoot, Action<float> reportCollision, Action<float> reportProjectile)
+        private void AttachProbe(GameObject limbObject, Transform ownerRoot, Action<float> reportCollision, Action<float> reportProjectile, Func<bool> isConnected)
         {
             var probe = limbObject.GetComponent<PersonConnectomeLimbProbe>() ?? limbObject.AddComponent<PersonConnectomeLimbProbe>();
 
             probe.OwnerRoot = ownerRoot;
             probe.IsOwned = IsOwnTransform;
+            probe.IsConnected = isConnected;
             probe.Report = reportCollision;
             probe.ReportProjectile = reportProjectile;
         }
@@ -552,6 +553,7 @@ namespace Mod
                     probe.Report = null;
                     probe.ReportProjectile = null;
                     probe.IsOwned = null;
+                    probe.IsConnected = null;
                 }
             }
         }

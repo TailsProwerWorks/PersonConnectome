@@ -194,10 +194,11 @@ namespace Mod
         public Action<float> Report;
         public Action<float> ReportProjectile;
         public Func<Transform, bool> IsOwned;
+        public Func<bool> IsConnected;
 
         private void OnCollisionEnter2D(Collision2D collision)
         {
-            if (IsExternal(collision))
+            if (IsSourceConnected() && IsExternal(collision))
             {
                 Report?.Invoke(collision.relativeVelocity.magnitude);
                 ReportProjectileIfApplicable(collision);
@@ -206,10 +207,15 @@ namespace Mod
 
         private void OnCollisionStay2D(Collision2D collision)
         {
-            if (IsExternal(collision) && Report != null)
+            if (IsSourceConnected() && IsExternal(collision) && Report != null)
             {
                 Report(collision.relativeVelocity.magnitude * .25f);
             }
+        }
+
+        private bool IsSourceConnected()
+        {
+            return IsConnected == null || IsConnected();
         }
 
         private bool IsExternal(Collision2D collision)

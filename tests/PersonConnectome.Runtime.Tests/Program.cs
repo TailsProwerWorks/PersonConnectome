@@ -29,6 +29,7 @@ var tests = new (string Name, Action Run)[]
     ("fresh sensory inputs bypass recurrent backlog", FreshSensoryInputsBypassRecurrentBacklog),
     ("terminal reset clears state and recovers", TerminalResetClearsStateAndRecovers),
     ("invalid health suspends without resetting neural state", InvalidHealthSuspendsWithoutReset),
+    ("invalid health invalidates light transition baseline", InvalidHealthInvalidatesLightBaseline),
     ("healthy standing leaves sensory headroom", HealthyStateLeavesSensoryHeadroom),
     ("injury and native adrenaline do not synthesize endocrine commands", NativeStressDoesNotDriveChemistry),
     ("internal chemistry does not fabricate a sensory receptor", InternalStatesDoNotFabricateReceptors),
@@ -380,6 +381,16 @@ static void InvalidHealthSuspendsWithoutReset()
     True(!brain.IsStopped, "unavailable health should suspend output rather than stop the neural state");
     brain.Step(Healthy());
     Equal(tick + 1, brain.TestSimulationTick);
+}
+
+static void InvalidHealthInvalidatesLightBaseline()
+{
+    var brain = OneNeuronBrain();
+    brain.SetTestPopulation("type:Mi1", 0);
+    brain.Step(Healthy(light: 0f));
+    brain.Step(default);
+    brain.Step(Healthy(light: 1f));
+    Equal(0, brain.FiredCount);
 }
 
 static void SubmersionWithoutNeuralMotorActivityIsStill()

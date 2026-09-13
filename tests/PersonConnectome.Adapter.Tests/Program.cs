@@ -39,6 +39,7 @@ internal static class Program
             ("falling is distinct from walking and floor contact", Falling),
             ("contact impacts do not fabricate hearing", Impacts),
             ("detached owned limbs remain excluded from collision signals", DetachedOwnCollisions),
+            ("detached source probes cannot report collisions", DetachedSourceCollisions),
             ("detached limbs remain diagnostic but cannot feed body control", DetachedLimbsDoNotControl),
             ("control clock preserves rate and caps catch-up", ControlClock),
             ("regeneration ownership and cleanup", Chemistry),
@@ -428,6 +429,33 @@ internal static class Program
         Equal(0, projectileReports);
         f.Adapter.Dispose();
         True(probe.IsOwned == null && probe.Report == null && probe.ReportProjectile == null);
+    }
+
+    private static void DetachedSourceCollisions()
+    {
+        var f = new Fixture();
+        var detached = Fixture.AddLimb(f.Root, "DetachedArm");
+        f.Person.Limbs = [f.Limb, detached];
+        f.Adapter.Read();
+        detached.transform.SetParent(null);
+        detached.IsDismembered = true;
+
+        var floor = new GameObject("Detached floor").AddComponent<Collider2D>();
+        var projectileObject = new GameObject("Detached projectile");
+        projectileObject.AddComponent<ProjectileBehaviour>();
+        var projectile = projectileObject.AddComponent<Collider2D>();
+        var callbackFlags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        var enter = typeof(PersonConnectomeLimbProbe).GetMethod("OnCollisionEnter2D", callbackFlags);
+        var stay = typeof(PersonConnectomeLimbProbe).GetMethod("OnCollisionStay2D", callbackFlags);
+        var probe = detached.GetComponent<PersonConnectomeLimbProbe>();
+        enter.Invoke(probe, [new Collision2D { collider = floor, relativeVelocity = new Vector2(20, 0) }]);
+        stay.Invoke(probe, [new Collision2D { collider = floor, relativeVelocity = new Vector2(20, 0) }]);
+        enter.Invoke(probe, [new Collision2D { collider = projectile, relativeVelocity = new Vector2(20, 0) }]);
+
+        var frame = f.Adapter.Read();
+        Equal(0f, frame.Impact);
+        Equal(0f, frame.Vibration);
+        Equal(0f, frame.Projectile);
     }
 
     private static void DetachedLimbsDoNotControl()
