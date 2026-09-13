@@ -51,9 +51,11 @@ namespace Mod
         private RawImage mapImage;
         private Texture2D mapTexture;
         private Color32[] mapBackground, mapPixels;
+        private byte[] mapFlashAges;
         private int[] mapIndexes;
         private BrainMapSample map;
         private const int MapWidth = 256, MapHeight = 320;
+        private const byte MapFlashLifetime = 4;
         private static readonly string[] Pages = { "Overview", "Senses", "Brain" };
         private static readonly string[] MotorNames = { "Walk", "Left arm", "Right arm", "Left leg", "Right leg", "Core", "Head" };
         private static readonly string[] PopulationNames = { "type:DNp09", "type:MDN", "type:DNp01", "type:MN9", "type:LC4", "type:LPLC2", "type:R1-R6", "motor" };
@@ -62,6 +64,8 @@ namespace Mod
         private static readonly Color Track = new Color(.1f, .15f, .19f, 1f);
         private static readonly Color Foreground = new Color(.91f, .95f, .97f, 1f);
         private static readonly Color Accent = new Color(.4f, .86f, .95f, 1f);
+        private static readonly Color LatestBar = new Color(.98f, 1f, 1f, 1f);
+        private static readonly Color EmptyBar = new Color(.12f, .25f, .3f, 1f);
         private static readonly Color[] MapColors =
         {
             new Color(.18f, .65f, .66f), new Color(.52f, .6f, .82f),
@@ -340,23 +344,25 @@ namespace Mod
             PlaceText(historyHeading, 0f, ref y, width, "SPIKES / NEURAL TICK\nWhole graph · latest " + historyCount + " ticks");
             var peak = 0f;
             for (var i = 0; i < historyCount; i++) peak = Mathf.Max(peak, history[i]);
-            PlaceText(historyScale, 0f, ref y, width, "Scale peak " + peak.ToString("0") + " · one bar per processed tick");
+            var latest = historyCount == 0 ? 0f : history[(historyIndex - 1 + history.Length) % history.Length];
+            PlaceText(historyScale, 0f, ref y, width, "LATEST " + latest.ToString("0") + " SPIKES · scale peak " + peak.ToString("0") + " · one bar per processed tick");
             SetRect(historyBackground.rectTransform, 0f, y, width, 64f);
             for (var i = 0; i < spikeBars.Length; i++)
             {
                 var value = i < historyCount ? history[(historyIndex - historyCount + i + history.Length) % history.Length] : 0f;
                 var h = value / Mathf.Max(1f, peak) * 64f;
+                spikeBars[i].color = value <= 0f ? EmptyBar : i == historyCount - 1 ? LatestBar : Accent;
                 SetRect(spikeBars[i].rectTransform, i * width / history.Length, y + 64f - h, Mathf.Max(1f, width / history.Length - 1f), h);
             }
             y += 76f;
-            PlaceText(mapHeading, 0f, ref y, width, "SOMA MAP · RAW X/Z PROJECTION\n" + (map == null ? "No located soma data" : map.Points.Length + " sampled / " + map.LocatedCount + " located / " + map.NeuronCount + " neurons"));
+            PlaceText(mapHeading, 0f, ref y, width, "SOMA ACTIVITY · RAW X/Z PROJECTION\n" + (map == null ? "No located soma data" : map.Points.Length + " sampled / " + map.LocatedCount + " located / " + map.NeuronCount + " neurons"));
             var imageWidth = Mathf.Min(width, MapWidth);
             var imageHeight = imageWidth * MapHeight / MapWidth;
             SetRect(mapImage.rectTransform, (width - imageWidth) * .5f, y, imageWidth, imageHeight);
             mapImage.texture = mapTexture;
             mapImage.enabled = mapTexture != null;
             y += imageHeight + 10f;
-            PlaceText(mapCaption, 0f, ref y, width, "White = fired in captured tick " + capturedTick + ". Missing positions are omitted; dark points are not proof of inactivity between captures. Sampling changes only this view.");
+            PlaceText(mapCaption, 0f, ref y, width, "LIVE CAPTURE · TICK " + capturedTick + " · " + latest.ToString("0") + " graph spikes\nWhite = latest captured fires · cyan = recent captured activity · dark points are not proof of inactivity. Sampling changes only this view.");
             for (var i = 0; i < Legend.Length; i++)
             {
                 SetRect(legendColors[i].rectTransform, 0f, y + 3f, 9f, 9f);
@@ -492,6 +498,7 @@ namespace Mod
             mapTexture = null;
             map = null;
             mapBackground = mapPixels = null;
+            mapFlashAges = null;
             mapIndexes = null;
         }
 
@@ -504,10 +511,18 @@ namespace Mod
                 map = brain.BrainMap;
                 BuildMap();
             }
+            for (var i = 0; i < mapFlashAges.Length; i++)
+            {
+                if (mapFlashAges[i] > 0) mapFlashAges[i]--;
+            }
             Array.Copy(mapBackground, mapPixels, mapPixels.Length);
             for (var i = 0; i < map.Points.Length; i++)
             {
-                if (brain.DidFire(map.Points[i].NeuronId)) mapPixels[mapIndexes[i]] = new Color32(255, 255, 255, 255);
+                if (brain.DidFire(map.Points[i].NeuronId)) MarkMapFlash(mapIndexes[i]);
+            }
+            for (var i = 0; i < mapPixels.Length; i++)
+            {
+                if (mapFlashAges[i] > 0) mapPixels[i] = MapFlashColor(mapFlashAges[i]);
             }
             capturedTick = brain.SimulationTick;
             mapTexture.SetPixels32(mapPixels);
@@ -521,6 +536,7 @@ namespace Mod
             mapTexture.filterMode = FilterMode.Point;
             mapBackground = new Color32[MapWidth * MapHeight];
             mapPixels = new Color32[mapBackground.Length];
+            mapFlashAges = new byte[mapBackground.Length];
             for (var i = 0; i < mapBackground.Length; i++) mapBackground[i] = new Color32(9, 14, 19, 255);
             mapIndexes = new int[map.Points.Length];
             if (map.Points.Length == 0) return;
@@ -543,6 +559,32 @@ namespace Mod
                 mapIndexes[i] = index;
                 mapBackground[index] = MapColors[point.Category];
             }
+        }
+
+        private void MarkMapFlash(int index)
+        {
+            var centerX = index % MapWidth;
+            var centerY = index / MapWidth;
+            for (var y = centerY - 1; y <= centerY + 1; y++)
+            {
+                for (var x = centerX - 1; x <= centerX + 1; x++)
+                {
+                    if (x < 0 || x >= MapWidth || y < 0 || y >= MapHeight) continue;
+                    var distance = Mathf.Abs(x - centerX) + Mathf.Abs(y - centerY);
+                    if (distance > 1) continue;
+                    var age = distance == 0 ? MapFlashLifetime : (byte)(MapFlashLifetime - 2);
+                    var target = y * MapWidth + x;
+                    if (mapFlashAges[target] < age) mapFlashAges[target] = age;
+                }
+            }
+        }
+
+        private static Color32 MapFlashColor(byte age)
+        {
+            if (age >= MapFlashLifetime) return new Color32(255, 255, 255, 255);
+            if (age >= 3) return new Color32(150, 244, 255, 255);
+            if (age >= 2) return new Color32(68, 188, 232, 255);
+            return new Color32(32, 112, 158, 255);
         }
     }
 }
