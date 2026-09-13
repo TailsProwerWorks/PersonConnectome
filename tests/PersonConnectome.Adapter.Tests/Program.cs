@@ -57,6 +57,7 @@ internal static class Program
             ("native motor requests use bounded walking and angular units", NativeMotorUnits),
             ("freeze cutoff clears actuators consistently", FreezeCutoff),
             ("walking requests persist between neural ticks", WalkingRequestMaintenance),
+            ("walking maintenance stops on current native state", WalkingMaintenanceChecksCurrentState),
             ("component disable clears commands and chemistry", Disable),
             ("never-activated cleanup preserves game state", NeverActivated),
             ("neutral chemistry preserves adrenaline", NeutralChemistry),
@@ -921,6 +922,8 @@ internal static class Program
         var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
         var type = typeof(PersonConnectomeController);
         type.GetField("adapter", flags).SetValue(controller, f.Adapter);
+        var order = (DefaultExecutionOrderAttribute)type.GetCustomAttributes(typeof(DefaultExecutionOrderAttribute), false).Single();
+        Equal(-1000f, order.Order);
         f.Person.DesiredWalkingDirection = .45f; // Simulate native decay before the next neural tick.
         type.GetMethod("LateUpdate", flags).Invoke(controller, null);
         Equal(.55f, f.Person.DesiredWalkingDirection);
@@ -929,6 +932,16 @@ internal static class Program
         f.Person.DesiredWalkingDirection = .45f;
         type.GetMethod("LateUpdate", flags).Invoke(controller, null);
         Equal(.45f, f.Person.DesiredWalkingDirection);
+    }
+
+    private static void WalkingMaintenanceChecksCurrentState()
+    {
+        var f = new Fixture(); f.Adapter.Read();
+        f.Adapter.Apply(new MotorCommand { Walk = .3f, Avoid = 1f }, false);
+        f.Person.Braindead = true;
+        f.Person.DesiredWalkingDirection = 0f;
+        f.Adapter.RefreshWalkingRequest();
+        Equal(0f, f.Person.DesiredWalkingDirection);
     }
 
     private static void FiniteInputs()

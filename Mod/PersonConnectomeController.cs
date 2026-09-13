@@ -4,6 +4,7 @@ using UnityEngine;
 
 namespace Mod
 {
+    [DefaultExecutionOrder(-1000)]
     public sealed class PersonConnectomeController : MonoBehaviour
     {
         // Configuration is intentionally exposed in the spawned object's inspector.

@@ -531,13 +531,19 @@ namespace Mod
         public void RefreshWalkingRequest()
         {
             if (!walkingIntentActive) return;
-            if (!IsUsable || !hasReadFrame || !lastFrame.Alive || !lastFrame.ConsciousnessValid || lastFrame.Consciousness <= .8f)
+            if (!IsUsable || !hasReadFrame || !lastFrame.Alive || !lastFrame.ConsciousnessValid || lastFrame.Consciousness <= .8f || !HasCurrentMovementPermission())
             {
                 Stop();
                 return;
             }
 
             ApplyWalking(walkingIntent);
+        }
+
+        private bool HasCurrentMovementPermission()
+        {
+            return person != null && !person.Braindead && IsFinite(person.AverageHealth) && person.AverageHealth > DeathHealthThreshold &&
+                IsFinite(person.Consciousness) && person.Consciousness > .8f;
         }
 
         public void Suspend()

@@ -28,6 +28,11 @@ namespace UnityEngine
         }
     }
     public class MonoBehaviour : Component { }
+    public sealed class DefaultExecutionOrderAttribute : Attribute
+    {
+        public readonly int Order;
+        public DefaultExecutionOrderAttribute(int order) { Order = order; }
+    }
     public class GameObject : Object
     {
         public string name;
