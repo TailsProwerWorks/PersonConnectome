@@ -42,10 +42,10 @@ Older overload tests now use threshold-crossing inputs, so they continue exercis
 
 ## Files changed in this follow-up
 
-- Mod/RuntimeBrain.cs: two-phase integration/firing scheduler, counters and outgoing-loop work.
-- Mod/PersonConnectomeStatusDisplay.cs: explicit integration/decay/dropped-spike labels.
-- tests/PersonConnectome.Runtime.Tests/Program.cs and ConnectomeBrainTestHooks.cs: regressions and benchmark instrumentation.
-- README.md and Mod/README.txt: player explanation of the new limit.
+- src/Core/LifBrain.cs: two-phase integration/firing scheduler, counters and outgoing-loop work.
+- src/UI/StatusDisplay.cs: explicit integration/decay/dropped-spike labels.
+- tests/PersonConnectome.Runtime.Tests/Core/Program.cs and LifBrainTestHooks.cs: regressions and benchmark instrumentation.
+- README.md and assets/README.txt: player explanation of the new limit.
 - docs/architecture.md, api-compatibility.md, PROVENANCE.md, minecraft-adaptation.md, sensory-mapping.md, manual-game-test.md and this file: current semantics, measurements and native checks.
 - docs/AUDIT-2026-09-14.md: marks the earlier sweep's scheduler results as historical.
 
@@ -61,15 +61,15 @@ All listed checks exited 0:
 
 | Command/check | Result |
 |---|---|
-| dotnet format PersonConnectome.sln --verify-no-changes --no-restore | Pass |
-| dotnet build PersonConnectome.sln -c Release | 0 warnings, 0 errors |
+| dotnet format PersonConnectome.slnx --verify-no-changes --no-restore | Pass |
+| dotnet build PersonConnectome.slnx -c Release | 0 warnings, 0 errors |
 | dotnet run --project tests/PersonConnectome.Runtime.Tests -c Release | 53 scenarios passed |
 | dotnet run --project tests/PersonConnectome.Adapter.Tests -c Release | 58 scenarios passed |
-| dotnet build Mod/PersonConnectome.Mod.csproj -c Release | 0 warnings, 0 errors |
-| pwsh -NoProfile -File scripts/Test-GameCompilation.ps1 | 12 scripts / 22 installed compiler references; documented-rule guard and both installed semantic scanners passed |
+| dotnet build src/PersonConnectome.Mod.csproj -c Release | 0 warnings, 0 errors |
+| pwsh -NoProfile -File scripts/ai/Test-GameCompilation.ps1 | 12 scripts / 22 installed compiler references; documented-rule guard and both installed semantic scanners passed |
 | PowerShell Language.Parser | All 6 scripts parsed |
-| pwsh -NoProfile -File scripts/Test-DeployDiscovery.ps1 | Discovery and README byte-limit tests passed |
-| pwsh -NoProfile -File scripts/Deploy-Mod.ps1 -WhatIf | Registered Steam discovery and MSBuild install forwarding passed |
+| pwsh -NoProfile -File scripts/ai/Test-DeployDiscovery.ps1 | Discovery and README byte-limit tests passed |
+| pwsh -NoProfile -File scripts/deploy/Deploy-Mod.ps1 -WhatIf | Registered Steam discovery and MSBuild install forwarding passed |
 | git diff --check | Pass |
 
 Local deployment with explicit discovered GameInstall and -NoBuild verified all 16 deployed files against expected hashes. The PNG carrier stayed byte-identical and CreatorUGCIdentity 3800353718 was preserved. The embedded Git marker remains 4dfaaef7312b, the existing HEAD rather than a new commit of these working-tree changes. No Workshop upload was performed. Native gameplay was not run.

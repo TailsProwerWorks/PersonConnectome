@@ -4,7 +4,7 @@ A People Playground Human variation controlled by a bounded neural simulation us
 
 ## Play
 
-1. Copy the contents listed by `Mod/mod.json`, `Mod/README.txt`, the thumbnail and the PNG carrier into `People Playground/Mods/PersonConnectome`, or use the deployment script below.
+1. Copy the contents listed by `src/mod.json`, `assets/README.txt`, the thumbnail and the PNG carrier into `People Playground/Mods/PersonConnectome`, or use the deployment script below.
 2. Enable **Person Connectome** with **Shady Code Rejection enabled**.
 3. Spawn **Person Connectome (Active)** from **Entities**. Stock Humans are not modified.
 4. Use the screen panel at the top center. **Prev / Next** selects a controlled person; its number and world coordinates identify it. New spawns reuse the lowest number freed by deletion, Undo or disabling a controller; existing people keep their numbers. The separate controlled count reports current registered people. **A- / A+** adjusts text size; **Collapse** keeps a small header visible. Drag the title bar to move the panel; drag its bottom-right corner to resize it smaller or larger. Use the mouse wheel or scrollbar within each page to reach all readings. The panel stays within the screen; sizing and position last for this session.
@@ -20,7 +20,7 @@ The panel shows the age of the last input sample, measured control-loop time, an
 
 ## What controls the person
 
-The game supplies health, body, environment and contact data. The adapter normalizes those readings, supported sensory encoders pass selected signals to the single `Mod/RuntimeBrain.cs` implementation and pinned sparse graph, and a heuristic decoder maps actual descending/motor-neuron activity to Human requests.
+The game supplies health, body, environment and contact data. The adapter normalizes those readings, supported sensory encoders pass selected signals to the single `src/Core/LifBrain.cs` implementation and pinned sparse graph, and a heuristic decoder maps actual descending/motor-neuron activity to Human requests.
 
 There is no independent water-paddling oscillator or sensor-only escape command. Motor requests change by at most eight normalized units per elapsed game second (elapsed time capped at 0.25 seconds per step). This damps abrupt reversals; it does not prove effective walking, balance or swimming. Terminal state and unavailable/low consciousness clear motor requests immediately. The Minecraft adaptation now includes injury-event input, regional contact, coarse audio frequency bands, geometric looming/small-object cues, body-rotation input and filtered locomotor/turning readout, alongside the existing light, joint and hot/cold routes. [Adaptation coverage](docs/minecraft-adaptation.md) explains what can transfer to a game Human and what remains unsupported. Their input scales and fly-to-human motor decoder remain engineering choices. See the [exact mapping, measurements and limits](docs/sensory-mapping.md).
 
@@ -58,15 +58,15 @@ The mod does not synthesize random telemetry or neural commands. Mapped readings
 Requires .NET 10 SDK, PowerShell 7 for the offline script checks, and installed People Playground assemblies for the `net48` game project. No NuGet packages are required.
 
 ```powershell
-dotnet format PersonConnectome.sln --verify-no-changes --no-restore
-dotnet build PersonConnectome.sln -c Release
+dotnet format PersonConnectome.slnx --verify-no-changes --no-restore
+dotnet build PersonConnectome.slnx -c Release
 dotnet run --project tests/PersonConnectome.Runtime.Tests -c Release
 dotnet run --project tests/PersonConnectome.Adapter.Tests -c Release
-dotnet build Mod/PersonConnectome.Mod.csproj -c Release
-pwsh -NoProfile -File scripts/Test-ModSourceSafety.ps1
-pwsh -NoProfile -File scripts/Test-GameCompilation.ps1
-pwsh -NoProfile -File scripts/Test-DeployDiscovery.ps1
-.\scripts\Deploy-Mod.ps1 -WhatIf
+dotnet build src/PersonConnectome.Mod.csproj -c Release
+pwsh -NoProfile -File scripts/ai/Test-ModSourceSafety.ps1
+pwsh -NoProfile -File scripts/ai/Test-GameCompilation.ps1
+pwsh -NoProfile -File scripts/ai/Test-DeployDiscovery.ps1
+.\scripts\deploy\Deploy-Mod.ps1 -WhatIf
 git diff --check
 ```
 
@@ -77,24 +77,25 @@ The game-compilation check uses the exact assembly references in the installed c
 Deploy from an appropriately permitted PowerShell:
 
 ```powershell
-.\scripts\Deploy-Mod.ps1
+.\scripts\deploy\Deploy-Mod.ps1
 # Or select an installation explicitly:
-.\scripts\Deploy-Mod.ps1 -GameInstall 'D:\Games\People Playground'
+.\scripts\deploy\Deploy-Mod.ps1 -GameInstall 'D:\Games\People Playground'
 ```
 
 Discovery uses registered Steam paths and modern or legacy `steamapps/libraryfolders.vdf`. The resolved install is forwarded to MSBuild. `-GameInstall` takes precedence; an invalid explicit path fails rather than silently selecting another installation. `-WhatIf` validates the package and shows the destination/planned build without building or writing the game directory. `-NoBuild` is for an already verified build. Direct `dotnet` builds use the project default Steam directory unless `-p:PeoplePlaygroundInstall='D:\Games\People Playground'` is supplied.
 
-Deployment copies manifest scripts, `mod.json`, a README with the current Git commit marker, the thumbnail and the PNG carrier, then verifies SHA-256. It removes only the known stale raw `.flyb.gz` from older deployments. Other game-directory files are preserved. Rebuild the carrier with `scripts/Build-ConnectomeCarrier.ps1`; the raw payload stays a build input and its identity constants must change deliberately before a different payload is accepted.
+Deployment copies manifest scripts, `mod.json`, a README with the current Git commit marker, the thumbnail and the PNG carrier, then verifies SHA-256. It removes only the known stale raw `.flyb.gz` from older deployments. Other game-directory files are preserved. Rebuild the carrier with `scripts/build/Build-ConnectomeCarrier.ps1`; the raw payload stays a build input and its identity constants must change deliberately before a different payload is accepted.
 
 ## Code and attribution
 
 For the contributor workflow, architecture guardrails, validation commands and recommended reasoning models, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-- `Mod/RuntimeBrain.cs`: single authoritative sparse LIF simulation and decoder.
-- `Mod/PeoplePlaygroundPersonAdapter.cs` / `PersonConnectomeLimbController.cs`: native sensing and local actuation.
-- `Mod/PersonConnectomeController.cs`: Unity lifecycle, timing and collision probes.
-- `Mod/ConnectomeRuntimeAsset*.cs`: validated texture-carrier/FLYB decoding and shared immutable graph data.
-- `Mod/BrainVisualization.cs` / `PersonConnectomeStatusDisplay.cs`: bounded diagnostic sample and screen overlay.
+- `src/Core/LifBrain.cs`: single authoritative sparse LIF simulation and decoder.
+- `src/Adapters/PeoplePlaygroundPersonAdapter.cs` / `src/Adapters/PersonConnectomeLimbController.cs`: native sensing and local actuation.
+- `src/Mod/PersonConnectomeController.cs`: Unity lifecycle, timing and collision probes.
+- `src/Core/ConnectomeAsset.cs` and `src/Core/ConnectomeAssetReader.cs`: game texture-carrier/FLYB decoding and shared immutable graph data.
+- `src/UI/BrainMap.cs` / `src/UI/StatusDisplay.cs`: bounded diagnostic sample and screen overlay.
+- `src/Adapters/PeoplePlaygroundFlyAdapter.cs`: disabled future-body slot; see [fly adapter follow-up](docs/fly-adapter-follow-up.md).
 - `tests/`: shipped sources linked against narrow doubles. These verify contracts, not Unity physics/rendering.
 
 [Architecture](docs/architecture.md), [API compatibility](docs/api-compatibility.md), [provenance](docs/PROVENANCE.md) and [manual checks](docs/manual-game-test.md) describe the boundaries.

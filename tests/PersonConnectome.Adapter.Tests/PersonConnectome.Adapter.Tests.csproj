@@ -6,12 +6,21 @@
     <Nullable>disable</Nullable>
     <LangVersion>latest</LangVersion>
     <EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <!-- Game doubles intentionally model Unity's nullable-at-runtime API; keep
+         their legacy permissive surface while accepting annotations in linked sources. -->
+    <NoWarn>$(NoWarn);CS0649;CS8632</NoWarn>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../../Mod/PeoplePlaygroundPersonAdapter.cs" Link="Runtime/PeoplePlaygroundPersonAdapter.cs" />
-    <Compile Include="../../Mod/PersonConnectomeLimbController.cs" Link="Runtime/PersonConnectomeLimbController.cs" />
-    <Compile Include="../../Mod/PersonConnectomeController.cs" Link="Runtime/PersonConnectomeController.cs" />
-    <Compile Include="../../Mod/RuntimeTypes.cs" Link="Runtime/RuntimeTypes.cs" />
-    <Compile Include="../../Mod/ManualInput.cs" Link="Runtime/ManualInput.cs" />
+    <Compile Include="../../src/Adapters/PeoplePlaygroundPersonAdapter.cs" Link="src/Adapters/PeoplePlaygroundPersonAdapter.cs" />
+    <Compile Include="../../src/Adapters/PersonConnectomeLimbController.cs" Link="src/Adapters/PersonConnectomeLimbController.cs" />
+    <Compile Include="../../src/Adapters/PersonConnectomeLimbProbe.cs" Link="src/Adapters/PersonConnectomeLimbProbe.cs" />
+    <Compile Include="../../src/Adapters/LiquidAndStatusReader.cs" Link="src/Adapters/LiquidAndStatusReader.cs" />
+    <Compile Include="../../src/Adapters/PeoplePlaygroundFlyAdapter.cs" Link="src/Adapters/PeoplePlaygroundFlyAdapter.cs" />
+    <Compile Include="../../src/Mod/PersonConnectomeController.cs" Link="src/Mod/PersonConnectomeController.cs" />
+    <Compile Include="../../src/Core/IBodyActuator.cs" Link="src/Core/IBodyActuator.cs" />
+    <Compile Include="../../src/Core/IBodySensor.cs" Link="src/Core/IBodySensor.cs" />
+    <Compile Include="../../src/Core/MotorCommand.cs" Link="src/Core/MotorCommand.cs" />
+    <Compile Include="../../src/Core/SensoryFrame.cs" Link="src/Core/SensoryFrame.cs" />
+    <Compile Include="../../src/UI/ManualInputState.cs" Link="src/UI/ManualInputState.cs" />
   </ItemGroup>
 </Project>

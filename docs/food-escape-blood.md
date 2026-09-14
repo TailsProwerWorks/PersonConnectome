@@ -37,24 +37,24 @@ All 28 mapping cases completed. Zero walking for isolated food cues is an observ
 
 ## Files changed in this follow-up
 
-- Mod/ManualInput.cs, RuntimeTypes.cs, RuntimeBrain.cs: food routes, explicit burst state and truthful input/output fields.
-- Mod/PeoplePlaygroundPersonAdapter.cs: stock food identity/contact, injury history/loss, blood readings, jukebox/attached audio.
-- tests/PersonConnectome.Adapter.Tests/GameDoubles.cs and Program.cs; tests/PersonConnectome.Runtime.Tests/Program.cs: focused native-boundary, reset, routing and real-asset checks.
-- README.md, Mod/README.txt, docs/architecture.md, docs/api-compatibility.md, docs/PROVENANCE.md, docs/sensory-mapping.md, docs/minecraft-adaptation.md, docs/manual-game-test.md and this report: behavior, attribution and limitations. Existing unrelated edits, including thumb.png, are preserved.
+- src/UI/ManualInputState.cs, Core/SensoryFrame.cs and Core/MotorCommand.cs, Core/LifBrain.cs: food routes, explicit burst state and truthful input/output fields.
+- src/Adapters/PeoplePlaygroundPersonAdapter.cs: stock food identity/contact, injury history/loss, blood readings, jukebox/attached audio.
+- tests/PersonConnectome.Adapter.Tests/Adapters/GameDoubles.cs and Program.cs; tests/PersonConnectome.Runtime.Tests/Core/Program.cs: focused native-boundary, reset, routing and real-asset checks.
+- README.md, assets/README.txt, docs/architecture.md, docs/api-compatibility.md, docs/PROVENANCE.md, docs/sensory-mapping.md, docs/minecraft-adaptation.md, docs/manual-game-test.md and this report: behavior, attribution and limitations. Existing unrelated edits, including thumb.png, are preserved.
 
 ## Validation
 
 | Command/check | Final result |
 | --- | --- |
-| dotnet format PersonConnectome.sln --verify-no-changes --no-restore | PASS, exit 0 |
-| dotnet build PersonConnectome.sln -c Release | PASS, 0 warnings, 0 errors |
+| dotnet format PersonConnectome.slnx --verify-no-changes --no-restore | PASS, exit 0 |
+| dotnet build PersonConnectome.slnx -c Release | PASS, 0 warnings, 0 errors |
 | dotnet run --project tests/PersonConnectome.Runtime.Tests -c Release | PASS, 58 scenarios |
 | dotnet run --project tests/PersonConnectome.Adapter.Tests -c Release | PASS, 72 scenarios |
-| dotnet build Mod/PersonConnectome.Mod.csproj -c Release | PASS, 0 warnings, 0 errors |
-| pwsh -NoProfile -File scripts/Test-GameCompilation.ps1 | PASS, 12 scripts against 22 exact installed compiler references; documented syntax and both installed semantic scanners accept |
-| PowerShell parser, scripts/*.ps1 | PASS, 6 scripts; no scripts changed in this follow-up |
-| pwsh -NoProfile -File scripts/Test-DeployDiscovery.ps1 | PASS, discovery and 5000-byte UTF-8 README boundary checks |
-| pwsh -NoProfile -File scripts/Deploy-Mod.ps1 -WhatIf | PASS, discovered installed game forwarded to planned MSBuild |
+| dotnet build src/PersonConnectome.Mod.csproj -c Release | PASS, 0 warnings, 0 errors |
+| pwsh -NoProfile -File scripts/ai/Test-GameCompilation.ps1 | PASS, 12 scripts against 22 exact installed compiler references; documented syntax and both installed semantic scanners accept |
+| PowerShell parser, scripts/**/*.ps1 | PASS, 6 scripts; no scripts changed in this follow-up |
+| pwsh -NoProfile -File scripts/ai/Test-DeployDiscovery.ps1 | PASS, discovery and 5000-byte UTF-8 README boundary checks |
+| pwsh -NoProfile -File scripts/deploy/Deploy-Mod.ps1 -WhatIf | PASS, discovered installed game forwarded to planned MSBuild |
 | dotnet run --project tests/PersonConnectome.Runtime.Tests -c Release -- --mapping-report | PASS, 28 cases |
 | git diff --check | PASS, exit 0; existing LF/CRLF conversion warnings only |
 | Local Deploy-Mod.ps1 -GameInstall <registered installed game> -NoBuild | PASS, all 16 source/deployed hashes verified; Workshop identity 3800353718 preserved |

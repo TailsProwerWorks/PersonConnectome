@@ -1,0 +1,10 @@
+<Project>
+  <!-- Keep generated artifacts out of src/ while the deployable project lives
+       there. Test projects retain their normal per-project output folders. -->
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'PersonConnectome.Mod'">
+    <OutputPath>$(MSBuildThisFileDirectory)bin\$(Configuration)\</OutputPath>
+    <IntermediateOutputPath>$(MSBuildThisFileDirectory)obj\$(Configuration)\</IntermediateOutputPath>
+    <OutDir>$(MSBuildThisFileDirectory)bin\$(Configuration)\</OutDir>
+  </PropertyGroup>
+
+</Project>

@@ -1,6 +1,6 @@
 # MaleCNS runtime provenance
 
-The downloaded source payload is `Mod/connectome/malecns-v1.0.flyb.gz`. Because People Playground's Shady Code Rejection rules forbid direct file and binary-reader APIs in mod scripts, the exact compressed bytes are packed into `Mod/connectome/malecns-v1.0.png` and loaded with the documented `ModAPI.LoadTexture` API. The raw payload is retained as a repository/build input; deployment copies only the PNG carrier. The game-facing loader accounts for Unity's bottom-to-top `Texture2D.GetPixels32()` ordering when reconstructing the original byte stream before decompression.
+The downloaded source payload is `assets/connectome/malecns-v1.0.flyb.gz`. Because People Playground's Shady Code Rejection rules forbid direct file and binary-reader APIs in mod scripts, the exact compressed bytes are packed into `assets/connectome/malecns-v1.0.png` and loaded with the documented `ModAPI.LoadTexture` API. The raw payload is retained as a repository/build input; deployment copies only the PNG carrier. The game-facing loader accounts for Unity's bottom-to-top `Texture2D.GetPixels32()` ordering when reconstructing the original byte stream before decompression.
 
 | Field | Value |
 |---|---|
@@ -8,11 +8,11 @@ The downloaded source payload is `Mod/connectome/malecns-v1.0.flyb.gz`. Because 
 | Source | [MaleCNS download page](https://male-cns.janelia.org/download/) |
 | Prepared derivative | [fly-brain-minecraft FLYB asset](https://github.com/blendi-remade/fly-brain-minecraft/blob/main/src/main/resources/connectome/malecns-v1.0.flyb.gz) |
 | Retrieved | 2026-09-11 |
-| Runtime format | gzip-compressed FLYB v1, little-endian CSR |
+| Mod format | gzip-compressed FLYB v1, little-endian CSR |
 | Neurons | 176,422 |
 | Retained connections | 6,287,749 |
 | Threshold | connection synapse weight >= 5 |
-| Runtime asset SHA-256 | `E33DF182BED7A6F3EA279DAF4790A82B05706D3D41E819A6A80C0473E8C559F3` |
+| Mod asset SHA-256 | `E33DF182BED7A6F3EA279DAF4790A82B05706D3D41E819A6A80C0473E8C559F3` |
 | License | Male CNS data CC BY 4.0; see `THIRD_PARTY_NOTICES` |
 
 ## Transformations represented by the asset
@@ -37,7 +37,7 @@ claim that every fly synapse is represented biologically exactly.
 ## Reproducibility and licensing boundary
 
 The original MaleCNS acquisition requires the source's documented bulk files or
-neuPrint access and may require an account/token. Runtime never contacts the
+neuPrint access and may require an account/token. Mod never contacts the
 network. Rebuilding the derivative must preserve the MaleCNS CC BY attribution,
 the exact source dataset/version, the threshold and transformations above, and
 must update the checksum and counts here. FlyWire CC BY-NC data is not mixed into
@@ -45,7 +45,7 @@ this asset.
 
 ## Diagnostic soma map
 
-The same pinned FLYB payload also contains interleaved float32 soma X/Y/Z coordinates (raw neuPrint voxel coordinates; NaN for missing positions), as documented by the upstream [FLYB builder](https://github.com/blendi-remade/fly-brain-minecraft/blob/main/tools/build_flyb.py). The current payload has 141,781 neurons with three finite coordinates. Runtime preserves every finite position, retaining original compact neuron IDs and superclass categories. The diagnostic X/Z projection preserves relative coordinates with a common scale and does not invent positions for neurons without coordinates. All 176,422 graph neurons remain in the simulation.
+The same pinned FLYB payload also contains interleaved float32 soma X/Y/Z coordinates (raw neuPrint voxel coordinates; NaN for missing positions), as documented by the upstream [FLYB builder](https://github.com/blendi-remade/fly-brain-minecraft/blob/main/tools/build_flyb.py). The current payload has 141,781 neurons with three finite coordinates. Mod preserves every finite position, retaining original compact neuron IDs and superclass categories. The diagnostic X/Z projection preserves relative coordinates with a common scale and does not invent positions for neurons without coordinates. All 176,422 graph neurons remain in the simulation.
 
 Colored flashes correspond to displayed IDs in this runtime's actual fired set for the displayed capture. All located positions are retained, but the 256 x 320 raster can merge nearby points and zoom enlarges that raster rather than reprojecting source coordinates. The image is not a human-brain reconstruction, a membrane-voltage measurement or a complete activity recording. Whole-graph spike history and population fired/member bars are separate diagnostics. Their values are not asserted to be biological firing rates.
 

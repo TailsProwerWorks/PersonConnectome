@@ -1,0 +1,1722 @@
+using Mod;
+using Mod.Core;
+using Mod.UI;
+using Mod.Tests;
+using System.Diagnostics;
+using UnityEngine;
+
+const string InputLight = "input:light";
+const string InputAuditory = "input:auditory";
+const string InputTactile = "input:tactile";
+const string InputTouchHead = "input:touch-head";
+const string InputTouchArms = "input:touch-arms";
+const string InputTouchLegs = "input:touch-legs";
+const string InputTouchCore = "input:touch-core";
+const string InputOpticRoll = "input:optic-roll";
+const string InputHot = "input:hot";
+const string InputCold = "input:cold";
+const string InputGravity = "input:gravity";
+const string TypeORN_DM1 = "type:ORN_DM1";
+const string TypeLB3b = "type:LB3b";
+const string TypeMi1 = "type:Mi1";
+const string TypeL2 = "type:L2";
+const string TypeLPLC2 = "type:LPLC2";
+const string TypeLC11 = "type:LC11";
+const string TypeLC4 = "type:LC4";
+const string TypeDNp09 = "type:DNp09";
+const string TypeMDN = "type:MDN";
+const string TypeDNg60 = "type:DNg60";
+const string DescendingNeuron = "descending_neuron";
+const string CallbackSensory = "cb_sensory";
+
+if (args.Contains("--benchmark"))
+{
+    BundledPayloadIdentity();
+    BenchmarkScheduler();
+    return 0;
+}
+
+if (args.Contains("--mapping-report"))
+{
+    MappingReport();
+    return 0;
+}
+
+var tests = new (string Name, Action Run)[]
+{
+    ("qualified escape starts a bounded neural walking burst from idle", EscapeLocomotion),
+    ("signed input accumulation is order independent", SignedInputAccumulationIsOrderIndependent),
+    ("refractory expires after silent ticks", RefractoryExpiresAfterSilentTicks),
+    ("refractory propagation resumes on exact recovery tick", RefractoryPropagationRecovers),
+    ("same-tick refractory targets do not consume the budget", SameTickRefractoryTargets),
+    ("refractory work cannot starve fresh input", RefractoryWorkCannotStarveFreshInput),
+    ("sensory drive resumes on exact refractory recovery", SensoryRefractoryRecovery),
+    ("overload preserves fresh propagated input", OverloadPreservesFreshPropagatedInput),
+    ("excess firing events are dropped without replay", ExcessFiringEventsDoNotReplay),
+    ("overload cursor includes interspersed priority positions", OverloadCursorIncludesInterspersedPriorityPositions),
+    ("fresh sensory inputs bypass recurrent backlog", FreshSensoryInputsBypassRecurrentBacklog),
+    ("terminal reset clears state and recovers", TerminalResetClearsStateAndRecovers),
+    ("invalid health suspends without resetting neural state", InvalidHealthSuspendsWithoutReset),
+    ("invalid health invalidates light transition baseline", InvalidHealthInvalidatesLightBaseline),
+    ("healthy standing leaves sensory headroom", HealthyStateLeavesSensoryHeadroom),
+    ("injury and native adrenaline do not synthesize endocrine commands", NativeStressDoesNotDriveChemistry),
+    ("internal chemistry does not fabricate a sensory receptor", InternalStatesDoNotFabricateReceptors),
+    ("blood and vitality do not fabricate visual input", NormalizedBloodAndVitalityDriveInjury),
+    ("submersion without neural motor activity is still", SubmersionWithoutNeuralMotorActivityIsStill),
+    ("supported shallow water keeps normal control", SupportedShallowWaterKeepsNormalControl),
+    ("hazard cannot force walking without motor activity", HazardCannotForceWalkingWithoutMotorActivity),
+    ("lost movement authority clears motor requests", LostMovementAuthorityClearsMotorRequests),
+    ("motor reversals are rate limited", MotorReversalsAreRateLimited),
+    ("R7 R8 variants receive light drive", RetinaVariantsReceiveLightDrive),
+    ("bundled payload identity", BundledPayloadIdentity),
+    ("food gameplay cues reach only supported sensory populations", FoodSensoryRoutes),
+    ("bundled sensory and locomotor annotations resolve", BundledSensoryMappings),
+    ("modalities reach distinct input populations with signed lateralization", SensoryModalities),
+    ("global luminance changes require a valid continuous baseline", GlobalLuminanceChanges),
+    ("damage events and regional contact stay in their tactile routes", InjuryAndRegionalRoutes),
+    ("geometric visual channels reject unavailable and nonfinite features", GeometricVisualRoutes),
+    ("visual looming, body hazards and DNp01 remain separate threat sources", ThreatSourcesRemainSeparated),
+    ("escape requests require recent evidence while raw spikes remain visible", EscapeRequiresContext),
+    ("auditory band weighting uses measured bands or broad fallback", AuditoryBandRouting),
+    ("neural locomotion modes bridge pulses and expire without input", LocomotionTemporalBehavior),
+    ("turning populations map lateral activity with immediate safety clearing", NeuralTurning),
+    ("head-relative visual bearings reach neural turning through synapses", HeadRelativeTurningLoop),
+    ("spatial visual inputs preserve both sides without multiplying drive", SpatialVisualInputs),
+    ("named locomotor populations exclude feeding and wing activity", NamedMotorReadout),
+    ("real graph repeats identical input histories deterministically", RealGraphIsDeterministic),
+    ("sustained full-payload load respects firing and state bounds", SustainedFullPayloadLoadStaysRealtimeBounded),
+    ("portable SHA-256 vectors and padding boundaries", PayloadChecksumVectors),
+    ("malformed dataset and counts reject", MalformedDatasetAndCountsReject),
+    ("soma sample retains real IDs and omits missing positions", SomaSample),
+    ("diagnostic spikes match actual runtime and reset", DiagnosticSpikes),
+    ("telemetry fits supported screens with corner clearance", TelemetryFitsScreens),
+    ("telemetry drag stays reachable and resizing can shrink", TelemetryDragAndResize),
+    ("display numbers recycle after undo without renumbering survivors", TelemetryNumbers),
+    ("manual input resolves mixed and manual-only routes", ManualInputModes),
+    ("manual feature routes work without natural stimuli", ManualFeatureRoutes),
+    ("manual directional input follows world-axis weighting", ManualDirection),
+    ("manual pulses consume only valid neural ticks", ManualPulses),
+    ("manual state stays finite, isolated and cancellable", ManualStateSafety),
+    ("invalid health disarms manual input", InvalidHealthDisarmsManualInput),
+    ("unknown channels do not mask valid signals", MixedUnknownSignals),
+    ("subthreshold inputs and residual decay do not consume spike slots", SubthresholdIntegration),
+    ("capped spikes preserve priority and fresh arrivals", CappedSpikePriority),
+    ("uncapped ticks match an independent synchronous reference", SynchronousReference)
+};
+
+var failures = 0;
+foreach (var (name, run) in tests)
+{
+    try
+    {
+        run();
+        Console.WriteLine("PASS " + name);
+    }
+    catch (Exception exception)
+    {
+        failures++;
+        await Console.Error.WriteLineAsync("FAIL " + name + ": " + exception.Message);
+    }
+}
+
+return failures;
+
+static void MappingReport()
+{
+    BundledPayloadIdentity();
+    Console.WriteLine("Fresh real graph per case; 40 ticks at 0.05 game seconds. Amplitudes are engineered, not Hz.");
+    var cases = new (string Name, string Population, Action<SensoryFrameBox> Configure)[]
+    {
+        ("quiet", InputLight, _ => { }),
+        ("food-nearby", TypeORN_DM1, x => { x.Frame.FoodCuesValid = true; x.Frame.FoodNearbyCue = 1f; }),
+        ("food-contact", TypeLB3b, x => { x.Frame.FoodCuesValid = true; x.Frame.FoodContactCue = 1f; }),
+        ("light", InputLight, x => x.Frame.Light = 1f),
+        ("light-on", TypeMi1, x => x.Frame.Light = 1f),
+        ("light-off", TypeL2, x => x.Frame.Light = 0f),
+        ("audio-left", InputAuditory, x => { x.Frame.Sound = 1f; x.Frame.SoundDirection = -1f; x.Frame.SoundDirectionValid = true; }),
+        ("audio-right", InputAuditory, x => { x.Frame.Sound = 1f; x.Frame.SoundDirection = 1f; x.Frame.SoundDirectionValid = true; }),
+        ("impact", InputTactile, x => x.Frame.Impact = 1f),
+        ("damage-half-pulse", InputTouchHead, x => x.Frame.DamageEvent = .5f),
+        ("damage-full-pulse", InputTouchHead, x => x.Frame.DamageEvent = 1f),
+        ("head-contact", InputTouchHead, x => { x.Frame.RegionalTouchValid = true; x.Frame.TouchHead = 1f; }),
+        ("arm-contact", InputTouchArms, x => { x.Frame.RegionalTouchValid = true; x.Frame.TouchArms = 1f; }),
+        ("leg-contact", InputTouchLegs, x => { x.Frame.RegionalTouchValid = true; x.Frame.TouchLegs = 1f; }),
+        ("core-contact", InputTouchCore, x => { x.Frame.RegionalTouchValid = true; x.Frame.TouchCore = 1f; }),
+        ("loom", TypeLPLC2, x => { x.Frame.Vision = 1f; x.Frame.VisualGeometryValid = true; x.Frame.VisualAngularSize = 60f; x.Frame.VisualExpansion = 200f; }),
+        ("small-moving", TypeLC11, x => { x.Frame.Vision = 1f; x.Frame.VisualGeometryValid = true; x.Frame.VisualAngularSize = 10f; x.Frame.VisualAngularSpeed = 100f; }),
+        ("roll", InputOpticRoll, x => { x.Frame.Light = 1f; x.Frame.AngularVelocityValid = true; x.Frame.AngularVelocity = 300f; }),
+        ("audio-low", InputAuditory, x => { x.Frame.Sound = 1f; x.Frame.SoundSpectrumValid = true; x.Frame.SoundLow = 1f; }),
+        ("audio-high", InputAuditory, x => { x.Frame.Sound = 1f; x.Frame.SoundSpectrumValid = true; x.Frame.SoundHigh = 1f; }),
+        ("hot", InputHot, x => x.Frame.Heat = 1f),
+        ("cold", InputCold, x => x.Frame.Cold = 1f),
+        ("joint-motion", "input:joint-motion", x => { x.Frame.JointMotion = 1f; x.Frame.JointSensingValid = true; }),
+        ("tilt-left", InputGravity, x => { x.Frame.SignedTilt = -1f; x.Frame.TiltValid = true; }),
+        ("tilt-right", InputGravity, x => { x.Frame.SignedTilt = 1f; x.Frame.TiltValid = true; }),
+        ("approach-left", TypeLC4, x => { x.Frame.VisualApproach = 1f; x.Frame.VisionHeadBearingDegrees = -90f; x.Frame.VisionHeadBearingValid = true; }),
+        ("approach-right", TypeLC4, x => { x.Frame.VisualApproach = 1f; x.Frame.VisionHeadBearingDegrees = 90f; x.Frame.VisionHeadBearingValid = true; }),
+        ("spatial-two-approaches", TypeLC4, x =>
+        {
+            x.Frame.VisualFieldValid = true;
+            x.Frame.SetView(1, new VisualObservation { Observed = true, GeometryValid = true, Strength = 1f, BearingDegrees = -45f, AngularSize = 60f, Expansion = 200f });
+            x.Frame.SetView(3, new VisualObservation { Observed = true, GeometryValid = true, Strength = 1f, BearingDegrees = 45f, AngularSize = 60f, Expansion = 200f });
+        })
+    };
+    foreach (var (name, population, configure) in cases)
+    {
+        var brain = LifBrain.TryCreate(out var status);
+        True(brain is not null, status);
+        var input = new SensoryFrameBox { Frame = Healthy() };
+        configure(input);
+        if (name == "light-on") brain.Step(Healthy(light: 0f));
+        if (name == "light-off") brain.Step(Healthy(light: 1f));
+        long spikes = 0, inputSpikes = 0, dropped = 0;
+        var peakWalk = 0f;
+        for (var tick = 0; tick < 40; tick++)
+        {
+            var command = brain.Step(input.Frame, .05f);
+            spikes += brain.FiredCount;
+            inputSpikes += brain.PopulationFiredCount(population);
+            dropped += brain.DroppedCount;
+            peakWalk = Math.Max(peakWalk, Math.Abs(command.Walk));
+            if (name.EndsWith("-pulse", StringComparison.Ordinal)) input.Frame.DamageEvent = 0f;
+        }
+        var connectivity = brain.TestPopulationConnectivity(population);
+        Console.WriteLine(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"MAP {name}: members={brain.PopulationCount(population)} edges={connectivity.Edges} signedMembers={connectivity.NonzeroSignMembers} inputSpikes={inputSpikes} graphSpikes={spikes} dropped={dropped} peakAbsWalk={peakWalk:0.000}"));
+    }
+}
+
+static void TelemetryFitsScreens()
+{
+    foreach (var (width, height) in new[] { (800, 600), (1280, 720), (1920, 1080), (3840, 2160) })
+        foreach (var textScale in new[] { .8f, 1f, 1.6f })
+            ValidateTelemetryScreen(width, height, textScale);
+}
+
+static void ValidateTelemetryScreen(int width, int height, float textScale)
+{
+    var expanded = TelemetryLayout.Create(width, height, textScale, false);
+    var collapsed = TelemetryLayout.Create(width, height, textScale, true);
+    var cornerSpace = (width - expanded.Width * expanded.Scale) / 2f;
+    if (cornerSpace < 159.9f) throw new InvalidOperationException("Telemetry covers the reserved screen corners.");
+    if (expanded.Height * expanded.Scale > height - 15.9f) throw new InvalidOperationException("Telemetry extends off-screen.");
+    if (expanded.Width < 399.9f || expanded.Height < 359.9f) throw new InvalidOperationException("Controls or viewport lose their minimum space.");
+    if (!ApproximatelyEqual(collapsed.Width, expanded.Width) || !ApproximatelyEqual(collapsed.Scale, expanded.Scale) || !ApproximatelyEqual(collapsed.Height, 48f))
+        throw new InvalidOperationException("Collapse moves or resizes the header.");
+}
+
+static void BenchmarkScheduler()
+{
+    for (var run = 1; run <= 3; run++)
+    {
+        var brain = LifBrain.TryCreate(out var status);
+        True(brain is not null, status);
+        var sensory = Healthy(velocity: 1f, light: 1f, sound: 1f, touch: 1f, physicalContact: 1f, heartbeat: 1f);
+        for (var tick = 0; tick < 30; tick++) brain.Step(sensory);
+        var times = new double[120];
+        long processed = 0, dropped = 0, refractory = 0, deferred = 0;
+        var peakEdges = 0; var peakSpikes = 0;
+        var allocated = GC.GetAllocatedBytesForCurrentThread();
+        for (var tick = 0; tick < times.Length; tick++)
+        {
+            var started = Stopwatch.GetTimestamp();
+            brain.Step(sensory);
+            times[tick] = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            peakEdges = Math.Max(peakEdges, brain.TestTraversedEdges);
+            peakSpikes = Math.Max(peakSpikes, brain.FiredCount);
+            processed += brain.ProcessedCount;
+            dropped += brain.DroppedCount;
+            refractory += brain.TestRefractoryActiveCount;
+            deferred += brain.ActiveCount - brain.PendingCount;
+        }
+        allocated = GC.GetAllocatedBytesForCurrentThread() - allocated;
+        Array.Sort(times);
+        Console.WriteLine(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"BENCH run={run} meanMs={times.Average():0.00} p95Ms={times[113]:0.00} maxMs={times[^1]:0.00} peakEdges={peakEdges} peakSpikes={peakSpikes} allocatedBytes={allocated} processed={processed} dropped={dropped} nextRefractory={refractory} nextWithoutInput={deferred}"));
+    }
+}
+
+static void TelemetryDragAndResize()
+{
+    foreach (var (width, height) in new[] { (800, 600), (1280, 720), (1920, 1080), (3840, 2160) })
+    {
+        foreach (var textScale in new[] { .8f, 1f, 1.6f })
+        {
+            var normal = TelemetryLayout.Create(width, height, textScale, false);
+            var small = TelemetryLayout.Create(width, height, textScale, false, 360f, 300f);
+            True(small.Width * small.Scale < normal.Width * normal.Scale && small.Height * small.Scale < normal.Height * normal.Scale, "resize cannot shrink the panel");
+            Equal(normal.Scale, small.Scale);
+            foreach (var offset in new[] { -100000f, 0f, 100000f })
+            {
+                var x = small.ClampHorizontal(width, offset);
+                var y = small.ClampVertical(height, offset);
+                var half = small.Width * small.Scale * .5f;
+                True(width * .5f + x - half >= 7.9f && width * .5f + x + half <= width - 7.9f, "drag loses a horizontal edge");
+                True(y >= 7.9f && y + small.Height * small.Scale <= height - 7.9f, "drag loses the header or resize handle");
+            }
+        }
+    }
+}
+
+static void RefractoryExpiresAfterSilentTicks()
+{
+    var brain = OneNeuronBrain();
+    brain.SetTestPending(0, 1f);
+    brain.Step(Healthy());
+    Equal(1, brain.TestFiredCount);
+
+    brain.SetTestPending(0, 1f);
+    brain.Step(Healthy());
+    Equal(0, brain.TestFiredCount);
+
+    for (var i = 0; i < 4; i++) brain.Step(Healthy());
+    brain.SetTestPending(0, 1f);
+    brain.Step(Healthy());
+    Equal(1, brain.TestFiredCount);
+}
+
+static void OverloadPreservesFreshPropagatedInput()
+{
+    const int count = 24001;
+    var rows = new int[count + 1];
+    for (var i = 1; i < rows.Length; i++) rows[i] = 1;
+    var brain = LifBrain.CreateForTest(count, rows, [count - 1], [.5f]);
+    brain.SetTestActiveRange(count, 1f);
+    brain.SetTestPending(0, 1f);
+    brain.SetTestPending(count - 1, 1f);
+    brain.Step(Healthy());
+    Equal(.5f, brain.TestPendingValue(count - 1));
+}
+
+static void ExcessFiringEventsDoNotReplay()
+{
+    const int count = 24001;
+    var brain = LifBrain.CreateForTest(count, new int[count + 1], [], []);
+    brain.SetTestActiveRange(count, 1f);
+    brain.Step(Healthy());
+    Equal(1, brain.TestDroppedCount);
+    Equal(0f, brain.TestPotentialValue(count - 1));
+
+    brain.Step(Healthy());
+    Equal(0, brain.TestDroppedCount);
+    Equal(0f, brain.TestPotentialValue(count - 1));
+}
+
+static void OverloadCursorIncludesInterspersedPriorityPositions()
+{
+    const int count = 24001;
+    var brain = LifBrain.CreateForTest(count, new int[count + 1], [], []);
+    brain.SetTestActiveRange(count, 1f);
+    brain.SetTestPopulation(InputLight, 12000);
+    brain.Step(Healthy(light: 1f));
+    Equal(24000L, brain.TestBacklogCursor);
+}
+
+static void TerminalResetClearsStateAndRecovers()
+{
+    var brain = OneNeuronBrain();
+    brain.SetTestPending(0, 1f);
+    brain.Step(new SensoryFrame { Alive = false, HealthValid = true });
+    Equal(0, brain.TestPendingCount);
+    Equal(0L, brain.TestSimulationTick);
+    Equal(0L, brain.TestBacklogCursor);
+    brain.SetTestPending(0, 1f);
+    brain.SetTestNeuronMetadata(0, DescendingNeuron, "R");
+    brain.SetTestPopulation(TypeDNp09, 0);
+    var moving = brain.Step(Healthy());
+    Equal(1, brain.TestFiredCount);
+    True(moving.Walk > 0f, "motor activity should create a request before terminal reset");
+    var stopped = brain.Step(new SensoryFrame { Alive = true, BrainDead = true });
+    Equal(0f, stopped.Walk);
+    True(brain.IsStopped, "brain-dead state must stop the runtime");
+}
+
+static void HealthyStateLeavesSensoryHeadroom()
+{
+    var brain = OneNeuronBrain();
+    brain.Step(Healthy(touch: 1f, physicalContact: 1f, heartbeat: 1f));
+    var standing = brain.TestSensoryDrive;
+    True(standing > 0f && standing < 1f, "healthy standing must retain sensory headroom");
+    brain.Step(Healthy(touch: 1f, physicalContact: 1f, heartbeat: 1f, velocity: .2f, sound: .2f));
+    True(brain.TestSensoryDrive > standing && brain.TestSensoryDrive < 1f, "movement and sound must modulate healthy standing drive");
+}
+
+static void NormalizedBloodAndVitalityDriveInjury()
+{
+    var brain = OneNeuronBrain();
+    brain.Step(new SensoryFrame
+    {
+        Alive = true,
+        HealthValid = true,
+        Health = 1f,
+        Oxygen = 1f,
+        OxygenValid = true,
+        Consciousness = 1f,
+        ConsciousnessValid = true,
+        Blood = 0f,
+        Vitality = 1f,
+        Circulation = 1f
+    });
+    Equal(0f, brain.TestSensoryDrive);
+
+    brain.Step(new SensoryFrame
+    {
+        Alive = true,
+        HealthValid = true,
+        Health = 1f,
+        Oxygen = 1f,
+        OxygenValid = true,
+        Consciousness = 1f,
+        ConsciousnessValid = true,
+        Blood = 1f,
+        BloodValid = true,
+        Vitality = 0f,
+        VitalityValid = true,
+        Circulation = 1f
+    });
+    Equal(0f, brain.TestSensoryDrive);
+
+    brain.Step(new SensoryFrame
+    {
+        Alive = true,
+        Vitality = 1f
+    });
+    Equal(0f, brain.TestSensoryDrive);
+}
+
+static void HazardCannotForceWalkingWithoutMotorActivity()
+{
+    var brain = OneNeuronBrain();
+    brain.SetTestPopulation(TypeLC4, 0);
+    brain.SetTestPending(0, 1f);
+    var command = brain.Step(new SensoryFrame
+    {
+        Alive = true,
+        HealthValid = true,
+        Health = 1f,
+        Oxygen = 1f,
+        OxygenValid = true,
+        Consciousness = 1f,
+        ConsciousnessValid = true,
+        Vitality = 1f,
+        Circulation = 1f,
+        Nearby = 1f,
+        NearbyDirection = 1f,
+        Fire = 1f
+    });
+    Equal(0f, command.Walk);
+}
+
+static void SignedInputAccumulationIsOrderIndependent()
+{
+    var orders = new[]
+    {
+        new[] { 0, 1, 2 }, [0, 2, 1], [1, 0, 2],
+        [1, 2, 0], [2, 0, 1], [2, 1, 0]
+    };
+    foreach (var order in orders)
+    {
+        var brain = LifBrain.CreateForTest(4, [0, 1, 2, 3, 3], [3, 3, 3], [4f, 4f, -4f]);
+        foreach (var source in order) brain.SetTestPending(source, 1f);
+        brain.Step(Healthy());
+        Equal(4f, brain.TestPendingValue(3));
+        brain.Step(Healthy());
+        True(brain.DidFire(3), "mixed excitation/inhibition should produce the same target spike for every source order");
+    }
+}
+
+static void TelemetryNumbers()
+{
+    var pool = new TelemetryIdentityPool();
+    var first = new object(); var second = new object(); var replacement = new object();
+    Equal(1, pool.Acquire(first)); Equal(2, pool.Acquire(second));
+    Equal(1, pool.Acquire(first)); // Repeated enable must not consume another number.
+    pool.Release(first);
+    Equal(1, pool.Acquire(replacement)); Equal(2, pool.Acquire(second));
+    pool.Release(first); // Disable followed by Destroy cannot release the replacement's slot.
+    Equal(1, pool.Acquire(replacement));
+    Equal(3, pool.Acquire(first)); // Restoring an old object cannot duplicate an active number.
+    pool.Release(second); Equal(3, pool.Acquire(first));
+    pool.Release(first); pool.Release(replacement);
+    for (var i = 0; i < 100; i++)
+    {
+        var spawned = new object(); Equal(1, pool.Acquire(spawned));
+        pool.Release(spawned); pool.Release(spawned);
+    }
+    pool.Release(new object()); pool.Release(null);
+    Equal(1, pool.Acquire(new object()));
+    var rejected = false;
+    try { pool.Acquire(null); }
+    catch (ArgumentNullException) { rejected = true; }
+    True(rejected, "a null owner cannot reserve a display number");
+}
+
+static void ManualInputModes()
+{
+    var frame = Healthy(sound: .25f) with { Heat = .4f };
+    var disabledManual = new ManualInputState();
+    disabledManual.SetSelected(ManualInputChannel.Auditory, true);
+    disabledManual.SetValue(ManualInputChannel.Auditory, 1f);
+    var disabledBrain = LifBrain.CreateForTest(2, new int[3], [], []);
+    disabledBrain.SetTestPopulation(InputAuditory, 0);
+    disabledBrain.SetTestPopulation(InputHot, 1);
+    disabledBrain.Step(frame, .05f, disabledManual);
+    Equal(.25f, disabledBrain.TestPotentialValue(0));
+    Equal(.4f, disabledBrain.TestPotentialValue(1));
+
+    var noSelection = new ManualInputState();
+    noSelection.SetMode(ManualInputMode.ManualOnly);
+    noSelection.SetOverrideEnabled(true);
+    var noSelectionBrain = LifBrain.CreateForTest(2, new int[3], [], []);
+    noSelectionBrain.SetTestPopulation(InputAuditory, 0);
+    noSelectionBrain.SetTestPopulation(InputHot, 1);
+    noSelectionBrain.Step(frame, .05f, noSelection);
+    Equal(0f, noSelectionBrain.TestPotentialValue(0));
+    Equal(0f, noSelectionBrain.TestPotentialValue(1));
+
+    var live = LifBrain.CreateForTest(2, new int[3], [], []);
+    live.SetTestPopulation(InputAuditory, 0);
+    live.SetTestPopulation(InputHot, 1);
+    live.Step(frame, .05f);
+    Equal(.25f, live.TestPotentialValue(0));
+    Equal(.4f, live.TestPotentialValue(1));
+
+    var mixed = new ManualInputState();
+    mixed.SetSelected(ManualInputChannel.Auditory, true);
+    mixed.SetValue(ManualInputChannel.Auditory, .8f);
+    mixed.SetOverrideEnabled(true);
+    var mixedBrain = LifBrain.CreateForTest(2, new int[3], [], []);
+    mixedBrain.SetTestPopulation(InputAuditory, 0);
+    mixedBrain.SetTestPopulation(InputHot, 1);
+    mixedBrain.Step(frame, .05f, mixed);
+    Equal(.8f, mixedBrain.TestPotentialValue(0));
+    Equal(.4f, mixedBrain.TestPotentialValue(1));
+    True(mixed.GetReading(ManualInputChannel.Auditory).Selected);
+    Equal(.25f, mixed.GetReading(ManualInputChannel.Auditory).Live);
+    Equal(.8f, mixed.GetReading(ManualInputChannel.Auditory).Effective);
+
+    mixed.SetMode(ManualInputMode.ManualOnly);
+    var isolated = LifBrain.CreateForTest(2, new int[3], [], []);
+    isolated.SetTestPopulation(InputAuditory, 0);
+    isolated.SetTestPopulation(InputHot, 1);
+    isolated.Step(frame, .05f, mixed);
+    Equal(.8f, isolated.TestPotentialValue(0));
+    Equal(0f, isolated.TestPotentialValue(1));
+}
+
+static void ManualFeatureRoutes()
+{
+    var manual = new ManualInputState();
+    manual.SetSelected(ManualInputChannel.LoomingVisual, true);
+    manual.SetValue(ManualInputChannel.LoomingVisual, .6f);
+    manual.SetOverrideEnabled(true);
+    var brain = LifBrain.CreateForTest(1, new int[2], [], []);
+    brain.SetTestPopulation(TypeLPLC2, 0);
+    brain.Step(Healthy(), .05f, manual);
+    Equal(.6f, brain.TestPotentialValue(0));
+    Equal(0f, manual.GetReading(ManualInputChannel.LoomingVisual).Live);
+    Equal(.6f, manual.GetReading(ManualInputChannel.LoomingVisual).Effective);
+}
+
+static void ManualDirection()
+{
+    var manual = new ManualInputState();
+    manual.SetSelected(ManualInputChannel.Auditory, true);
+    manual.SetValue(ManualInputChannel.Auditory, .5f);
+    manual.SetDirection(ManualInputChannel.Auditory, 1f);
+    manual.SetOverrideEnabled(true);
+    var brain = LifBrain.CreateForTest(2, new int[3], [], []);
+    brain.SetTestPopulation(InputAuditory, 0, 1);
+    brain.SetTestNeuronMetadata(0, CallbackSensory, "L");
+    brain.SetTestNeuronMetadata(1, CallbackSensory, "R");
+    brain.Step(Healthy(), .05f, manual);
+    Equal(0f, brain.TestPotentialValue(0));
+    Equal(.5f, brain.TestPotentialValue(1));
+    Equal(1f, manual.GetReading(ManualInputChannel.Auditory).EffectiveDirection);
+}
+
+static void ManualPulses()
+{
+    var manual = new ManualInputState();
+    manual.SetSelected(ManualInputChannel.Warm, true);
+    manual.SetValue(ManualInputChannel.Warm, .5f);
+    manual.SetWaveform(ManualInputChannel.Warm, ManualInputWaveform.Pulse);
+    manual.SetPulseLength(ManualInputChannel.Warm, 2);
+    manual.SetOverrideEnabled(true);
+    manual.TriggerPulse(ManualInputChannel.Warm);
+    var brain = LifBrain.CreateForTest(1, new int[2], [], []);
+    brain.SetTestPopulation(InputHot, 0);
+    brain.Step(Healthy(), .05f, manual);
+    Equal(.5f, manual.GetReading(ManualInputChannel.Warm).Effective);
+    Equal(1, manual.GetPulseRemaining(ManualInputChannel.Warm));
+    brain.Step(Healthy(), .05f, manual);
+    Equal(.5f, manual.GetReading(ManualInputChannel.Warm).Effective);
+    Equal(0, manual.GetPulseRemaining(ManualInputChannel.Warm));
+    brain.Step(Healthy(), .05f, manual);
+    Equal(0f, manual.GetReading(ManualInputChannel.Warm).Effective);
+    var cancelled = new ManualInputState();
+    cancelled.SetSelected(ManualInputChannel.Warm, true);
+    cancelled.SetValue(ManualInputChannel.Warm, .5f);
+    cancelled.SetWaveform(ManualInputChannel.Warm, ManualInputWaveform.Pulse);
+    cancelled.SetPulseLength(ManualInputChannel.Warm, 5);
+    cancelled.SetOverrideEnabled(true);
+    cancelled.TriggerPulse(ManualInputChannel.Warm);
+    var cancelledBrain = LifBrain.CreateForTest(1, new int[2], [], []);
+    cancelledBrain.SetTestPopulation(InputHot, 0);
+    cancelledBrain.Step(Healthy(), .05f, cancelled);
+    Equal(4, cancelled.GetPulseRemaining(ManualInputChannel.Warm));
+    cancelled.SetSelected(ManualInputChannel.Warm, false);
+    for (var i = 0; i < 3; i++) cancelledBrain.Step(Healthy(), .05f, cancelled);
+    cancelled.SetSelected(ManualInputChannel.Warm, true);
+    cancelledBrain.Step(Healthy(), .05f, cancelled);
+    Equal(0, cancelled.GetPulseRemaining(ManualInputChannel.Warm));
+    Equal(0f, cancelled.GetReading(ManualInputChannel.Warm).Effective);
+    cancelled.TriggerPulse(ManualInputChannel.Warm);
+    cancelledBrain.Step(Healthy(), .05f, cancelled);
+    Equal(.5f, cancelled.GetReading(ManualInputChannel.Warm).Effective);
+    manual.TriggerPulse(ManualInputChannel.Warm);
+    Equal(2, manual.GetPulseRemaining(ManualInputChannel.Warm));
+    manual.SetWaveform(ManualInputChannel.Warm, ManualInputWaveform.Continuous);
+    Equal(0, manual.GetPulseRemaining(ManualInputChannel.Warm));
+}
+
+static void ManualStateSafety()
+{
+    True(ManualInputCatalog.All.Length == (int)ManualInputChannel.Count, "catalog must cover every stable channel");
+    var first = new ManualInputState();
+    var second = new ManualInputState();
+    first.SetValue(ManualInputChannel.Cool, float.NaN);
+    first.SetDirection(ManualInputChannel.Auditory, float.PositiveInfinity);
+    Equal(0f, first.GetValue(ManualInputChannel.Cool));
+    Equal(0f, first.GetDirection(ManualInputChannel.Auditory));
+    first.SetSelected(ManualInputChannel.Cool, true);
+    first.SetValue(ManualInputChannel.Cool, .9f);
+    first.SetWaveform(ManualInputChannel.Cool, ManualInputWaveform.Pulse);
+    first.SetPulseLength(ManualInputChannel.Cool, 3);
+    first.SetOverrideEnabled(true);
+    True(!second.OverrideEnabled && !second.IsSelected(ManualInputChannel.Cool), "manual state leaked between people");
+    first.TriggerPulse(ManualInputChannel.Cool);
+    True(first.GetPulseRemaining(ManualInputChannel.Cool) == 3, "pulse should arm in Pulse mode");
+    first.ReturnToLive();
+    True(!first.OverrideEnabled && first.GetPulseRemaining(ManualInputChannel.Cool) == 0, "return to live must cancel pulses");
+}
+
+static void InvalidHealthDisarmsManualInput()
+{
+    var manual = new ManualInputState();
+    manual.SetSelected(ManualInputChannel.Warm, true);
+    manual.SetValue(ManualInputChannel.Warm, .8f);
+    manual.SetWaveform(ManualInputChannel.Warm, ManualInputWaveform.Pulse);
+    manual.SetPulseLength(ManualInputChannel.Warm, 4);
+    manual.SetOverrideEnabled(true);
+    manual.TriggerPulse(ManualInputChannel.Warm);
+
+    var brain = LifBrain.CreateForTest(1, new int[2], [], []);
+    brain.SetTestPopulation(InputHot, 0);
+    brain.Step(Healthy(), .05f, manual);
+    Equal(.8f, manual.GetReading(ManualInputChannel.Warm).Effective);
+    brain.Step(new SensoryFrame { Alive = true, HealthValid = false }, .05f, manual);
+    True(!manual.OverrideEnabled, "invalid health must disarm manual input");
+    Equal(0, manual.GetPulseRemaining(ManualInputChannel.Warm));
+    Equal(0f, manual.GetReading(ManualInputChannel.Warm).Effective);
+    True(!manual.GetReading(ManualInputChannel.Warm).Available);
+}
+
+static void InvalidHealthSuspendsWithoutReset()
+{
+    var brain = OneNeuronBrain();
+    brain.SetTestPending(0, .5f);
+    brain.Step(Healthy());
+    var tick = brain.TestSimulationTick;
+    var potential = brain.TestPotentialValue(0);
+    var invalid = new SensoryFrame { Alive = false, HealthValid = false };
+    Equal(0f, brain.Step(invalid).Walk);
+    Equal(tick, brain.TestSimulationTick);
+    Equal(potential, brain.TestPotentialValue(0));
+    True(!brain.IsStopped, "unavailable health should suspend output rather than stop the neural state");
+    brain.Step(Healthy());
+    Equal(tick + 1, brain.TestSimulationTick);
+}
+
+static void InvalidHealthInvalidatesLightBaseline()
+{
+    var brain = OneNeuronBrain();
+    brain.SetTestPopulation(TypeMi1, 0);
+    brain.Step(Healthy(light: 0f));
+    brain.Step(default);
+    brain.Step(Healthy(light: 1f));
+    Equal(0, brain.FiredCount);
+}
+
+static void SubmersionWithoutNeuralMotorActivityIsStill()
+{
+    var brain = OneNeuronBrain();
+    var sensory = new SensoryFrame
+    {
+        Alive = true,
+        HealthValid = true,
+        Health = 1f,
+        Oxygen = .93f,
+        OxygenValid = true,
+        Consciousness = 1f,
+        ConsciousnessValid = true,
+        Vitality = 1f,
+        Circulation = 1f,
+        UnderWater = 1f,
+        SubmergedHypoxia = .07f
+    };
+
+    var command = brain.Step(sensory);
+    Equal(0f, command.Walk);
+    Equal(0f, command.LeftArm);
+    Equal(0f, command.RightArm);
+    Equal(0f, command.LeftLeg);
+    Equal(0f, command.RightLeg);
+    Equal(0f, command.Avoid);
+    Equal(0f, brain.TestSensoryDrive); // Hypoxia is a body reading, not an external receptor.
+}
+
+static void MotorReversalsAreRateLimited()
+{
+    var brain = LifBrain.CreateForTest(2, [0, 0, 0], [], []);
+    brain.SetTestNeuronMetadata(0, DescendingNeuron, "R");
+    brain.SetTestPopulation(TypeDNp09, 0);
+    foreach (var population in new[] { "type:DNg100", "type:DNge053", "type:DNge050", "type:DNg97" }) brain.SetTestPopulation(population, 0);
+    brain.SetTestNeuronMetadata(1, DescendingNeuron, "L");
+    brain.SetTestPopulation(TypeMDN, 1);
+    brain.SetTestPending(0, 1f);
+    var forward = brain.Step(Healthy(), .05f);
+    brain.SetTestPending(1, 1f);
+    var reversing = brain.Step(Healthy(), .05f);
+    True(forward.Walk > 0f, "named walking population activity should request forward movement");
+    True(MathF.Abs(reversing.Walk - forward.Walk) <= .4001f, "motor reversal exceeded the per-step rate limit");
+    True(MathF.Abs(reversing.Walk) <= 1f, "rate-limited motor output must remain bounded");
+}
+
+static void LostMovementAuthorityClearsMotorRequests()
+{
+    AssertImmediateMotorClear(frame =>
+    {
+        frame.ConsciousnessValid = false;
+        return frame;
+    });
+    AssertImmediateMotorClear(frame =>
+    {
+        frame.Consciousness = .7f;
+        frame.Unconscious = .3f;
+        return frame;
+    });
+    AssertImmediateMotorClear(frame =>
+    {
+        frame.LiquidSedation = .5f;
+        return frame;
+    });
+}
+
+static void AssertImmediateMotorClear(Func<SensoryFrame, SensoryFrame> restrict)
+{
+    var brain = OneNeuronBrain();
+    brain.SetTestNeuronMetadata(0, DescendingNeuron, "R");
+    brain.SetTestPopulation(TypeDNp09, 0);
+    brain.SetTestPending(0, 1f);
+    True(brain.Step(Healthy()).Walk > 0f, "test setup did not produce a motor request");
+    var command = brain.Step(restrict(Healthy()));
+    Equal(0f, command.Walk);
+    Equal(0f, command.LeftArm);
+    Equal(0f, command.RightArm);
+    Equal(0f, command.LeftLeg);
+    Equal(0f, command.RightLeg);
+    Equal(0f, command.Core);
+    Equal(0f, command.Head);
+    Equal(0f, command.ReachGrab);
+    Equal(0f, command.LeftGrip);
+    Equal(0f, command.RightGrip);
+}
+
+static void SupportedShallowWaterKeepsNormalControl()
+{
+    var brain = OneNeuronBrain();
+    var command = brain.Step(new SensoryFrame
+    {
+        Alive = true,
+        HealthValid = true,
+        Health = 1f,
+        Oxygen = 1f,
+        OxygenValid = true,
+        Consciousness = 1f,
+        ConsciousnessValid = true,
+        Vitality = 1f,
+        Circulation = 1f,
+        UnderWater = 1f,
+        Touch = 1f
+    });
+    Equal(0f, command.Avoid);
+    Equal(0f, command.Walk);
+    Equal(0f, command.LeftArm);
+    Equal(0f, command.RightArm);
+}
+
+static void FreshSensoryInputsBypassRecurrentBacklog()
+{
+    const int count = 24001;
+    var brain = LifBrain.CreateForTest(count, new int[count + 1], [], []);
+    brain.SetTestActiveRange(count, 1f);
+    brain.SetTestPopulation(InputLight, count - 1);
+    brain.Step(Healthy(light: 1f));
+    True(brain.DidFire(count - 1) || brain.TestPotentialValue(count - 1) > .1f, "fresh sensory input was dropped behind the recurrent load");
+}
+
+static void RealGraphIsDeterministic()
+{
+    var first = LifBrain.TryCreate(out var status);
+    var second = LifBrain.TryCreate(out _);
+    True(first is not null && second is not null, status);
+    for (var tick = 0; tick < 12; tick++)
+    {
+        var input = Healthy(light: tick < 6 ? .2f : 1f, sound: tick % 3 == 0 ? .5f : 0f, touch: 1f, heartbeat: 1f);
+        var a = first.Step(input);
+        var b = second.Step(input);
+        Equal(a.Walk, b.Walk); Equal(a.LeftArm, b.LeftArm); Equal(a.RightArm, b.RightArm);
+        Equal(a.LeftLeg, b.LeftLeg); Equal(a.RightLeg, b.RightLeg); Equal(a.Core, b.Core); Equal(a.Head, b.Head);
+        Equal(first.ProcessedCount, second.ProcessedCount); Equal(first.DroppedCount, second.DroppedCount);
+        for (var id = 0; id < first.BrainMap.NeuronCount; id++)
+            True(first.DidFire(id) == second.DidFire(id), "identical native-frame histories produced different spikes");
+    }
+}
+
+static void InternalStatesDoNotFabricateReceptors()
+{
+    var brain = OneNeuronBrain();
+    foreach (var name in new[] { InputLight, InputAuditory, InputTactile, InputHot, InputCold, TypeLC4, TypeLPLC2, TypeMDN, TypeDNp09 })
+        brain.SetTestPopulation(name, 0);
+    var sensory = Healthy();
+    sensory.Infection = 1f; sensory.LiquidExposure = 1f; sensory.LiquidHazard = 1f;
+    sensory.LiquidHealing = 1f; sensory.LiquidWater = 1f; sensory.Adrenaline = 1f;
+    sensory.Pain = 1f; sensory.Damage = 1f; sensory.Shock = 1f; sensory.Blood = 1f;
+    sensory.Oxygen = 0f; sensory.SubmergedHypoxia = 1f; sensory.Nearby = 1f;
+    brain.Step(sensory);
+    Equal(0f, brain.TestSensoryDrive); Equal(0f, brain.TestPotentialValue(0)); Equal(0, brain.FiredCount);
+}
+
+static void NativeStressDoesNotDriveChemistry()
+{
+    var brain = OneNeuronBrain();
+    var sensory = Healthy();
+    sensory.Pain = 1f; sensory.Shock = 1f; sensory.Adrenaline = 1f;
+    sensory.DamageValid = true; sensory.Damage = .5f; sensory.LimbLoss = .5f;
+    var command = brain.Step(sensory);
+    Equal(0f, brain.TestSensoryDrive); // No validated internal injury-to-receptor mapping.
+    Equal(0f, command.Calm); Equal(0f, command.Stimulate);
+    sensory.LiquidStimulation = .4f; sensory.LiquidSedation = .2f;
+    command = brain.Step(sensory);
+    Equal(.4f, command.Stimulate); Equal(.2f, command.Calm);
+}
+
+static void SustainedFullPayloadLoadStaysRealtimeBounded()
+{
+    var brain = LifBrain.TryCreate(out var status);
+    True(brain is not null, status);
+    for (var i = 0; i < 20; i++)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        brain.Step(Healthy(velocity: 1f, light: 1f, sound: 1f, touch: 1f, physicalContact: 1f, heartbeat: 1f));
+        Console.WriteLine("LOAD step=" + (i + 1) + " ms=" + stopwatch.Elapsed.TotalMilliseconds.ToString("0.0") + " active=" + brain.TestActiveCount + " pending=" + brain.TestPendingCount + " processed=" + brain.TestProcessedCount + " dropped=" + brain.TestDroppedCount + " fired=" + brain.TestFiredCount);
+        True(brain.FiredCount <= 24000, "propagated spikes exceeded the configured cap");
+        True(brain.ProcessedCount + brain.DecayedCount <= 176422, "a neuron was integrated more than once");
+    }
+}
+
+static void MalformedDatasetAndCountsReject()
+{
+    Throws(() => LifBrain.ReadAssetForTest(Header("not-male-cns:v1.0", 176422, 6287749, 9619)));
+    Throws(() => LifBrain.ReadAssetForTest(Header("male-cns:v1.0", 1, 6287749, 9619)));
+}
+
+static void RetinaVariantsReceiveLightDrive()
+{
+    var brain = LifBrain.CreateForTest(2, [0, 0, 0], [], []);
+    brain.SetTestPopulation("type:R7d", 0);
+    brain.SetTestPopulation("type:R8y", 1);
+    brain.SetTestPopulation(InputLight, 0, 1);
+    brain.Step(Healthy(light: .25f));
+    Equal(.25f, brain.TestPotentialValue(0));
+    Equal(.25f, brain.TestPotentialValue(1));
+}
+
+static void BundledSensoryMappings()
+{
+    var brain = LifBrain.TryCreate(out var status); True(brain is not null, status);
+    foreach (var population in new[] { InputLight, InputAuditory, InputTactile, InputGravity, "input:joint-position", "input:joint-motion", "input:joint-load", InputHot, InputCold, "motor:leg", TypeDNp09, "type:DNg100", "type:DNge053", "type:DNge050", "type:DNg97", TypeMDN, TypeDNg60, "type:DNg74_a", "type:DNg74_b", "type:AN19A018", TypeLC4, TypeLPLC2, TypeMi1, TypeL2, "type:L3", InputTouchHead, InputTouchArms, InputTouchLegs, InputTouchCore, "input:touch-other", InputOpticRoll, TypeLC11, "type:LC18", "type:DNa02", "type:DNg13", "type:DNa01" })
+    {
+        var count = brain.PopulationCount(population);
+        Console.WriteLine("MAPPING " + population + "=" + count);
+        True(count > 0, "missing real-asset mapping: " + population);
+    }
+    Equal(7, brain.PopulationCount(InputHot));
+    Equal(7, brain.PopulationCount(InputCold));
+    Equal(114, brain.PopulationCount(InputAuditory));
+    Equal(863, brain.PopulationCount(InputTouchHead));
+    Equal(266, brain.PopulationCount(InputTouchArms));
+    Equal(1611, brain.PopulationCount(InputTouchLegs));
+    Equal(303, brain.PopulationCount(InputTouchCore));
+    Equal(378, brain.PopulationCount("input:touch-other"));
+    Equal(34, brain.PopulationCount(InputOpticRoll));
+    // A fresh first tick has no recurrent input. All 3,421 disjoint tactile/head
+    // members should fire once, proving the real asset routes cover that union.
+    brain.Step(Healthy() with { DamageEvent = .5f });
+    Equal(3421, brain.FiredCount);
+}
+
+static void SensoryModalities()
+{
+    // Isolated targets make wrong cross-modal injections visible, independently
+    // of recurrent connectivity. Full-asset membership is checked separately.
+    LifBrain Create()
+    {
+        var brain = LifBrain.CreateForTest(14, new int[15], [], []);
+        var groups = new[] { InputLight, InputTactile, InputHot, InputCold, "input:joint-position", "input:joint-motion", "input:joint-load" };
+        for (var i = 0; i < groups.Length; i++) brain.SetTestPopulation(groups[i], i);
+        brain.SetTestPopulation(InputAuditory, 7, 8);
+        brain.SetTestPopulation(InputGravity, 9, 10);
+        brain.SetTestPopulation(TypeLC4, 11, 12);
+        brain.SetTestPopulation(TypeMDN, 13); brain.SetTestPopulation(TypeDNp09, 13);
+        foreach (var i in new[] { 7, 9, 11 }) brain.SetTestNeuronMetadata(i, CallbackSensory, "L");
+        foreach (var i in new[] { 8, 10, 12 }) brain.SetTestNeuronMetadata(i, CallbackSensory, "R");
+        return brain;
+    }
+    var cases = new (SensoryFrame Frame, int[] Expected)[]
+    {
+        (Healthy(light: .5f), [0]),
+        (Healthy(touch: 1f), [1]),
+        (Healthy() with { Heat = .5f }, [2]),
+        (Healthy() with { Cold = .5f }, [3]),
+        (Healthy() with { JointSensingValid = true, JointPosition = .5f }, [4]),
+        (Healthy() with { JointSensingValid = true, JointMotion = .5f }, [5]),
+        (Healthy() with { JointSensingValid = true, NeuralJointLoad = .5f }, [6]),
+        (Healthy(sound: .5f) with { SoundDirectionValid = true, SoundDirection = -1f }, [7]),
+        (Healthy(sound: .5f) with { SoundDirectionValid = true, SoundDirection = 1f }, [8]),
+        (Healthy(sound: .5f) with { SoundDirection = 1f }, [7, 8]),
+        (Healthy() with { TiltValid = true, SignedTilt = -1f }, [9]),
+        (Healthy() with { TiltValid = true, SignedTilt = 1f }, [10]),
+        (Healthy() with { VisualApproach = .5f, VisionHeadBearingValid = true, VisionHeadBearingDegrees = -90f }, [11]),
+        (Healthy() with { VisualApproach = .5f, VisionHeadBearingValid = true, VisionHeadBearingDegrees = 90f }, [12]),
+        (Healthy() with { JointPosition = 1f, JointMotion = 1f, NeuralJointLoad = 1f, SignedTilt = 1f }, []),
+        (Healthy() with { Sound = float.NaN, Heat = float.NaN, Cold = float.PositiveInfinity, VisualApproach = float.NaN }, [])
+    };
+    foreach (var (frame, expected) in cases)
+    {
+        var brain = Create(); brain.Step(frame);
+        for (var id = 0; id < 14; id++)
+            True((brain.DidFire(id) || brain.TestPotentialValue(id) > 0f) == expected.Contains(id), "wrong input route, neuron " + id);
+    }
+}
+
+static void GlobalLuminanceChanges()
+{
+    var brain = LifBrain.CreateForTest(3, new int[4], [], []);
+    brain.SetTestPopulation(TypeMi1, 0);
+    brain.SetTestPopulation(TypeL2, 1);
+    brain.SetTestPopulation("type:L3", 2);
+    brain.Step(Healthy(light: 0f)); Equal(0, brain.FiredCount);
+    brain.Step(Healthy(light: 1f)); True(brain.DidFire(0)); Equal(1, brain.FiredCount);
+    brain.Step(Healthy(light: 1f)); Equal(0, brain.FiredCount);
+    brain.Step(Healthy(light: 0f)); True(brain.DidFire(1) && brain.DidFire(2));
+    brain.Step(default);
+    brain.Step(Healthy(light: 1f)); Equal(0, brain.FiredCount);
+    brain.Step(Healthy(light: float.NaN)); Equal(0, brain.FiredCount);
+    brain.Step(Healthy(light: 0f)); Equal(0, brain.FiredCount);
+    brain.Step(Healthy(light: 1f) with { LightValid = false }); Equal(0, brain.FiredCount);
+    brain.Step(Healthy(light: 0f)); Equal(0, brain.FiredCount);
+}
+
+static LifBrain SensoryFeatureFixture()
+{
+    var brain = LifBrain.CreateForTest(14, new int[15], [], []);
+    var groups = new[] { InputTouchHead, InputTouchArms, InputTouchLegs, InputTouchCore, "input:touch-other", InputLight, TypeDNp09, TypeLC4, TypeLPLC2, TypeLC11, "type:LC18", InputOpticRoll, InputAuditory, TypeMDN };
+    for (var id = 0; id < groups.Length; id++) brain.SetTestPopulation(groups[id], id);
+    brain.SetTestPopulation(InputTactile, 1, 2, 3, 4);
+    return brain;
+}
+
+static void InjuryAndRegionalRoutes()
+{
+    var brain = SensoryFeatureFixture();
+    brain.Step(Healthy() with { DamageEvent = .05f, Impact = .1f, RegionalTouchValid = true, TouchArms = 1f });
+    for (var id = 0; id < 5; id++) True(Math.Abs(.22222222f - brain.TestPotentialValue(id)) < .00001f);
+    for (var id = 5; id < 14; id++) Equal(0f, brain.TestPotentialValue(id));
+    True(brain.DisplayInputSummary.Contains("injury-proxy=0.22"));
+    brain.Step(Healthy()); Equal(0f, brain.TestSensoryDrive);
+    True(brain.TestPotentialValue(0) < .22222222f, "past damage must decay rather than reinject");
+    foreach (var (frame, target) in new[] {
+        (Healthy() with { TouchHead = 1f }, 0), (Healthy() with { TouchArms = 1f }, 1),
+        (Healthy() with { TouchLegs = 1f }, 2), (Healthy() with { TouchCore = 1f }, 3) })
+    {
+        brain = SensoryFeatureFixture();
+        brain.Step(frame with { RegionalTouchValid = true, Touch = 1f, PhysicalContact = 1f });
+        for (var id = 0; id < 14; id++) Equal(id == target ? .15f : 0f, brain.TestPotentialValue(id));
+    }
+    brain = SensoryFeatureFixture(); brain.Step(Healthy() with { DamageEvent = float.NaN, TouchHead = 1f });
+    Equal(0f, brain.TestSensoryDrive); Equal(0, brain.ActiveCount);
+    brain.Step(Healthy() with { DamageEvent = .5f }); Equal(5, brain.FiredCount);
+    brain.Step(default); Equal(0f, brain.TestSensoryDrive);
+}
+
+static void GeometricVisualRoutes()
+{
+    var visible = Healthy() with { Vision = 1f, VisualGeometryValid = true, VisualAngularSize = 60f, VisualExpansion = 200f };
+    var brain = SensoryFeatureFixture(); brain.Step(visible);
+    Equal(.5f, brain.TestPotentialValue(7)); True(brain.DidFire(8)); Equal(0f, brain.TestPotentialValue(9));
+    brain = SensoryFeatureFixture(); brain.Step(visible with { VisualExpansion = 0f, VisualAngularSize = 10f, VisualAngularSpeed = 100f });
+    Equal(0f, brain.TestPotentialValue(7)); Equal(0f, brain.TestPotentialValue(8));
+    Equal(.5f, brain.TestPotentialValue(9)); Equal(.5f, brain.TestPotentialValue(10));
+    True(brain.TestSensoryDrive > 0f && brain.DisplayInputSummary.Contains("small-visual=0.50"));
+    foreach (var frame in new[] {
+        visible with { Vision = 0f }, visible with { VisualAngularSize = float.NaN },
+        visible with { VisualExpansion = float.PositiveInfinity }, visible with { VisualAngularSpeed = float.NaN },
+        visible with { VisualAngularSize = -10f }, visible with { VisualAngularSize = 181f },
+        visible with { VisualAngularSize = 0f }, visible with { VisualGeometryValid = false } })
+    {
+        brain = SensoryFeatureFixture(); brain.Step(frame); Equal(0, brain.ActiveCount); Equal(0, brain.FiredCount);
+    }
+    brain = SensoryFeatureFixture(); brain.Step(visible with { VisualExpansion = -10f }); Equal(0, brain.ActiveCount);
+    foreach (var speed in new[] { -300f, 300f })
+    {
+        brain = SensoryFeatureFixture(); brain.Step(Healthy(light: 1f) with { AngularVelocity = speed, AngularVelocityValid = true });
+        Equal(.5f, brain.TestPotentialValue(11)); True(brain.DisplayInputSummary.Contains("optic-roll=0.50"));
+    }
+    foreach (var frame in new[] {
+        Healthy() with { AngularVelocity = 300f, AngularVelocityValid = true },
+        Healthy(light: 1f) with { AngularVelocity = 300f },
+        Healthy(light: 1f) with { AngularVelocity = float.PositiveInfinity, AngularVelocityValid = true } })
+    { brain = SensoryFeatureFixture(); brain.Step(frame); Equal(0f, brain.TestPotentialValue(11)); }
+}
+
+static void AuditoryBandRouting()
+{
+    var brain = SensoryFeatureFixture();
+    brain.Step(Healthy(sound: 1f) with { SoundSpectrumValid = true, SoundLow = 1f }); Equal(.7f, brain.TestPotentialValue(12));
+    brain = SensoryFeatureFixture(); brain.Step(Healthy(sound: 1f) with { SoundSpectrumValid = true, SoundHigh = 1f }); True(brain.DidFire(12));
+    brain = SensoryFeatureFixture(); brain.Step(Healthy(sound: 1f) with { SoundSpectrumValid = true }); Equal(0f, brain.TestPotentialValue(12));
+    brain = SensoryFeatureFixture(); brain.Step(Healthy(sound: 1f)); True(brain.DidFire(12));
+    brain.Step(Healthy()); Equal(0f, brain.TestSensoryDrive);
+}
+
+static void ThreatSourcesRemainSeparated()
+{
+    var looming = LifBrain.CreateForTest(1, new int[2], [], []);
+    looming.SetTestPopulation(TypeLPLC2, 0);
+    var loomingCommand = looming.Step(Healthy() with
+    {
+        Vision = 1f,
+        VisualGeometryValid = true,
+        VisualAngularSize = 60f,
+        VisualExpansion = 200f
+    });
+    True(loomingCommand.VisualThreat > 0f, "looming geometry should be reported as a visual threat input");
+    Equal(0f, loomingCommand.NeuralEscape);
+    Equal(0f, loomingCommand.BodyThreat);
+    Equal(0f, loomingCommand.Avoid);
+
+    var neural = LifBrain.CreateForTest(1, new int[2], [], []);
+    neural.SetTestPopulation("type:DNp01", 0);
+    neural.SetTestNeuronMetadata(0, DescendingNeuron, "R");
+    neural.SetTestPending(0, 1f);
+    var neuralCommand = neural.Step(Healthy() with { DamageEvent = .1f });
+    Equal(0f, neuralCommand.VisualThreat);
+    Equal(0f, neuralCommand.BodyThreat);
+    Equal(1f, neuralCommand.NeuralEscape);
+    Equal(1f, neuralCommand.Avoid);
+    True(neural.DisplayMotorSummary.Contains("DNp01-fired=1.00"));
+    True(neural.DisplayMotorSummary.Contains("escape-request=1.00"));
+    for (var tick = 0; tick < 20; tick++)
+    {
+        neural.SetTestPending(0, 1f);
+        Equal(0f, neural.Step(Healthy()).NeuralEscape);
+    }
+
+    var body = LifBrain.CreateForTest(1, new int[2], [], []);
+    var bodyCommand = body.Step(Healthy() with { Pain = .6f });
+    Equal(0f, bodyCommand.VisualThreat);
+    Equal(0f, bodyCommand.NeuralEscape);
+    Equal(.6f, bodyCommand.BodyThreat);
+    Equal(1f, bodyCommand.Avoid);
+}
+
+static void EscapeRequiresContext()
+{
+    LifBrain Create()
+    {
+        var brain = LifBrain.CreateForTest(2, new int[3], [], []);
+        brain.SetTestPopulation("type:DNp01", 0);
+        brain.SetTestNeuronMetadata(0, DescendingNeuron, "R");
+        brain.SetTestPopulation(TypeLPLC2, 1);
+        return brain;
+    }
+    var brain = Create();
+    for (var tick = 0; tick < 60; tick++)
+    {
+        brain.SetTestPending(0, 1f);
+        var command = brain.Step(Healthy(light: 1f, touch: 1f, sound: 1f));
+        Equal(brain.DidFire(0) ? 1f : 0f, command.DNp01Activity);
+        Equal(0f, command.NeuralEscape); Equal(0f, command.Avoid);
+    }
+    True(brain.DisplayMotorSummary.Contains("escape-request=0.00"));
+    brain = Create(); brain.SetTestPending(0, 1f);
+    Equal(1f, brain.Step(Healthy() with { DamageEvent = .0011f }).NeuralEscape);
+    True(brain.DisplayMotorSummary.Contains("injury-event=0.0011"), "qualifying small injuries must remain visible");
+    // Looming can precede bodily harm, but is not sufficient without a spike.
+    var looming = Healthy() with { Vision = 1f, VisualGeometryValid = true, VisualAngularSize = 60f, VisualExpansion = 200f };
+    brain = Create(); brain.SetTestPending(0, 1f);
+    Equal(1f, brain.Step(looming).NeuralEscape);
+    brain = Create(); Equal(0f, brain.Step(looming).NeuralEscape);
+    brain = Create(); brain.Step(Healthy() with { DamageEvent = .1f });
+    brain.SetTestPending(0, 1f); Equal(1f, brain.Step(Healthy(), .1f).NeuralEscape);
+    brain = Create(); brain.Step(looming); brain.SetTestPending(0, 1f);
+    Equal(0f, brain.Step(Healthy(), .75f).NeuralEscape); // Actual elapsed time, not motor smoothing cap.
+    foreach (var unsafeFrame in new[] { Healthy() with { ConsciousnessValid = false }, Healthy() with { HealthValid = false }, Healthy() with { Alive = false }, Healthy() with { Consciousness = .1f } })
+    {
+        brain = Create(); brain.Step(looming); brain.SetTestPending(0, 1f);
+        Equal(0f, brain.Step(unsafeFrame).NeuralEscape);
+        for (var tick = 0; tick < 6; tick++) brain.Step(Healthy());
+        brain.SetTestPending(0, 1f); Equal(0f, brain.Step(Healthy()).NeuralEscape);
+    }
+    brain = Create(); brain.SetTestPending(0, 1f);
+    Equal(0f, brain.Step(Healthy() with { DamageEvent = float.NaN, Pain = float.NaN, VisualApproach = float.NaN }).NeuralEscape);
+    // Manual-only zeroes natural looming; deliberately supplied looming can qualify.
+    var manual = new ManualInputState(); manual.SetMode(ManualInputMode.ManualOnly); manual.SetOverrideEnabled(true); manual.SetOverrideEnabled(true);
+    brain = Create(); brain.SetTestPending(0, 1f);
+    var muted = brain.Step(looming, .05f, manual); Equal(0f, muted.VisualThreat); Equal(0f, muted.NeuralEscape);
+    manual.SetSelected(ManualInputChannel.LoomingVisual, true); manual.SetValue(ManualInputChannel.LoomingVisual, 1f);
+    brain = Create(); brain.SetTestPending(0, 1f);
+    var stimulated = brain.Step(Healthy(), .05f, manual); Equal(1f, stimulated.VisualThreat); Equal(1f, stimulated.NeuralEscape);
+}
+
+static LifBrain MotorFeatureFixture()
+{
+    var brain = LifBrain.CreateForTest(5, new int[6], [], []);
+    brain.SetTestPopulation(TypeDNp09, 0); brain.SetTestPopulation(TypeMDN, 1);
+    brain.SetTestPopulation("type:DNa02", 2, 3); brain.SetTestPopulation("type:DNg74_b", 4);
+    for (var id = 0; id < 5; id++) brain.SetTestNeuronMetadata(id, DescendingNeuron, id == 2 ? "L" : "R");
+    return brain;
+}
+
+static void FoodSensoryRoutes()
+{
+    LifBrain Create()
+    {
+        var brain = LifBrain.CreateForTest(5, new int[6], [], []);
+        var populations = new[] { TypeORN_DM1, "type:ORN_DM2", "type:ORN_VA2", TypeLB3b, "type:LB3c" };
+        for (var i = 0; i < populations.Length; i++) brain.SetTestPopulation(populations[i], i);
+        return brain;
+    }
+    var nearby = Healthy() with { FoodCuesValid = true, FoodNearbyCue = 1f };
+    var brain = Create(); Equal(0f, brain.Step(nearby).Walk); Equal(3, brain.FiredCount);
+    Equal(1, brain.PopulationFiredCount(TypeORN_DM1)); Equal(0, brain.PopulationFiredCount(TypeLB3b));
+    brain = Create(); Equal(0f, brain.Step(Healthy() with { FoodCuesValid = true, FoodContactCue = 1f }).Walk); Equal(2, brain.FiredCount);
+    brain = Create(); brain.Step(nearby with { FoodCuesValid = false }); Equal(0, brain.FiredCount);
+    brain = Create(); brain.Step(nearby with { FoodNearbyCue = float.NaN, FoodContactCue = float.PositiveInfinity }); Equal(0, brain.FiredCount);
+    var manual = new ManualInputState(); manual.SetOverrideEnabled(true); manual.SetMode(ManualInputMode.ManualOnly);
+    brain = Create(); brain.Step(nearby, .05f, manual); Equal(0, brain.FiredCount);
+    var real = LifBrain.TryCreate(out var status); True(real is not null, status);
+    Equal(74, real.PopulationCount(TypeORN_DM1)); Equal(54, real.PopulationCount("type:ORN_DM2")); Equal(83, real.PopulationCount("type:ORN_VA2"));
+    Equal(11, real.PopulationCount(TypeLB3b)); Equal(23, real.PopulationCount("type:LB3c"));
+    real.Step(nearby); Equal(211, real.FiredCount);
+    real.Stop(); real.Step(Healthy() with { FoodCuesValid = true, FoodContactCue = 1f }); Equal(34, real.FiredCount);
+}
+
+static void EscapeLocomotion()
+{
+    LifBrain Create()
+    {
+        var brain = LifBrain.CreateForTest(3, new int[4], [], []);
+        brain.SetTestPopulation("type:DNp01", 0); brain.SetTestPopulation(TypeMDN, 1); brain.SetTestPopulation(TypeDNg60, 2);
+        for (var id = 0; id < 3; id++) brain.SetTestNeuronMetadata(id, DescendingNeuron, "R");
+        return brain;
+    }
+    var injury = Healthy() with { DamageEvent = .5f };
+    var brain = Create(); Equal(0f, brain.Step(injury).Walk);
+    brain = Create(); brain.SetTestPending(0, 1f); Equal(0f, brain.Step(Healthy()).Walk);
+    brain = Create(); brain.SetTestPending(0, 1f); var command = brain.Step(injury);
+    Equal(.4f, command.Walk); Equal(.6f, command.EscapeLocomotionSeconds);
+    True(brain.DisplayMotorSummary.Contains("REQUEST (ESCAPE BURST)"));
+    command = brain.Step(Healthy()); Equal(.7f, command.Walk); Equal(0f, command.NeuralEscape);
+    command = brain.Step(Healthy(), 1f); Equal(0f, command.Walk); Equal(0f, command.EscapeLocomotionSeconds);
+    brain = Create(); brain.SetTestPending(0, 1f); brain.SetTestPending(1, 1f);
+    True(brain.Step(injury).Walk < 0f, "backward neural intent must determine burst direction");
+    foreach (var unsafeFrame in new[] { Healthy() with { HealthValid = false }, Healthy() with { ConsciousnessValid = false }, Healthy() with { Consciousness = .2f }, Healthy() with { Alive = false }, Healthy() with { BrainDead = true } })
+    {
+        brain = Create(); brain.SetTestPending(0, 1f); brain.Step(injury);
+        command = brain.Step(unsafeFrame); Equal(0f, command.Walk); Equal(0f, command.EscapeLocomotionSeconds);
+        Equal(0f, brain.Step(Healthy()).Walk);
+    }
+    brain = Create(); brain.SetTestPending(0, 1f); brain.Step(injury); brain.SetTestPending(2, 1f);
+    command = brain.Step(Healthy()); Equal(0f, command.Walk); Equal(0f, command.EscapeLocomotionSeconds);
+}
+
+static void LocomotionTemporalBehavior()
+{
+    var brain = MotorFeatureFixture(); brain.SetTestPending(0, 1f);
+    var command = brain.Step(Healthy()); Equal(.3f, command.Walk);
+    True(brain.DisplayMotorSummary.Contains("REQUEST (WALK FORWARD)"));
+    True(brain.DisplayMotorSummary.Contains("forward=0.09"), "filtered neural fraction must not be replaced by the 0.3 actuator floor");
+    for (var tick = 0; tick < 4; tick++) True(brain.Step(Healthy()).Walk >= .3f, "neural mode should bridge a short firing gap");
+    for (var tick = 0; tick < 20; tick++) command = brain.Step(Healthy());
+    Equal(0f, command.Walk);
+    brain = MotorFeatureFixture(); brain.SetTestPending(0, 1f); brain.Step(Healthy());
+    brain.SetTestPending(1, 1f); True(brain.Step(Healthy()).Walk < .3f, "MDN must preempt established forward mode");
+    True(brain.Step(Healthy()).Walk < 0f);
+    foreach (var terminal in new[] { false, true })
+    {
+        brain = MotorFeatureFixture(); brain.SetTestPending(0, 1f); brain.Step(Healthy());
+        command = brain.Step(terminal ? default : Healthy() with { ConsciousnessValid = false }); Equal(0f, command.Walk);
+        Equal(0f, brain.Step(Healthy()).Walk);
+    }
+    brain = MotorFeatureFixture(); brain.SetTestPending(0, 1f); brain.Step(Healthy());
+    brain.SetTestPending(4, 1f); command = brain.Step(Healthy()); Equal(0f, command.Walk); Equal(0f, command.Core);
+    Equal(0f, brain.Step(Healthy()).Walk);
+}
+
+static void NeuralTurning()
+{
+    foreach (var id in new[] { 2, 3 })
+    {
+        var brain = MotorFeatureFixture(); brain.SetTestPending(id, 1f);
+        var command = brain.Step(Healthy()); Equal(0f, command.Walk);
+        True(id == 2 ? command.Head < 0f && command.Core < 0f : command.Head > 0f && command.Core > 0f);
+        command = brain.Step(Healthy() with { Consciousness = .1f }); Equal(0f, command.Head); Equal(0f, command.Core);
+        Equal(0f, brain.Step(Healthy()).Head);
+    }
+}
+
+static void HeadRelativeTurningLoop()
+{
+    foreach (var bearing in new[] { -90f, 90f })
+        VerifyHeadBearing(bearing);
+    foreach (var bearing in new[] { 0f, float.NaN, float.PositiveInfinity })
+        VerifyInvalidHeadBearing(bearing);
+}
+
+static LifBrain CreateHeadTurningBrain()
+{
+    var brain = LifBrain.CreateForTest(4, [0, 1, 2, 2, 2], [2, 3], [2f, 2f]);
+    brain.SetTestPopulation(TypeLC4, 0, 1);
+    brain.SetTestPopulation("type:DNa02", 2, 3);
+    brain.SetTestNeuronMetadata(0, "visual_projection", "L");
+    brain.SetTestNeuronMetadata(1, "visual_projection", "R");
+    brain.SetTestNeuronMetadata(2, DescendingNeuron, "L");
+    brain.SetTestNeuronMetadata(3, DescendingNeuron, "R");
+    return brain;
+}
+
+static void VerifyHeadBearing(float bearing)
+{
+    var brain = CreateHeadTurningBrain();
+    var command = brain.Step(Healthy() with { VisualApproach = 1f, VisionHeadBearingValid = true, VisionHeadBearingDegrees = bearing, VisionDirectionValid = true, VisionDirection = -Math.Sign(bearing) });
+    Equal(0f, command.Head);
+    for (var i = 0; i < 4 && ApproximatelyEqual(command.Head, 0f); i++) command = brain.Step(Healthy());
+    True(bearing < 0 ? command.Head < 0 : command.Head > 0, "head-relative direction must win over world X");
+    Equal(0f, command.Walk);
+    True(brain.DisplayMotorSummary.Contains("REQUEST (WALK IDLE)"));
+    for (var i = 0; i < 40; i++) command = brain.Step(Healthy());
+    True(Math.Abs(command.Head) < .0001f, "turning must decay without neural input");
+}
+
+static void VerifyInvalidHeadBearing(float bearing)
+{
+    var brain = CreateHeadTurningBrain();
+    brain.Step(Healthy() with { VisualApproach = 1f, VisionHeadBearingValid = true, VisionHeadBearingDegrees = bearing });
+    for (var i = 0; i < 5; i++) Equal(0f, brain.Step(Healthy()).Head);
+}
+
+static void SpatialVisualInputs()
+{
+    LifBrain Create()
+    {
+        var brain = LifBrain.CreateForTest(4, new int[5], [], []);
+        brain.SetTestPopulation(TypeLC4, 0, 1); brain.SetTestPopulation(TypeLC11, 2, 3);
+        for (var i = 0; i < 4; i++) brain.SetTestNeuronMetadata(i, "visual_projection", i % 2 == 0 ? "L" : "R");
+        return brain;
+    }
+    var frame = Healthy() with { VisualFieldValid = true };
+    var expanding = new VisualObservation
+    {
+        Observed = true,
+        Strength = .5f,
+        BearingDegrees = -90f,
+        GeometryValid = true,
+        AngularSize = 60f,
+        Expansion = 200f
+    };
+    var moving = new VisualObservation
+    {
+        Observed = true,
+        Strength = .5f,
+        BearingDegrees = 90f,
+        GeometryValid = true,
+        AngularSize = 10f,
+        AngularSpeed = 100f
+    };
+    frame.SetView(0, expanding); frame.SetView(4, moving);
+    var brain = Create(); brain.Step(frame);
+    Equal(.25f, brain.TestPotentialValue(0)); Equal(0f, brain.TestPotentialValue(1));
+    Equal(0f, brain.TestPotentialValue(2)); Equal(.25f, brain.TestPotentialValue(3));
+    // Repeating an observation must not inflate the same input population.
+    frame.SetView(1, expanding); brain = Create(); brain.Step(frame); Equal(.25f, brain.TestPotentialValue(0));
+    // Opposite simultaneous expansion preserves independent bilateral amplitudes.
+    expanding.BearingDegrees = 90f; frame.SetView(4, expanding); brain = Create(); brain.Step(frame);
+    Equal(.25f, brain.TestPotentialValue(0)); Equal(.25f, brain.TestPotentialValue(1));
+    frame.ViewClockwiseOuter = default; frame.ViewClockwiseInner = default;
+    foreach (var invalid in new[] { float.NaN, float.PositiveInfinity, 0f })
+    {
+        expanding.Strength = invalid; frame.SetView(4, expanding); brain = Create(); brain.Step(frame); Equal(0f, brain.TestPotentialValue(1));
+    }
+    // Spatial field is authoritative; stale nearest-target fallback cannot leak in.
+    frame = Healthy() with { VisualFieldValid = true, VisualApproach = 1f };
+    brain = Create(); brain.Step(frame); Equal(0f, brain.TestPotentialValue(0)); Equal(0f, brain.TestPotentialValue(1));
+    var manual = new ManualInputState(); manual.SetMode(ManualInputMode.ManualOnly); manual.SetOverrideEnabled(true);
+    brain = Create(); frame.SetView(0, moving); brain.Step(frame, .05f, manual);
+    Equal(0f, brain.TestPotentialValue(2)); Equal(0f, brain.TestPotentialValue(3));
+    manual.SetMode(ManualInputMode.Mixed); manual.SetSelected(ManualInputChannel.SmallMovingVisual, true);
+    manual.SetValue(ManualInputChannel.SmallMovingVisual, .5f); manual.SetDirection(ManualInputChannel.SmallMovingVisual, -1f);
+    brain = Create(); brain.Step(frame, .05f, manual);
+    Equal(.5f, brain.TestPotentialValue(2)); Equal(0f, brain.TestPotentialValue(3));
+}
+
+static void NamedMotorReadout()
+{
+    LifBrain Create()
+    {
+        var brain = LifBrain.CreateForTest(4, new int[5], [], []);
+        brain.SetTestPopulation(TypeDNp09, 0); brain.SetTestPopulation(TypeMDN, 1);
+        brain.SetTestPopulation(TypeDNg60, 2); brain.SetTestPopulation("type:MN9", 3);
+        for (var i = 0; i < 4; i++) brain.SetTestNeuronMetadata(i, i == 3 ? "cb_motor" : DescendingNeuron, "R");
+        return brain;
+    }
+    var brain = Create(); brain.SetTestPending(0, 1f); True(brain.Step(Healthy()).Walk > 0f, "walking DN must drive forward");
+    brain = Create(); brain.SetTestPending(0, 1f); brain.SetTestPending(1, 1f); True(brain.Step(Healthy()).Walk < 0f, "MDN must take priority over forward");
+    brain = Create(); brain.SetTestPending(0, 1f); brain.SetTestPending(2, 1f); Equal(0f, brain.Step(Healthy()).Walk);
+    brain = Create(); brain.SetTestPending(3, 1f); var command = brain.Step(Healthy() with { Nearby = 1f });
+    Equal(0f, command.Walk); Equal(0f, command.ReachGrab); Equal(0f, command.LeftGrip); Equal(0f, command.RightGrip);
+    foreach (var stopPopulation in new[] { TypeDNg60, "type:AN19A018" })
+    {
+        brain = Create();
+        foreach (var forwardPopulation in new[] { TypeDNp09, "type:DNg100", "type:DNge053", "type:DNge050", "type:DNg97" })
+            brain.SetTestPopulation(forwardPopulation, 0);
+        brain.SetTestPending(0, 1f);
+        True(brain.Step(Healthy(), .25f).Walk > .8f, "forward channel should rise through its 150 ms temporal filter");
+        brain.SetTestPopulation(stopPopulation, 2); brain.SetTestPending(2, 1f);
+        command = brain.Step(Healthy());
+        Equal(0f, command.Walk); Equal(0f, command.LeftLeg); Equal(0f, command.Core);
+    }
+    brain = Create(); brain.SetTestPopulation("subclass:wm", 3); brain.SetTestPending(3, 1f);
+    command = brain.Step(Healthy()); Equal(0f, command.Walk); Equal(0f, command.LeftArm); Equal(0f, command.RightArm);
+}
+
+static void PayloadChecksumVectors()
+{
+    Equal("E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855", LifBrain.PayloadDigestForTest([]));
+    Equal("BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD", LifBrain.PayloadDigestForTest(System.Text.Encoding.ASCII.GetBytes("abc")));
+    foreach (var length in new[] { 1, 7, 55, 56, 57, 63, 64, 65, 119, 120, 127, 128, 129, 4096, 1000000 })
+    {
+        var data = new byte[length];
+        System.Security.Cryptography.RandomNumberGenerator.Fill(data);
+        var reference = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(data));
+        Equal(reference, LifBrain.PayloadDigestForTest(data));
+    }
+}
+
+static void BundledPayloadIdentity()
+{
+    var bytes = File.ReadAllBytes(Path.Combine(RepositoryRoot(), "assets", "connectome", "malecns-v1.0.flyb.gz"));
+    ModAPI.Texture = Carrier(bytes);
+    Equal(bytes.Length, LifBrain.DecodePayloadForTest(ModAPI.Texture).Length);
+    var brain = LifBrain.TryCreate(out var status);
+    True(brain is not null, status);
+    True(status.Contains("loaded", StringComparison.OrdinalIgnoreCase), status);
+    True(brain.BrainMap != null, "real asset soma map unavailable");
+    Equal(176422, brain.BrainMap.NeuronCount);
+    Equal(141781, brain.BrainMap.Points.Length);
+    True(brain.BrainMap.Classes.Length > 0, "real asset superclass list unavailable");
+    Console.WriteLine("SOMA located=" + brain.BrainMap.LocatedCount + " displayed=" + brain.BrainMap.Points.Length);
+
+    var corrupted = Carrier(bytes);
+    var firstPayloadPixel = (corrupted.height - 1) * corrupted.width;
+    corrupted.GetPixels32()[firstPayloadPixel].r ^= 1;
+    Throws(() => LifBrain.DecodePayloadForTest(corrupted));
+}
+
+static void SomaSample()
+{
+    var sample = BrainMapSample.Create([1, 2, 3, float.NaN, 2, 3, 4, float.PositiveInfinity, 6, 7, 8, 9], ["ol_sensory", "", "", "vnc_intrinsic"]);
+    Equal(2, sample.LocatedCount);
+    Equal(0, sample.Points[0].NeuronId);
+    Equal(3, sample.Points[1].NeuronId);
+    Equal(7f, sample.Points[1].X);
+    Equal(9f, sample.Points[1].Z);
+    Equal(2, sample.Points[1].Category);
+    Equal(0, BrainMapSample.Create([float.NaN, 0, 0], [""]).Points.Length);
+    Equal(3, sample.Classes.Length);
+    True(Array.IndexOf(sample.Classes, "unannotated") >= 0, "blank superclass should be visible");
+    True(Array.IndexOf(sample.Classes, "ol_sensory") >= 0, "optic superclass should be visible");
+    True(Array.IndexOf(sample.Classes, "vnc_intrinsic") >= 0, "nerve-cord superclass should be visible");
+    Equal("Central brain local-circuit neurons", BrainMapSample.FriendlyClassName("cb_intrinsic"));
+    Equal("Enteric nervous system", BrainMapSample.FriendlyClassName("ENS"));
+    var soma = new float[20000 * 3];
+    for (var i = 0; i < soma.Length; i++) soma[i] = i;
+    sample = BrainMapSample.Create(soma, new string[20000]);
+    Equal(20000, sample.Points.Length);
+    Equal(20000, sample.LocatedCount);
+    for (var i = 1; i < sample.Points.Length; i++)
+    {
+        True(sample.Points[i].NeuronId > sample.Points[i - 1].NeuronId);
+        Equal(soma[sample.Points[i].NeuronId * 3], sample.Points[i].X);
+    }
+}
+
+static void DiagnosticSpikes()
+{
+    var brain = OneNeuronBrain();
+    brain.SetTestPopulation("test", 0);
+    brain.SetTestPending(0, 1f);
+    brain.Step(Healthy());
+    Equal(1, brain.PopulationCount("test"));
+    Equal(1, brain.PopulationFiredCount("test"));
+    True(brain.DidFire(0));
+    True(!brain.DidFire(-1) && !brain.DidFire(1));
+    brain.Step(default);
+    Equal(0, brain.FiredCount);
+    Equal(0, brain.DroppedCount);
+    Equal(0, brain.PopulationFiredCount("test"));
+    True(!brain.DidFire(0));
+    brain = LifBrain.CreateForTest(24001, new int[24002], [], []);
+    brain.SetTestActiveRange(24001, 1f);
+    brain.Step(Healthy());
+    True(brain.DroppedCount > 0);
+    brain.Step(default);
+    Equal(0, brain.DroppedCount);
+}
+
+static void RefractoryPropagationRecovers()
+{
+    // Source 1 targets neuron 0; only arrivals on tick 7 may reach a
+    // neuron that fired on tick 1 (five intervening refractory ticks).
+    for (var sourceTick = 2; sourceTick <= 6; sourceTick++)
+    {
+        var brain = LifBrain.CreateForTest(2, [0, 0, 1], [0], [1f]);
+        brain.SetTestPending(0, 1f);
+        brain.Step(Healthy());
+        Equal(0, brain.ActiveCount); // A firing neuron must not requeue itself.
+        while (brain.SimulationTick < sourceTick - 1) brain.Step(Healthy());
+        brain.SetTestPending(1, 1f);
+        brain.Step(Healthy());
+        Equal(sourceTick == 6 ? 1 : 0, brain.PendingCount);
+        brain.Step(Healthy());
+        Equal(sourceTick == 6 ? 1 : 0, brain.FiredCount);
+    }
+}
+
+static void SameTickRefractoryTargets()
+{
+    var brain = LifBrain.CreateForTest(2, [0, 1, 1], [1], [.5f]);
+    brain.SetTestPending(0, 1f);
+    brain.SetTestPending(1, 1f);
+    brain.Step(Healthy());
+    Equal(2, brain.FiredCount);
+    Equal(0, brain.PendingCount);
+    Equal(0, brain.ActiveCount);
+    brain.Step(Healthy());
+    Equal(0, brain.ProcessedCount);
+    Equal(0, brain.DroppedCount);
+    Equal(0, brain.FiredCount);
+}
+
+static void RefractoryWorkCannotStarveFreshInput()
+{
+    var brain = LifBrain.CreateForTest(24001, new int[24002], [], []);
+    brain.SetTestActiveRange(24000, 1f);
+    brain.Step(Healthy());
+    Equal(24000, brain.FiredCount);
+    brain.SetTestActiveRange(24001, .1f);
+    brain.Step(Healthy());
+    Equal(1, brain.ProcessedCount);
+    Equal(0, brain.DroppedCount);
+    Equal(.1f, brain.TestPotentialValue(24000));
+}
+
+static void SensoryRefractoryRecovery()
+{
+    var brain = OneNeuronBrain();
+    brain.SetTestPopulation(InputLight, 0);
+    var stimulus = Healthy(light: 1f);
+    brain.Step(stimulus);
+    Equal(1, brain.FiredCount);
+    for (var tick = 2; tick <= 6; tick++)
+    {
+        brain.Step(stimulus);
+        Equal(0, brain.ProcessedCount);
+        Equal(0, brain.FiredCount);
+    }
+    brain.Step(stimulus);
+    Equal(1, brain.FiredCount);
+}
+
+static LifBrain OneNeuronBrain() => LifBrain.CreateForTest(1, [0, 0], [], []);
+
+static SensoryFrame Healthy(float velocity = 0f, float light = 0f, float sound = 0f, float touch = 0f, float physicalContact = 0f, float heartbeat = 0f) => new()
+{
+    Alive = true,
+    HealthValid = true,
+    Health = 1f,
+    Oxygen = 1f,
+    OxygenValid = true,
+    Consciousness = 1f,
+    ConsciousnessValid = true,
+    Vitality = 1f,
+    VitalityValid = true,
+    DamageValid = true,
+    BloodValid = true,
+    Circulation = 1f,
+    CirculationValid = true,
+    Velocity = velocity,
+    Light = light,
+    LightValid = true,
+    Sound = sound,
+    Touch = touch,
+    PhysicalContact = physicalContact,
+    Heartbeat = heartbeat
+};
+
+static MemoryStream Header(string dataset, uint neurons, uint edges, uint retina)
+{
+    var stream = new MemoryStream();
+    using (var writer = new BinaryWriter(stream, System.Text.Encoding.UTF8, true))
+    {
+        writer.Write([(byte)'F', (byte)'L', (byte)'Y', (byte)'B']);
+        writer.Write(1u);
+        writer.Write(neurons);
+        writer.Write(edges);
+        writer.Write(retina);
+        var bytes = System.Text.Encoding.UTF8.GetBytes(dataset);
+        writer.Write((ushort)bytes.Length);
+        writer.Write(bytes);
+    }
+    stream.Position = 0;
+    return stream;
+}
+
+static Texture2D Carrier(byte[] payload)
+{
+    const int width = 4096;
+    var height = (payload.Length + 2) / 3 / width + 1;
+    var pixels = new Color32[width * height];
+    for (var i = 0; i < payload.Length; i++)
+    {
+        var sourcePixel = i / 3;
+        var sourceRow = sourcePixel / width;
+        var sourceColumn = sourcePixel % width;
+        var unityRow = height - 1 - sourceRow;
+        var index = unityRow * width + sourceColumn;
+        var pixel = pixels[index];
+        if (i % 3 == 0) pixel.r = payload[i];
+        else if (i % 3 == 1) pixel.g = payload[i];
+        else pixel.b = payload[i];
+        pixels[index] = pixel;
+    }
+    return new Texture2D(width, height, pixels);
+}
+
+static string RepositoryRoot()
+{
+    var current = new DirectoryInfo(AppContext.BaseDirectory);
+    while (current is not null && !File.Exists(Path.Combine(current.FullName, "PersonConnectome.slnx"))) current = current.Parent;
+    return current?.FullName ?? throw new InvalidOperationException("repository root not found");
+}
+
+static void Equal<T>(T expected, T actual) where T : IEquatable<T>
+{
+    if (!expected.Equals(actual)) throw new InvalidOperationException("expected " + expected + ", got " + actual);
+}
+
+static void True(bool value, string message = "assertion failed")
+{
+    if (!value) throw new InvalidOperationException(message);
+}
+
+static bool ApproximatelyEqual(float left, float right) => Math.Abs(left - right) <= .0001f;
+
+static void Throws(Action action)
+{
+    try
+    {
+        action();
+    }
+    catch (InvalidDataException)
+    {
+        return;
+    }
+
+    throw new InvalidOperationException("expected asset rejection");
+}
+
+
+static void MixedUnknownSignals()
+{
+    var brain = LifBrain.CreateForTest(1, new int[2], [], []);
+    var command = brain.Step(Healthy() with { Pain = .8f, Fire = float.NaN, Shock = float.PositiveInfinity, Unconscious = .8f, LiquidSedation = float.NaN, Damage = .4f, Bleeding = float.NaN });
+    Equal(.8f, command.BodyThreat); Equal(1f, command.Avoid);
+    Equal(.8f, command.Freeze); Equal(0f, command.Walk); Equal(.4f, command.Heal);
+    brain.SetTestPopulation(InputTactile, 0);
+    var manual = new ManualInputState();
+    brain.Step(Healthy() with { Impact = .8f, Vibration = float.NaN }, .05f, manual);
+    Equal(.8f, manual.GetReading(ManualInputChannel.TouchOther).Effective);
+}
+
+static void SubthresholdIntegration()
+{
+    const int count = 30000;
+    var brain = LifBrain.CreateForTest(count, new int[count + 1], [], []);
+    brain.SetTestActiveRange(count, .25f);
+    brain.Step(Healthy());
+    Equal(count, brain.ProcessedCount); Equal(0, brain.FiredCount); Equal(0, brain.DroppedCount);
+    for (var id = 0; id < count; id++) Equal(.25f, brain.TestPotentialValue(id));
+    brain.SetTestPending(count - 1, 1f);
+    brain.Step(Healthy());
+    Equal(1, brain.ProcessedCount); Equal(count - 1, brain.DecayedCount);
+    Equal(1, brain.FiredCount); True(brain.DidFire(count - 1)); Equal(0, brain.DroppedCount);
+    Equal(.25f * .92f, brain.TestPotentialValue(0));
+    brain.SetTestPending(0, 0f); // Exact cancellation is decay-only.
+    brain.Step(Healthy());
+    Equal(0, brain.ProcessedCount); Equal(.25f * .92f * .92f, brain.TestPotentialValue(0));
+    for (var tick = 0; tick < 70; tick++) brain.Step(Healthy());
+    Equal(0, brain.ActiveCount); Equal(0, brain.DroppedCount);
+    True(brain.DisplaySummary.Contains("decay-only="));
+    brain.Stop(); Equal(0, brain.DecayedCount);
+}
+
+static void CappedSpikePriority()
+{
+    const int count = 24001;
+    var brain = LifBrain.CreateForTest(count, new int[count + 1], [], []);
+    brain.SetTestActiveRange(count, 1f);
+    brain.SetTestPopulation(InputLight, count - 1);
+    brain.Step(Healthy(light: 1f));
+    Equal(count, brain.ProcessedCount); Equal(24000, brain.FiredCount); Equal(1, brain.DroppedCount);
+    True(brain.DidFire(count - 1), "late sensory candidate lost priority");
+    True(!brain.DidFire(count - 2)); Equal(0f, brain.TestPotentialValue(count - 2));
+    True(brain.DisplaySummary.Contains("dropped-spikes=1"));
+    brain.Step(Healthy()); Equal(0, brain.FiredCount); Equal(0, brain.PendingCount);
+
+    // A decaying recipient retains both its potential and fresh next-tick input.
+    brain = LifBrain.CreateForTest(2, [0, 1, 1], [1], [.5f]);
+    brain.SetTestPending(1, .25f); brain.Step(Healthy());
+    brain.SetTestPending(0, 1f); brain.Step(Healthy());
+    Equal(.25f * .92f, brain.TestPotentialValue(1)); Equal(.5f, brain.TestPendingValue(1));
+    brain.Step(Healthy()); Equal(.25f * .92f * .92f + .5f, brain.TestPotentialValue(1));
+}
+
+static void SynchronousReference()
+{
+    int[] rows = [0, 2, 4, 5, 7, 8, 10, 11, 12];
+    int[] posts = [1, 3, 2, 4, 0, 4, 7, 5, 6, 1, 7, 3];
+    float[] weights = [.5f, -.25f, 1f, .25f, .5f, .75f, -.5f, 1f, .5f, -.25f, 1f, .25f];
+    var brain = LifBrain.CreateForTest(8, rows, posts, weights);
+    var reference = new ReferenceState(8);
+    for (var tick = 1; tick <= 80; tick++)
+    {
+        reference.Inject(brain, tick);
+        reference.Advance(tick, rows, posts, weights);
+        brain.Step(Healthy());
+        reference.AssertMatches(brain);
+        Equal(0, brain.DroppedCount);
+    }
+}
+
+namespace Mod.Tests
+{
+    sealed class ReferenceState
+    {
+        private readonly float[] voltage;
+        private float[] queued;
+        private bool[] pending;
+        private bool[] active;
+        private readonly int[] refractory;
+        private bool[] fired = [];
+
+        public ReferenceState(int count)
+        {
+            voltage = new float[count];
+            queued = new float[count];
+            pending = new bool[count];
+            active = new bool[count];
+            refractory = new int[count];
+        }
+
+        public void Inject(LifBrain brain, int tick)
+        {
+            var injected = tick % 3 == 0 ? 3 : 0;
+            var amplitude = tick % 3 == 0 ? -.5f : .75f;
+            brain.SetTestPending(injected, amplitude);
+            queued[injected] = amplitude;
+            pending[injected] = true;
+            active[injected] = true;
+        }
+
+        public void Advance(int tick, int[] rows, int[] posts, float[] weights)
+        {
+            var next = new float[voltage.Length];
+            var nextPending = new bool[voltage.Length];
+            var nextActive = new bool[voltage.Length];
+            fired = new bool[voltage.Length];
+            UpdateNeurons(tick, nextActive);
+            Propagate(tick, rows, posts, weights, next, nextPending, nextActive);
+            queued = next;
+            pending = nextPending;
+            active = nextActive;
+        }
+
+        private void UpdateNeurons(int tick, bool[] nextActive)
+        {
+            for (var id = 0; id < active.Length; id++)
+            {
+                if (!active[id]) continue;
+                if (tick < refractory[id]) { voltage[id] = 0f; continue; }
+                voltage[id] = Math.Clamp(voltage[id] * .92f + Math.Clamp(pending[id] ? queued[id] : 0f, -4f, 4f), -8f, 8f);
+                if (voltage[id] >= 1f) { fired[id] = true; voltage[id] = 0f; refractory[id] = tick + 6; }
+                else nextActive[id] = Math.Abs(voltage[id]) > .001f;
+            }
+        }
+
+        private void Propagate(int tick, int[] rows, int[] posts, float[] weights, float[] next, bool[] nextPending, bool[] nextActive)
+        {
+            for (var id = 0; id < fired.Length; id++)
+            {
+                if (!fired[id]) continue;
+                for (var edge = rows[id]; edge < rows[id + 1]; edge++)
+                {
+                    var target = posts[edge];
+                    if (tick + 1 < refractory[target]) continue;
+                    next[target] += weights[edge];
+                    nextPending[target] = true;
+                    nextActive[target] = true;
+                }
+            }
+        }
+
+        public void AssertMatches(LifBrain brain)
+        {
+            for (var id = 0; id < voltage.Length; id++)
+            {
+                if (fired[id] != brain.DidFire(id)) throw new InvalidOperationException("reference firing mismatch at neuron " + id);
+                if (Math.Abs(voltage[id] - brain.TestPotentialValue(id)) > .000001f) throw new InvalidOperationException("reference voltage mismatch at neuron " + id);
+                if (Math.Abs(queued[id] - brain.TestPendingValue(id)) > .000001f) throw new InvalidOperationException("reference pending mismatch at neuron " + id);
+            }
+        }
+    }
+
+}
+
+namespace Mod.Tests
+{
+    internal sealed class SensoryFrameBox
+    {
+        public SensoryFrame Frame;
+    }
+}
