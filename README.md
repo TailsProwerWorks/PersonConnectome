@@ -88,6 +88,8 @@ Deployment copies manifest scripts, `mod.json`, a README with the current Git co
 
 ## Code and attribution
 
+For the contributor workflow, architecture guardrails, validation commands and recommended reasoning models, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
 - `Mod/RuntimeBrain.cs`: single authoritative sparse LIF simulation and decoder.
 - `Mod/PeoplePlaygroundPersonAdapter.cs` / `PersonConnectomeLimbController.cs`: native sensing and local actuation.
 - `Mod/PersonConnectomeController.cs`: Unity lifecycle, timing and collision probes.
