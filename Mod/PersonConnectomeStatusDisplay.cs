@@ -51,8 +51,8 @@ namespace Mod
         private readonly TextMeshProUGUI[] populationLabels = new TextMeshProUGUI[8];
         private readonly Image[] populationTracks = new Image[8], populationFills = new Image[8];
         private readonly Image[] spikeBars = new Image[120];
-        private readonly TextMeshProUGUI[] legendLabels = new TextMeshProUGUI[5];
-        private readonly Image[] legendColors = new Image[5];
+        private readonly List<TextMeshProUGUI> legendLabels = new List<TextMeshProUGUI>();
+        private readonly List<Image> legendColors = new List<Image>();
         private readonly float[] motorValues = new float[7];
         private readonly List<GameObject> motorElements = new List<GameObject>();
         private readonly List<GameObject> brainElements = new List<GameObject>();
@@ -70,12 +70,12 @@ namespace Mod
         private byte[] mapFlashAges;
         private int[] mapIndexes;
         private BrainMapSample map;
+        private Color[] mapColors;
         private const int MapWidth = 256, MapHeight = 320;
         private const byte MapFlashLifetime = 4;
         private static readonly string[] Pages = { "Overview", "Senses", "Brain", "Stimulation" };
         private static readonly string[] MotorNames = { "Walk", "Left arm", "Right arm", "Left leg", "Right leg", "Core", "Head" };
         private static readonly string[] PopulationNames = { "type:DNp09", "type:MDN", "type:DNp01", "type:MN9", "type:LC4", "type:LPLC2", "type:R1-R6", "motor" };
-        private static readonly string[] Legend = { "Optic intrinsic / sensory", "Central brain intrinsic", "Ventral nerve cord intrinsic", "Motor / descending", "Other annotated classes" };
         private static readonly Color Background = new Color(.035f, .055f, .075f, 1f);
         private static readonly Color Track = new Color(.1f, .15f, .19f, 1f);
         private static readonly Color Foreground = new Color(.91f, .95f, .97f, 1f);
@@ -84,10 +84,11 @@ namespace Mod
         private static readonly Color LatestBar = new Color(.98f, 1f, 1f, 1f);
         private static readonly Color EmptyBar = new Color(.12f, .25f, .3f, 1f);
         private static readonly Color ActiveControl = new Color(.18f, .55f, .65f, 1f);
-        private static readonly Color[] MapColors =
+        private static readonly Color[] MapFamilyColors =
         {
             new Color(.18f, .65f, .66f), new Color(.52f, .6f, .82f),
-            new Color(.78f, .59f, .28f), new Color(.7f, .38f, .67f), new Color(.42f, .48f, .54f)
+            new Color(.78f, .59f, .28f), new Color(.7f, .38f, .67f),
+            new Color(.35f, .78f, .5f), new Color(.86f, .4f, .32f), new Color(.42f, .48f, .54f)
         };
 
         private TextMeshProUGUI stimulationHeading, stimulationPerson, stimulationStatus, stimulationExplanation, stimulationResponse, stimulationModeHeading;
@@ -247,11 +248,6 @@ namespace Mod
             brainElements.Add(mapReset.gameObject);
             brainElements.Add(mapZoomIn.gameObject);
             mapCaption = AddText(brainElements, "", Foreground);
-            for (var i = 0; i < Legend.Length; i++)
-            {
-                legendColors[i] = AddImage(brainElements, MapColors[i]);
-                legendLabels[i] = AddText(brainElements, Legend[i], Foreground);
-            }
             populationHeading = AddText(brainElements, "POPULATIONS · FIRED / MEMBERS", Accent);
             for (var i = 0; i < populationLabels.Length; i++)
             {
@@ -770,7 +766,7 @@ namespace Mod
         {
             var pointer = data as PointerEventData;
             if (pointer == null || pointer.button != PointerEventData.InputButton.Left || mapViewport == null || mapImage == null || !mapImage.enabled) return;
-            var scale = canvas == null ? 1f : Mathf.Max(1f, canvas.scaleFactor);
+            var scale = canvas == null ? 1f : Mathf.Max(.0001f, canvas.scaleFactor);
             mapPan += new Vector2(pointer.delta.x, -pointer.delta.y) / scale;
             var view = mapViewport.rect;
             var image = mapImage.rectTransform.rect;
@@ -879,6 +875,7 @@ namespace Mod
         private void LayoutBrain(float width, ref float y)
         {
             RefreshMap();
+            EnsureLegend();
             PlaceText(historyHeading, 0f, ref y, width, "SPIKES / NEURAL TICK");
             var peak = 0f;
             for (var i = 0; i < historyCount; i++) peak = Mathf.Max(peak, history[i]);
@@ -911,10 +908,10 @@ namespace Mod
             mapImage.enabled = mapTexture != null;
             y += previewHeight + 10f;
             PlaceText(mapCaption, 0f, ref y, width, "TICK " + capturedTick + " · " + latest.ToString("0") + " graph spikes\nDrag to pan · scroll or use - / + to zoom · 1:1 resets.");
-            for (var i = 0; i < Legend.Length; i++)
+            for (var i = 0; i < legendLabels.Count; i++)
             {
                 SetRect(legendColors[i].rectTransform, 0f, y + 3f, 9f, 9f);
-                PlaceText(legendLabels[i], 16f, ref y, width - 16f, Legend[i]);
+                PlaceText(legendLabels[i], 16f, ref y, width - 16f, BrainMapSample.FriendlyClassName(map.Classes[i]));
             }
             PlaceText(populationHeading, 0f, ref y, width, populationHeading.text);
             for (var i = 0; i < PopulationNames.Length; i++)
@@ -1225,6 +1222,8 @@ namespace Mod
             telemetryElements.Clear();
             stimulationElements.Clear();
             stimulationSections.Clear();
+            legendLabels.Clear();
+            legendColors.Clear();
             Array.Clear(stimulationRows, 0, stimulationRows.Length);
             stimulationHeading = stimulationPerson = stimulationStatus = stimulationExplanation = stimulationResponse = stimulationModeHeading = null;
             stimulationMaster = mixedMode = manualOnlyMode = zeroManual = returnToLive = null;
@@ -1238,6 +1237,7 @@ namespace Mod
             if (mapTexture != null) UnityEngine.Object.Destroy(mapTexture);
             mapTexture = null;
             map = null;
+            mapColors = null;
             mapBackground = mapPixels = null;
             mapFlashColors = null;
             mapFlashAges = null;
@@ -1247,10 +1247,18 @@ namespace Mod
         private void RefreshMap()
         {
             if (brain.BrainMap == null) return;
-            if (map == brain.BrainMap && capturedTick == brain.SimulationTick) return;
+            var currentTick = brain.SimulationTick;
+            var reset = map == brain.BrainMap && currentTick < capturedTick;
+            if (reset)
+            {
+                Array.Clear(mapFlashAges, 0, mapFlashAges.Length);
+                Array.Clear(mapFlashColors, 0, mapFlashColors.Length);
+            }
+            if (!reset && map == brain.BrainMap && capturedTick == currentTick) return;
             if (map != brain.BrainMap)
             {
                 map = brain.BrainMap;
+                mapColors = CreateMapColors(map.Classes);
                 BuildMap();
             }
             for (var i = 0; i < mapFlashAges.Length; i++)
@@ -1260,13 +1268,13 @@ namespace Mod
             Array.Copy(mapBackground, mapPixels, mapPixels.Length);
             for (var i = 0; i < map.Points.Length; i++)
             {
-                if (brain.DidFire(map.Points[i].NeuronId)) MarkMapFlash(mapIndexes[i], MapColors[map.Points[i].Category]);
+                if (brain.DidFire(map.Points[i].NeuronId)) MarkMapFlash(mapIndexes[i], mapColors[map.Points[i].Category]);
             }
             for (var i = 0; i < mapPixels.Length; i++)
             {
                 if (mapFlashAges[i] > 0) mapPixels[i] = MapFlashColor(mapFlashAges[i], mapFlashColors[i]);
             }
-            capturedTick = brain.SimulationTick;
+            capturedTick = currentTick;
             mapTexture.SetPixels32(mapPixels);
             mapTexture.Apply(false, false);
         }
@@ -1300,8 +1308,58 @@ namespace Mod
                 var z = MapHeight - 1 - (int)(offsetZ + (point.Z - minZ) * scale);
                 var index = z * MapWidth + x;
                 mapIndexes[i] = index;
-                mapBackground[index] = MapColors[point.Category];
+                mapBackground[index] = mapColors[point.Category];
             }
+        }
+
+        private void EnsureLegend()
+        {
+            if (map == null || legendLabels.Count == map.Classes.Length) return;
+            for (var i = 0; i < legendLabels.Count; i++)
+            {
+                UnityEngine.Object.Destroy(legendLabels[i].gameObject);
+                UnityEngine.Object.Destroy(legendColors[i].gameObject);
+            }
+            legendLabels.Clear();
+            legendColors.Clear();
+            for (var i = 0; i < map.Classes.Length; i++)
+            {
+                legendColors.Add(AddImage(brainElements, mapColors[i]));
+                legendLabels.Add(AddText(brainElements, BrainMapSample.FriendlyClassName(map.Classes[i]), Foreground));
+            }
+        }
+
+        private static Color[] CreateMapColors(string[] classes)
+        {
+            var colors = new Color[classes.Length];
+            var familyCounts = new int[MapFamilyColors.Length];
+            for (var i = 0; i < classes.Length; i++)
+            {
+                var family = ClassColorFamily(classes[i]);
+                var variant = familyCounts[family]++;
+                var shade = 1f - Mathf.Min(.18f, variant * .035f);
+                colors[i] = new Color(
+                    MapFamilyColors[family].r * shade,
+                    MapFamilyColors[family].g * shade,
+                    MapFamilyColors[family].b * shade,
+                    1f);
+            }
+            return colors;
+        }
+
+        private static int ClassColorFamily(string superclass)
+        {
+            if (String.IsNullOrEmpty(superclass) || superclass == "unannotated") return 6;
+            if (superclass.StartsWith("visual_", StringComparison.Ordinal) || superclass.StartsWith("ol_", StringComparison.Ordinal)) return 0;
+            if (superclass.IndexOf("endocrine", StringComparison.Ordinal) >= 0) return 5;
+            if (superclass.StartsWith("sensory_", StringComparison.Ordinal)) return 4;
+            if (superclass.IndexOf("motor", StringComparison.Ordinal) >= 0 ||
+                superclass.IndexOf("descending", StringComparison.Ordinal) >= 0 ||
+                superclass.IndexOf("ascending", StringComparison.Ordinal) >= 0 ||
+                superclass.IndexOf("efferent", StringComparison.Ordinal) >= 0) return 3;
+            if (superclass.StartsWith("cb_", StringComparison.Ordinal)) return 1;
+            if (superclass.StartsWith("vnc_", StringComparison.Ordinal) || superclass == "ENS") return 2;
+            return 6;
         }
 
         private void MarkMapFlash(int index, Color color)

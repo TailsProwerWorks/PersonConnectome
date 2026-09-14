@@ -8,7 +8,7 @@ The screen panel starts at the top center. Prev / Next selects a person; its num
 <b><color=#FFD700>READ THE PANEL</color></b>
 Overview: native body state, local limb capability and requested movement. Requests are not measured motion; filtered neural activity is shown separately.
 Senses: game readings and engineered proxies. Audio retains the last source with seconds since detection; current sound clears when playback stops. Liquid percentages are the highest concentration in a tracked limb, not dose or effect strength.
-Brain: workload, actual spikes and all located source soma positions. Colored flashes mark fired points in the displayed capture; dark points do not prove inactivity.
+Brain: workload, actual spikes and all located source soma positions. The legend lists every superclass in the asset. Colored flashes mark fired points in the displayed capture; dark points do not prove inactivity. Nearby positions can share pixels in the raster preview.
 
 <b><color=#FFD700>HOW IT WORKS</color></b>
 The unchanged MaleCNS-derived graph has 176,422 neurons and 6,287,749 retained connections. The map displays all 141,781 located neurons; all graph neurons remain in the simulation.

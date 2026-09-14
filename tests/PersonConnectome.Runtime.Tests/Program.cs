@@ -1017,6 +1017,7 @@ static void BundledPayloadIdentity()
     True(brain.BrainMap != null, "real asset soma map unavailable");
     Equal(176422, brain.BrainMap.NeuronCount);
     Equal(141781, brain.BrainMap.Points.Length);
+    True(brain.BrainMap.Classes.Length > 0, "real asset superclass list unavailable");
     Console.WriteLine("SOMA located=" + brain.BrainMap.LocatedCount + " displayed=" + brain.BrainMap.Points.Length);
 
     var corrupted = Carrier(bytes);
@@ -1035,6 +1036,12 @@ static void SomaSample()
     Equal(9f, sample.Points[1].Z);
     Equal(2, sample.Points[1].Category);
     Equal(0, BrainMapSample.Create([float.NaN, 0, 0], [""]).Points.Length);
+    Equal(3, sample.Classes.Length);
+    True(Array.IndexOf(sample.Classes, "unannotated") >= 0, "blank superclass should be visible");
+    True(Array.IndexOf(sample.Classes, "ol_sensory") >= 0, "optic superclass should be visible");
+    True(Array.IndexOf(sample.Classes, "vnc_intrinsic") >= 0, "nerve-cord superclass should be visible");
+    Equal("Central brain local-circuit neurons", BrainMapSample.FriendlyClassName("cb_intrinsic"));
+    Equal("Enteric nervous system", BrainMapSample.FriendlyClassName("ENS"));
     var soma = new float[20000 * 3];
     for (var i = 0; i < soma.Length; i++) soma[i] = i;
     sample = BrainMapSample.Create(soma, new string[20000]);
