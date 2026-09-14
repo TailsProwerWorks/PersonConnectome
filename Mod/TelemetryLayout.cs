@@ -2,6 +2,38 @@ using System;
 
 namespace Mod
 {
+    // Active display numbers, independent of Unity. Released slots are reused
+    // without renumbering surviving people or retaining deleted displays.
+    internal sealed class TelemetryIdentityPool
+    {
+        private readonly System.Collections.Generic.List<object> owners = new System.Collections.Generic.List<object>();
+
+        public int Acquire(object owner)
+        {
+            if (owner == null) throw new ArgumentNullException(nameof(owner));
+            var existing = owners.IndexOf(owner);
+            if (existing >= 0) return existing + 1;
+            var free = owners.IndexOf(null);
+            if (free >= 0)
+            {
+                owners[free] = owner;
+                return free + 1;
+            }
+            owners.Add(owner);
+            return owners.Count;
+        }
+
+        public void Release(object owner)
+        {
+            if (owner == null) return;
+            var index = owners.IndexOf(owner);
+            if (index < 0) return;
+            owners[index] = null;
+            while (owners.Count > 0 && owners[owners.Count - 1] == null)
+                owners.RemoveAt(owners.Count - 1);
+        }
+    }
+
     // Screen geometry only; independent of Unity so supported sizes can be tested.
     internal readonly struct TelemetryLayout
     {

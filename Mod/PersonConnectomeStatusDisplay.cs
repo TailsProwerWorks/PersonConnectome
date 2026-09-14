@@ -15,14 +15,16 @@ namespace Mod
     {
         private static readonly List<PersonConnectomeStatusDisplay> displays = new List<PersonConnectomeStatusDisplay>();
         private static PersonConnectomeStatusDisplay selected;
-        private static int nextId, page;
+        private static readonly TelemetryIdentityPool identities = new TelemetryIdentityPool();
+        private static int page;
         private static bool collapsed;
         private static float textScale = 1f;
         private static float panelX, panelTop = 8f, panelWidth = 510f, panelHeight = 660f;
-        private readonly int id = ++nextId;
+        private int id;
         private readonly float[] history = new float[120];
         private int historyIndex, historyCount;
         private float refreshTimer, stepMilliseconds, droppedSeconds;
+        private float neuralEscapeFlash;
         private float lastSampleTime = -1f;
         private long capturedTick;
         private ConnectomeBrain brain;
@@ -34,7 +36,7 @@ namespace Mod
         private TextMeshProUGUI interactionHint;
         private ScrollRect scroll;
         private Scrollbar scrollbar;
-        private TextMeshProUGUI title, toggleLabel, location, state, timing, body;
+        private TextMeshProUGUI title, toggleLabel, location, state, escapeState, timing, body;
         private readonly List<TextMeshProUGUI> telemetryHeadings = new List<TextMeshProUGUI>();
         private readonly List<TelemetryRow> telemetryRows = new List<TelemetryRow>();
         private readonly List<GameObject> telemetryElements = new List<GameObject>();
@@ -73,6 +75,7 @@ namespace Mod
         private Color[] mapColors;
         private const int MapWidth = 256, MapHeight = 320;
         private const byte MapFlashLifetime = 4;
+        private const float NeuralEscapeFlashSeconds = .35f;
         private static readonly string[] Pages = { "Overview", "Senses", "Brain", "Stimulation" };
         private static readonly string[] MotorNames = { "Walk", "Left arm", "Right arm", "Left leg", "Right leg", "Core", "Head" };
         private static readonly string[] PopulationNames = { "type:DNp09", "type:MDN", "type:DNp01", "type:MN9", "type:LC4", "type:LPLC2", "type:R1-R6", "motor" };
@@ -105,6 +108,7 @@ namespace Mod
         {
             if (active && !displays.Contains(this))
             {
+                id = identities.Acquire(this);
                 displays.Add(this);
                 CreateWorldLabel();
             }
@@ -113,9 +117,12 @@ namespace Mod
                 displays.Remove(this);
                 ReleaseWorldLabel();
                 ReleaseUi();
+                identities.Release(this);
+                id = 0;
                 Array.Clear(history, 0, history.Length);
                 historyIndex = historyCount = 0;
                 stepMilliseconds = droppedSeconds = 0f;
+                neuralEscapeFlash = 0f;
                 lastSampleTime = -1f;
                 capturedTick = 0;
                 refreshTimer = 0f;
@@ -132,6 +139,10 @@ namespace Mod
             stepMilliseconds = milliseconds;
             droppedSeconds += skippedSeconds;
             lastSampleTime = Time.unscaledTime;
+            if (source != null && source.LastCommand.NeuralEscape > 0f)
+            {
+                neuralEscapeFlash = NeuralEscapeFlashSeconds;
+            }
             history[historyIndex] = source.FiredCount;
             historyIndex = (historyIndex + 1) % history.Length;
             historyCount = Math.Min(historyCount + 1, history.Length);
@@ -141,6 +152,7 @@ namespace Mod
         {
             brain = source;
             adapter = personAdapter;
+            neuralEscapeFlash = Mathf.Max(0f, neuralEscapeFlash - Mathf.Max(0f, elapsedSeconds));
             UpdateWorldLabel();
             if (selected != this || Screen.width <= 0 || Screen.height <= 0) return;
             if (canvasObject == null) BuildUi();
@@ -162,7 +174,7 @@ namespace Mod
             background.color = Background;
             // The panel is an ordinary UI raycast target, including its blank space.
             background.raycastTarget = true;
-            title = CreateText(panel, "Person Connectome · #" + id, 18f, Accent);
+            title = CreateText(panel, "Person Connectome | #" + id, 18f, Accent);
             titleDragArea = CreateDragArea(panel, "Move panel", MovePanel);
             toggle = CreateButton(panel, "Collapse", ToggleCollapse, out toggleLabel);
             expanded = CreateRect(panel, "Expanded controls");
@@ -171,7 +183,8 @@ namespace Mod
             smaller = CreateButton(expanded, "A-", () => ResizeText(-.1f), out _);
             larger = CreateButton(expanded, "A+", () => ResizeText(.1f), out _);
             location = CreateText(expanded, "", 13f, Foreground);
-            state = CreateText(expanded, "INITIALIZING", 14f, Accent);
+            state = CreateText(expanded, "BODY THREAT: waiting", 12f, Accent);
+            escapeState = CreateText(expanded, "NEURAL ESCAPE: waiting", 12f, Accent);
             timing = CreateText(expanded, "Input: not sampled", 13f, Foreground);
             for (var i = 0; i < tabs.Length; i++)
             {
@@ -213,7 +226,7 @@ namespace Mod
                 telemetryHeadings.Add(heading);
                 telemetryElements.Add(heading.gameObject);
             }
-            motorHeading = AddText(motorElements, "REQUESTED MOTOR OUTPUT · -1 TO +1", Accent);
+            motorHeading = AddText(motorElements, "REQUESTED MOTOR OUTPUT | -1 TO +1", Accent);
             for (var i = 0; i < motorLabels.Length; i++)
             {
                 motorLabels[i] = AddText(motorElements, "", Foreground);
@@ -225,7 +238,7 @@ namespace Mod
             historyScale = AddText(brainElements, "", Foreground);
             historyBackground = AddImage(brainElements, Track);
             for (var i = 0; i < spikeBars.Length; i++) spikeBars[i] = AddImage(brainElements, Accent);
-            mapHeading = AddText(brainElements, "SOMA MAP · RAW X/Z PROJECTION", Accent);
+            mapHeading = AddText(brainElements, "SOMA MAP | RAW X/Z PROJECTION", Accent);
             mapViewport = CreateRect(content, "Soma map preview");
             var mapBackgroundImage = mapViewport.gameObject.AddComponent<Image>();
             mapBackgroundImage.color = new Color(.025f, .04f, .055f, 1f);
@@ -248,7 +261,7 @@ namespace Mod
             brainElements.Add(mapReset.gameObject);
             brainElements.Add(mapZoomIn.gameObject);
             mapCaption = AddText(brainElements, "", Foreground);
-            populationHeading = AddText(brainElements, "POPULATIONS · FIRED / MEMBERS", Accent);
+            populationHeading = AddText(brainElements, "POPULATIONS | FIRED / MEMBERS", Accent);
             for (var i = 0; i < populationLabels.Length; i++)
             {
                 populationLabels[i] = AddText(brainElements, "", Foreground);
@@ -277,7 +290,7 @@ namespace Mod
                 refreshTimer = 0f;
             }, out stimulationMasterLabel);
             stimulationElements.Add(stimulationMaster.gameObject);
-            stimulationModeHeading = AddText(stimulationElements, "Input mode · Mixed or Manual only", Accent);
+            stimulationModeHeading = AddText(stimulationElements, "Input mode | Mixed or Manual only", Accent);
             mixedMode = CreateButton(content, "Mixed", () =>
             {
                 manualInput.SetMode(ManualInputMode.Mixed);
@@ -380,12 +393,12 @@ namespace Mod
         private void LayoutStimulation(float width, ref float y)
         {
             PlaceText(stimulationHeading, 0f, ref y, width, stimulationHeading.text);
-            PlaceText(stimulationPerson, 0f, ref y, width, "Editing person #" + id + " · settings are session-local and independent");
-            var statusText = !adapter.HasSample ? "INACTIVE · waiting for native sample" :
-                adapter.IsTerminal ? "SUSPENDED · native terminal state" :
-                adapter.LiveState.IndexOf("INVALID", StringComparison.OrdinalIgnoreCase) >= 0 ? "SUSPENDED · native health data unavailable" :
-                !manualInput.OverrideEnabled ? "INACTIVE · live input" :
-                "ACTIVE · " + (manualInput.Mode == ManualInputMode.ManualOnly ? "Manual only" : "Mixed");
+            PlaceText(stimulationPerson, 0f, ref y, width, "Editing person #" + id + " | settings are session-local and independent");
+            var statusText = !adapter.HasSample ? "INACTIVE | waiting for native sample" :
+                adapter.IsTerminal ? "SUSPENDED | native terminal state" :
+                adapter.LiveState.IndexOf("INVALID", StringComparison.OrdinalIgnoreCase) >= 0 ? "SUSPENDED | native health data unavailable" :
+                !manualInput.OverrideEnabled ? "INACTIVE | live input" :
+                "ACTIVE | " + (manualInput.Mode == ManualInputMode.ManualOnly ? "Manual only" : "Mixed");
             PlaceText(stimulationStatus, 0f, ref y, width, statusText);
             PlaceText(stimulationExplanation, 0f, ref y, width, stimulationExplanation.text);
             SetRect(stimulationMaster.transform as RectTransform, 0f, y, width, 26f);
@@ -444,8 +457,8 @@ namespace Mod
             SetRect(row.PulseHint.rectTransform, width * .66f, lowerY + 2f, width * .08f, 22f);
             SetRect(row.Trigger.transform as RectTransform, width * .76f, lowerY, width * .24f, 26f);
             var reading = manualInput.GetReading(row.Descriptor.Channel);
-            var availability = reading.Available ? "" : " · UNAVAILABLE";
-            var pulseStatus = manualInput.GetPulseRemaining(row.Descriptor.Channel) > 0 ? " · pulse " + manualInput.GetPulseRemaining(row.Descriptor.Channel) + " ticks" : "";
+            var availability = reading.Available ? "" : " | UNAVAILABLE";
+            var pulseStatus = manualInput.GetPulseRemaining(row.Descriptor.Channel) > 0 ? " | pulse " + manualInput.GetPulseRemaining(row.Descriptor.Channel) + " ticks" : "";
             row.LiveEffective.text = "LIVE " + Format(reading.Live) + "  ->  EFFECTIVE " + Format(reading.Effective) + pulseStatus + availability;
             if (row.Descriptor.Directional) row.DirectionValue.text = "dir " + FormatSigned(reading.EffectiveDirection);
             SetButtonColor(row.Override, manualInput.OverrideEnabled && manualInput.IsSelected(row.Descriptor.Channel) ? ActiveControl : Track);
@@ -474,10 +487,10 @@ namespace Mod
         {
             var command = brain.LastCommand;
             return "LATEST NEURAL TICK\n" +
-                "tick " + brain.SimulationTick + " · fired " + brain.FiredCount + " · processed " + brain.ProcessedCount +
-                " · queued " + brain.PendingCount + " · dropped " + brain.DroppedCount +
-                "\nREQUEST · walk " + FormatSigned(command.Walk) + " · arms " + FormatSigned(command.LeftArm) + "/" + FormatSigned(command.RightArm) +
-                " · legs " + FormatSigned(command.LeftLeg) + "/" + FormatSigned(command.RightLeg);
+                "tick " + brain.SimulationTick + " | fired " + brain.FiredCount + " | integrated " + brain.ProcessedCount + " | decay-only " + brain.DecayedCount +
+                " | queued " + brain.PendingCount + " | dropped-spikes " + brain.DroppedCount +
+                "\nREQUEST | walk " + FormatSigned(command.Walk) + " | arms " + FormatSigned(command.LeftArm) + "/" + FormatSigned(command.RightArm) +
+                " | legs " + FormatSigned(command.LeftLeg) + "/" + FormatSigned(command.RightLeg);
         }
 
         private void RefreshUi()
@@ -492,7 +505,7 @@ namespace Mod
             ApplyPanelPosition(layout);
             panel.sizeDelta = new Vector2(width, height);
             SetRect(title.rectTransform, 12f, 10f, width - 110f, 28f);
-            title.text = "Person Connectome · #" + id + (manualInput.OverrideEnabled ? " · MANUAL INPUT" : "");
+            title.text = "Person Connectome | #" + id + (manualInput.OverrideEnabled ? " | MANUAL INPUT" : "");
             SetRect(titleDragArea, 0f, 0f, width - 100f, 48f);
             SetRect((RectTransform)toggle.transform, width - 92f, 9f, 80f, 28f);
             toggleLabel.text = collapsed ? "Expand" : "Collapse";
@@ -505,13 +518,27 @@ namespace Mod
             SetRect((RectTransform)larger.transform, width - 44f, 0f, 28f, 28f);
             SetRect(location.rectTransform, 124f, 0f, width - 210f, 32f);
             var anchor = adapter?.StatusAnchor;
-            location.text = displays.Count + " controlled" + (anchor == null ? "" : " · at " + anchor.position.x.ToString("0.0") + ", " + anchor.position.y.ToString("0.0"));
+            location.text = displays.Count + " controlled" + (anchor == null ? "" : " | at " + anchor.position.x.ToString("0.0") + ", " + anchor.position.y.ToString("0.0"));
             var y = 36f;
-            state.color = hasSample && (adapter.IsTerminal || adapter.LiveThreat > .05f) ? new Color(1f, .63f, .5f) : Accent;
-            var manualIndicator = manualInput.OverrideEnabled ? " · MANUAL INPUT ACTIVE" : "";
-            PlaceText(state, 12f, ref y, width - 24f, (!hasSample ? "WAITING FOR NATIVE SAMPLE" : adapter.LiveState + " · " + adapter.LiveSignal + " " + adapter.LiveSignalValue.ToString("0.00")) + manualIndicator);
+            var neuralEscapeVisible = hasSample && !adapter.IsTerminal && neuralEscapeFlash > 0f;
+            var bodyThreatVisible = hasSample && adapter.LiveThreat > .05f;
+            var terminal = hasSample && adapter.IsTerminal;
+            state.color = bodyThreatVisible || terminal ? new Color(1f, .63f, .5f) : Accent;
+            escapeState.color = neuralEscapeVisible ? new Color(1f, .35f, .78f) : Accent;
+            // Stable adjacent columns: a neural event never replaces body state.
+            // Each column measures its own wrapped height at narrow panel sizes.
+            var statusWidth = (width - 36f) * .5f;
+            var bodyY = y;
+            var escapeY = y;
+            var bodyStatus = !hasSample ? "waiting" : terminal ? "stopped" : bodyThreatVisible ? adapter.LiveThreat.ToString("0.00") : "clear";
+            var escapeStatus = !hasSample ? "waiting" : terminal ? "stopped" : neuralEscapeVisible ? "requested" : "idle";
+            PlaceText(state, 12f, ref bodyY, statusWidth, "BODY THREAT: " + bodyStatus);
+            PlaceText(escapeState, 24f + statusWidth, ref escapeY, statusWidth, "NEURAL ESCAPE: " + escapeStatus);
+            y = Mathf.Max(bodyY, escapeY);
+            var nativeSignal = !hasSample ? "WAITING FOR NATIVE SAMPLE" : adapter.LiveState + " | " + adapter.LiveSignal + " " + adapter.LiveSignalValue.ToString("0.00");
+            var manualIndicator = manualInput.OverrideEnabled ? " | MANUAL INPUT ACTIVE" : "";
             var age = lastSampleTime < 0f ? "not sampled" : (Time.unscaledTime - lastSampleTime).ToString("0.00") + " s ago";
-            PlaceText(timing, 12f, ref y, width - 24f, "Input: " + age + " · loop " + stepMilliseconds.ToString("0.0") + " ms\nSkipped game time: " + droppedSeconds.ToString("0.000") + " s · scroll below for more");
+            PlaceText(timing, 12f, ref y, width - 24f, nativeSignal + manualIndicator + "\nInput: " + age + " | loop " + stepMilliseconds.ToString("0.0") + " ms\nSkipped game time: " + droppedSeconds.ToString("0.000") + " s | scroll below for more");
             for (var i = 0; i < tabs.Length; i++)
             {
                 SetRect((RectTransform)tabs[i].transform, 12f + i * (width - 24f) / Pages.Length, y, (width - 24f) / Pages.Length - 4f, 30f);
@@ -551,7 +578,7 @@ namespace Mod
                 telemetrySections.Add(adapter.LiveEnvironmentSummary);
                 telemetrySections.Add(adapter.LiveLiquidSummary);
                 telemetrySections.Add(adapter.LiveAudioSummary);
-                telemetrySections.Add("DERIVED PROXIES\nDamage/blood loss, temperature bands, falling, vibration, proprioception and submerged hypoxia combine native readings.\nVision is nearest-collider line of sight × ambient light. Audio is external object playback. No semantic sight or smell.\nVitality uses valid health when its native baseline is unavailable.");
+                telemetrySections.Add("DERIVED PROXIES\nDamage/blood loss, temperature bands, falling, vibration, proprioception and submerged hypoxia combine native readings.\nVision is nearest-collider line of sight combined with ambient + nearby light proxy. Local light uses enabled native light sprites and an approximate footprint; no texture/shadow sampling. Audio is external object playback. No semantic sight or smell.\nMin-limb-health is the lowest valid normalized health among connected limbs; it is not native Vitality.");
             }
             else
             {
@@ -880,7 +907,7 @@ namespace Mod
             var peak = 0f;
             for (var i = 0; i < historyCount; i++) peak = Mathf.Max(peak, history[i]);
             var latest = historyCount == 0 ? 0f : history[(historyIndex - 1 + history.Length) % history.Length];
-            PlaceText(historyScale, 0f, ref y, width, "LATEST " + latest.ToString("0") + " SPIKES · scale peak " + peak.ToString("0") + " · one bar per processed tick");
+            PlaceText(historyScale, 0f, ref y, width, "LATEST " + latest.ToString("0") + " SPIKES | scale peak " + peak.ToString("0") + " | one bar per processed tick");
             SetRect(historyBackground.rectTransform, 0f, y, width, 64f);
             for (var i = 0; i < spikeBars.Length; i++)
             {
@@ -890,7 +917,7 @@ namespace Mod
                 SetRect(spikeBars[i].rectTransform, i * width / history.Length, y + 64f - h, Mathf.Max(1f, width / history.Length - 1f), h);
             }
             y += 76f;
-            PlaceText(mapHeading, 0f, ref y, width, "SOMA ACTIVITY · RAW X/Z PROJECTION\n" + (map == null ? "No located soma data" : map.Points.Length + " displayed / " + map.LocatedCount + " located / " + map.NeuronCount + " neurons"));
+            PlaceText(mapHeading, 0f, ref y, width, "SOMA ACTIVITY | RAW X/Z PROJECTION\n" + (map == null ? "No located soma data" : map.Points.Length + " displayed / " + map.LocatedCount + " located / " + map.NeuronCount + " neurons"));
             var imageWidth = Mathf.Min(width, MapWidth);
             var imageHeight = imageWidth * MapHeight / MapWidth;
             var previewHeight = Mathf.Min(imageHeight, Mathf.Max(220f, width * .78f));
@@ -907,7 +934,7 @@ namespace Mod
             mapImage.texture = mapTexture;
             mapImage.enabled = mapTexture != null;
             y += previewHeight + 10f;
-            PlaceText(mapCaption, 0f, ref y, width, "TICK " + capturedTick + " · " + latest.ToString("0") + " graph spikes\nDrag to pan · scroll or use - / + to zoom · 1:1 resets.");
+            PlaceText(mapCaption, 0f, ref y, width, "TICK " + capturedTick + " | " + latest.ToString("0") + " graph spikes\nDrag to pan | scroll or use - / + to zoom | 1:1 resets.");
             for (var i = 0; i < legendLabels.Count; i++)
             {
                 SetRect(legendColors[i].rectTransform, 0f, y + 3f, 9f, 9f);

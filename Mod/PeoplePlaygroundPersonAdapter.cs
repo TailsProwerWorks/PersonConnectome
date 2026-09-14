@@ -17,6 +17,7 @@ namespace Mod
         private static readonly string[] CoreNames = { "body", "chest", "torso", "pelvis", "hip", "stomach", "waist" };
         private readonly GameObject root;
         private readonly PersonBehaviour person;
+        private readonly SpawnableAsset pumpkinAsset;
         private readonly List<LimbBehaviour> limbs = [];
         private readonly List<PersonConnectomeLimbController> limbControllers = [];
         private readonly List<LimbBehaviour> discoveredLimbs = [];
@@ -31,7 +32,17 @@ namespace Mod
         private bool hasAppliedControl;
         private readonly float visionRadius;
         private readonly Collider2D[] nearbyColliders = new Collider2D[128];
+        private readonly HashSet<PhysicalBehaviour> lightOwners = [];
+        private readonly HashSet<SpriteRenderer> sampledLightSprites = [];
+        private readonly List<LightSprite> nativeLightSprites = [];
+        private readonly List<SpriteRenderer> lightSpriteBuffer = [];
+        private readonly List<FlashlightAttachmentBehaviour> flashlightAttachments = [];
+        private const int MaxLightSpritesPerSample = 64;
         private readonly RaycastHit2D[] visionLinecastHits = new RaycastHit2D[32];
+        private const int MaxVisualCandidates = 16;
+        private readonly Collider2D[] visualCandidates = new Collider2D[MaxVisualCandidates];
+        private readonly Vector2[] visualPoints = new Vector2[MaxVisualCandidates];
+        private readonly float[] visualDistances = new float[MaxVisualCandidates];
         private float collision;
         private float vibration;
         private float projectile;
@@ -46,6 +57,9 @@ namespace Mod
         private string visionTargetSummary = "none";
         private readonly float[] spectrumBuffer = new float[512];
         private AudioSource winningAudioSource;
+        private readonly List<AudioSource> nearbyAudioSources = [];
+        private readonly HashSet<AudioSource> sampledAudioSources = [];
+        private const int MaxAudioSourcesPerSample = 64;
         private readonly Dictionary<string, LiquidReading> liquidReadings = new Dictionary<string, LiquidReading>(StringComparer.Ordinal);
         private int readableLiquidContainers;
         private int invalidLiquidReadings;
@@ -63,23 +77,23 @@ namespace Mod
         {
             get
             {
-                return "BODY:\n  native-hp=" + (lastFrame.HealthValid ? lastFrame.Health.ToString("0.00") : "unknown") + "  limb-damage=" + (lastFrame.DamageValid ? lastFrame.Damage.ToString("0.00") : "unknown") + "  damage-event=" + lastFrame.DamageEvent.ToString("0.00") + "  pain=" + lastFrame.Pain.ToString("0.00") + "  shock=" + lastFrame.Shock.ToString("0.00") + "\n  oxygen=" + (lastFrame.OxygenValid ? lastFrame.Oxygen.ToString("0.00") : "unknown") + "  conscious=" + (lastFrame.ConsciousnessValid ? lastFrame.Consciousness.ToString("0.00") : "unknown") + "  unconscious=" + (lastFrame.ConsciousnessValid ? lastFrame.Unconscious.ToString("0.00") : "unknown") + "  adrenaline(raw)=" + (IsFinite(nativeAdrenaline) ? nativeAdrenaline.ToString("0.00") : "unknown") + "  adrenaline(normalized)=" + lastFrame.Adrenaline.ToString("0.00") + "\n  heartbeat=" + lastFrame.Heartbeat.ToString("0.00") + "  velocity=" + lastFrame.Velocity.ToString("0.00") + "  velocity-xy(native rigidbody)=" + (lastFrame.VelocityValid ? lastFrame.VelocityX.ToString("0.00") + "," + lastFrame.VelocityY.ToString("0.00") : "unknown") + "  angular-velocity(native)=" + (lastFrame.AngularVelocityValid ? lastFrame.AngularVelocity.ToString("0.0") + " deg/s" : "unknown") + "  falling=" + lastFrame.Fall.ToString("0.00") + "\n  rotation=" + lastFrame.Rotation.ToString("0.00") + "  tilt(native angle proxy)=" + (lastFrame.TiltValid ? lastFrame.SignedTilt.ToString("0.00") : "unknown") + "  balance=" + lastFrame.Balance.ToString("0.00") + "  proprioception(proxy)=" + lastFrame.Proprioception.ToString("0.00") + "\n  joint-reading position=" + (lastFrame.JointSensingValid ? lastFrame.JointPosition.ToString("0.00") : "unknown") + "  motion=" + (lastFrame.JointSensingValid ? lastFrame.JointMotion.ToString("0.00") : "unknown") + "  brain=" + BrainSummary;
+                return "BODY:\n  native-hp=" + (lastFrame.HealthValid ? lastFrame.Health.ToString("0.00") : "unknown") + "  limb-damage=" + (lastFrame.DamageValid ? lastFrame.Damage.ToString("0.00") : "unknown") + "  damage-event=" + lastFrame.DamageEvent.ToString("0.0000") + "  pain=" + lastFrame.Pain.ToString("0.00") + "  shock=" + lastFrame.Shock.ToString("0.00") + "\n  oxygen=" + (lastFrame.OxygenValid ? lastFrame.Oxygen.ToString("0.00") : "unknown") + "  conscious=" + (lastFrame.ConsciousnessValid ? lastFrame.Consciousness.ToString("0.00") : "unknown") + "  unconscious=" + (lastFrame.ConsciousnessValid ? lastFrame.Unconscious.ToString("0.00") : "unknown") + "  adrenaline(raw)=" + (IsFinite(nativeAdrenaline) ? nativeAdrenaline.ToString("0.00") : "unknown") + "  adrenaline(normalized)=" + lastFrame.Adrenaline.ToString("0.00") + "\n  heartbeat=" + lastFrame.Heartbeat.ToString("0.00") + "  velocity=" + lastFrame.Velocity.ToString("0.00") + "  velocity-xy(native rigidbody)=" + (lastFrame.VelocityValid ? lastFrame.VelocityX.ToString("0.00") + "," + lastFrame.VelocityY.ToString("0.00") : "unknown") + "  angular-velocity(native)=" + (lastFrame.AngularVelocityValid ? lastFrame.AngularVelocity.ToString("0.0") + " deg/s" : "unknown") + "  falling=" + lastFrame.Fall.ToString("0.00") + "\n  rotation=" + lastFrame.Rotation.ToString("0.00") + "  tilt(native angle proxy)=" + (lastFrame.TiltValid ? lastFrame.SignedTilt.ToString("0.00") : "unknown") + "  balance=" + lastFrame.Balance.ToString("0.00") + "  proprioception(proxy)=" + lastFrame.Proprioception.ToString("0.00") + "\n  joint-reading position=" + (lastFrame.JointSensingValid ? lastFrame.JointPosition.ToString("0.00") : "unknown") + "  motion=" + (lastFrame.JointSensingValid ? lastFrame.JointMotion.ToString("0.00") : "unknown") + "  brain=" + BrainSummary;
             }
         }
         public string LiveInjurySummary
         {
             get
             {
-                return "INJURY:\n  bleeding=" + lastFrame.Bleeding.ToString("0.00") + "  internal=" + lastFrame.InternalBleeding.ToString("0.00") + "  wounds=" + lastFrame.Wounds.ToString("0.00") + "  blood-loss=" + (lastFrame.BloodValid ? lastFrame.Blood.ToString("0.00") : "unknown") + "\n  vitality=" + (lastFrame.VitalityValid ? lastFrame.Vitality.ToString("0.00") : "unknown") + "  circulation=" + (lastFrame.CirculationValid ? lastFrame.Circulation.ToString("0.00") : "unknown") + "  limb-loss=" + lastFrame.LimbLoss.ToString("0.00") + "  breakage=" + lastFrame.Breakage.ToString("0.00") + "  disconnected=" + lastFrame.Disconnected.ToString("0.00") + "\n  joint-stress=" + lastFrame.JointStress.ToString("0.00") + "  paralysis=" + lastFrame.Paralysis.ToString("0.00") + "  numbness=" + lastFrame.Numbness.ToString("0.00") + "\n  lung-damage=" + lastFrame.LungDamage.ToString("0.00") + "  zombie(native)=" + lastFrame.Infection.ToString("0.00") + "  brain-damage=" + lastFrame.BrainDamage.ToString("0.00") + "  seizure=" + lastFrame.Seizure.ToString("0.00") + "  frozen=" + lastFrame.Frozen.ToString("0.00");
+                return "INJURY:\n  bleeding=" + lastFrame.Bleeding.ToString("0.00") + "  internal=" + lastFrame.InternalBleeding.ToString("0.00") + "  wounds=" + lastFrame.Wounds.ToString("0.00") + "  max-limb-blood-drop(observed peak)=" + (lastFrame.BloodValid ? lastFrame.Blood.ToString("0.00") : "unknown") + "\n  blood/native limb min-max=" + (lastFrame.BloodSampleCount > 0 ? lastFrame.NativeBloodMinimum.ToString("0.0000") + " / " + lastFrame.NativeBloodMaximum.ToString("0.0000") : "unknown") + "  readable=" + lastFrame.BloodSampleCount + "/" + lastFrame.BloodExpectedSamples + " (connected limbs; game units, not litres)\n  min-limb-health=" + (lastFrame.VitalityValid ? lastFrame.Vitality.ToString("0.00") : "unknown") + "  circulation=" + (lastFrame.CirculationValid ? lastFrame.Circulation.ToString("0.00") : "unknown") + "  limb-loss=" + lastFrame.LimbLoss.ToString("0.00") + "  breakage=" + lastFrame.Breakage.ToString("0.00") + "  disconnected=" + lastFrame.Disconnected.ToString("0.00") + "\n  joint-stress=" + lastFrame.JointStress.ToString("0.00") + "  paralysis=" + lastFrame.Paralysis.ToString("0.00") + "  numbness=" + lastFrame.Numbness.ToString("0.00") + "\n  lung-damage=" + lastFrame.LungDamage.ToString("0.00") + "  zombie(native)=" + lastFrame.Infection.ToString("0.00") + "  brain-damage=" + lastFrame.BrainDamage.ToString("0.00") + "  seizure=" + lastFrame.Seizure.ToString("0.00") + "  frozen=" + lastFrame.Frozen.ToString("0.00");
             }
         }
         public string LiveEnvironmentSummary
         {
             get
             {
-                return "ENVIRONMENT:\n  fire=" + lastFrame.Fire.ToString("0.00") + "  lava=" + lastFrame.Lava.ToString("0.00") + "  acid=" + lastFrame.AcidExposure.ToString("0.00") + "  burn=" + lastFrame.BurnProgress.ToString("0.00") + "\n  heat=" + lastFrame.Heat.ToString("0.00") + "  cold=" + lastFrame.Cold.ToString("0.00") + "  ambient-heat=" + lastFrame.AmbientHeat.ToString("0.00") + "  ambient-cold=" + lastFrame.AmbientCold.ToString("0.00") + "  light=" + lastFrame.Light.ToString("0.00") + "\n  nearby=" + lastFrame.Nearby.ToString("0.00") + "  direction=" + lastFrame.NearbyDirection.ToString("0.00") + "  vision=" + lastFrame.Vision.ToString("0.00") + "  direction-world-x=" + (lastFrame.VisionDirectionValid ? lastFrame.VisionDirection.ToString("0.00") : "unknown") + "  approach proxy=" + lastFrame.VisualApproach.ToString("0.00") + "  target=" + visionTargetSummary + "\n  sound=" + lastFrame.Sound.ToString("0.00") + "  direction-world-x=" + (lastFrame.SoundDirectionValid ? lastFrame.SoundDirection.ToString("0.00") : "unknown") + "  impact=" + lastFrame.Impact.ToString("0.00") + "  vibration=" + lastFrame.Vibration.ToString("0.00") + "  projectile=" + lastFrame.Projectile.ToString("0.00") + "\n  touch=" + lastFrame.Touch.ToString("0.00") + "  contact/held=" + lastFrame.PhysicalContact.ToString("0.00") + "  wet=" + lastFrame.Wetness.ToString("0.00") + "\n  underwater=" + lastFrame.UnderWater.ToString("0.00") + "  submerged-hypoxia=" + lastFrame.SubmergedHypoxia.ToString("0.00") + "  liquid=" + lastFrame.LiquidExposure.ToString("0.00") + "\n  hazard-exposure=" + lastFrame.LiquidHazard.ToString("0.00") + "  sedative-exposure=" + lastFrame.LiquidSedation.ToString("0.00") + "  stimulant-exposure=" + lastFrame.LiquidStimulation.ToString("0.00") + "\n  restorative-exposure=" + lastFrame.LiquidHealing.ToString("0.00") + "  water-liquid=" + lastFrame.LiquidWater.ToString("0.00") + "  charge=" + lastFrame.Charge.ToString("0.00") + "\n  stabbed=" + lastFrame.Stabbed.ToString("0.00") + "  weightless=" + lastFrame.Weightless.ToString("0.00") + "  sliding=" + lastFrame.Sliding.ToString("0.00") +
-                    "\n  region-touch(head/arms/legs/core)=" + (lastFrame.RegionalTouchValid ? lastFrame.TouchHead.ToString("0.00") + "/" + lastFrame.TouchArms.ToString("0.00") + "/" + lastFrame.TouchLegs.ToString("0.00") + "/" + lastFrame.TouchCore.ToString("0.00") : "unknown") +
-                    "\n  visual bounds geometry=" + (lastFrame.VisualGeometryValid ? "size " + lastFrame.VisualAngularSize.ToString("0.0") + " deg; expansion " + lastFrame.VisualExpansion.ToString("0.0") + " deg/s; sweep " + lastFrame.VisualAngularSpeed.ToString("0.0") + " deg/s" : "unknown") +
+                return "ENVIRONMENT:\n  fire=" + lastFrame.Fire.ToString("0.00") + "  lava=" + lastFrame.Lava.ToString("0.00") + "  acid=" + lastFrame.AcidExposure.ToString("0.00") + "  burn=" + lastFrame.BurnProgress.ToString("0.00") + "\n  heat=" + lastFrame.Heat.ToString("0.00") + "  cold=" + lastFrame.Cold.ToString("0.00") + "  ambient-heat=" + lastFrame.AmbientHeat.ToString("0.00") + "  ambient-cold=" + lastFrame.AmbientCold.ToString("0.00") + "  light(total proxy)=" + (lastFrame.LightValid ? lastFrame.Light.ToString("0.00") : "unknown") + "\n  ambient-light=" + (lastFrame.LightValid ? lastFrame.AmbientLight.ToString("0.00") : "unknown") + "  local-light-proxy=" + lastFrame.LocalLight.ToString("0.00") + "  contributing-light-sprites=" + lastFrame.LocalLightSources + "  light-scan=" + (lastFrame.LocalLightLimited ? "partial" : "nearby only") + "\n  nearby=" + lastFrame.Nearby.ToString("0.00") + "  direction=" + lastFrame.NearbyDirection.ToString("0.00") + "  vision=" + lastFrame.Vision.ToString("0.00") + "  direction-world-x=" + (lastFrame.VisionDirectionValid ? lastFrame.VisionDirection.ToString("0.00") : "unknown") + "  approach proxy=" + lastFrame.VisualApproach.ToString("0.00") + "  target=" + visionTargetSummary + "\n  audio-scan=" + (lastFrame.SoundLimited ? "partial" : "nearby only") + "\n  sound=" + lastFrame.Sound.ToString("0.00") + "  direction-world-x=" + (lastFrame.SoundDirectionValid ? lastFrame.SoundDirection.ToString("0.00") : "unknown") + "  impact=" + lastFrame.Impact.ToString("0.00") + "  vibration=" + lastFrame.Vibration.ToString("0.00") + "  projectile=" + lastFrame.Projectile.ToString("0.00") + "\n  touch=" + lastFrame.Touch.ToString("0.00") + "  contact/held=" + lastFrame.PhysicalContact.ToString("0.00") + "  wet=" + lastFrame.Wetness.ToString("0.00") + "\n  underwater=" + lastFrame.UnderWater.ToString("0.00") + "  submerged-hypoxia=" + lastFrame.SubmergedHypoxia.ToString("0.00") + "  liquid=" + lastFrame.LiquidExposure.ToString("0.00") + "\n  hazard-exposure=" + lastFrame.LiquidHazard.ToString("0.00") + "  sedative-exposure=" + lastFrame.LiquidSedation.ToString("0.00") + "  stimulant-exposure=" + lastFrame.LiquidStimulation.ToString("0.00") + "\n  restorative-exposure=" + lastFrame.LiquidHealing.ToString("0.00") + "  water-liquid=" + lastFrame.LiquidWater.ToString("0.00") + "  charge=" + lastFrame.Charge.ToString("0.00") + "\n  stabbed=" + lastFrame.Stabbed.ToString("0.00") + "  weightless=" + lastFrame.Weightless.ToString("0.00") + "  sliding=" + lastFrame.Sliding.ToString("0.00") +
+                    "\nFOOD CUES (gameplay; stock Pumpkin):\n  nearby=" + (lastFrame.FoodCuesValid ? lastFrame.FoodNearbyCue.ToString("0.00") : "unavailable") + "  head-contact=" + (lastFrame.FoodCuesValid ? lastFrame.FoodContactCue.ToString("0.00") : "unavailable") + "\n  Proximity includes walls; no measured smell, taste or eating.\n  region-touch(head/arms/legs/core)=" + (lastFrame.RegionalTouchValid ? lastFrame.TouchHead.ToString("0.00") + "/" + lastFrame.TouchArms.ToString("0.00") + "/" + lastFrame.TouchLegs.ToString("0.00") + "/" + lastFrame.TouchCore.ToString("0.00") : "unknown") +
+                    "\n  head-facing-world-deg=" + (lastFrame.GazeValid ? lastFrame.GazeHeadingDegrees.ToString("0.0") : "unknown") + "  view=frontal 180 deg" + "\n  target-bearing-head-deg=" + (lastFrame.VisionHeadBearingValid ? lastFrame.VisionHeadBearingDegrees.ToString("0.0") : "unknown") + "  vision-scan=" + (lastFrame.VisionLimited ? "partial" : "nearby only") + "\n  view bands CW2/CW1/front/CCW1/CCW2=" + (lastFrame.VisualFieldValid ? lastFrame.ViewClockwiseOuter.Strength.ToString("0.00") + "/" + lastFrame.ViewClockwiseInner.Strength.ToString("0.00") + "/" + lastFrame.ViewFront.Strength.ToString("0.00") + "/" + lastFrame.ViewCounterclockwiseInner.Strength.ToString("0.00") + "/" + lastFrame.ViewCounterclockwiseOuter.Strength.ToString("0.00") : "unknown") + " (object proxies)" + "\n  nearest visual bounds geometry=" + (lastFrame.VisualGeometryValid ? "size " + lastFrame.VisualAngularSize.ToString("0.0") + " deg; expansion " + lastFrame.VisualExpansion.ToString("0.0") + " deg/s; sweep " + lastFrame.VisualAngularSpeed.ToString("0.0") + " deg/s" : "unknown") +
                     "\n  source spectrum energy (below 100 / 100+ Hz)=" + (lastFrame.SoundSpectrumValid ? lastFrame.SoundLow.ToString("0.00") + " / " + lastFrame.SoundHigh.ToString("0.00") : "unavailable; broad playback proxy");
             }
         }
@@ -190,6 +204,9 @@ namespace Mod
             this.reportCollision = reportCollision;
             this.reportProjectile = reportProjectile;
             person = root.GetComponent<PersonBehaviour>();
+            // Catalog identity is stable for this controller's lifetime; avoid
+            // repeated Resources fallback scans when a custom install lacks it.
+            pumpkinAsset = ModAPI.FindSpawnable("Pumpkin");
             RefreshLimbs();
         }
 
@@ -296,7 +313,7 @@ namespace Mod
 
             if (LiveThreat > .05f)
             {
-                return "THREAT";
+                return "BODY THREAT";
             }
 
             if (lastFrame.Sound > .05f || lastFrame.Impact > ContactImpactAlertThreshold)
@@ -501,7 +518,7 @@ namespace Mod
             if (!IsUsable || !hasReadFrame || !lastFrame.Alive || !lastFrame.ConsciousnessValid || lastFrame.Consciousness <= .8f ||
                 !IsFinite(command.Freeze) || command.Freeze >= .5f)
             {
-                Stop();
+                StopActuators();
                 return;
             }
 
@@ -533,7 +550,7 @@ namespace Mod
             if (!walkingIntentActive) return;
             if (!IsUsable || !hasReadFrame || !lastFrame.Alive || !lastFrame.ConsciousnessValid || lastFrame.Consciousness <= .8f || !HasCurrentMovementPermission())
             {
-                Stop();
+                StopActuators();
                 return;
             }
 
@@ -558,6 +575,13 @@ namespace Mod
         public void Stop()
         {
             healthSamples.Clear();
+            StopActuators();
+        }
+
+        private void StopActuators()
+        {
+            // Unconscious/frozen bodies still receive sensor samples. Only an
+            // actual sensing suspension or invalid/terminal read resets history.
             walkingIntent = 0f;
             walkingIntentActive = false;
             // A failed asset load never activates control. Disposing that adapter
@@ -604,6 +628,7 @@ namespace Mod
                 Velocity = Unit(person.AverageSpeed / 10f),
                 Touch = person.IsTouchingFloor ? 1f : 0f,
                 Light = Unit(RenderSettings.ambientLight.grayscale),
+                AmbientLight = Unit(RenderSettings.ambientLight.grayscale),
                 LightValid = IsFinite(RenderSettings.ambientLight.grayscale),
                 Rotation = Unit(Mathf.Abs(person.AngleOffset) / 180f),
                 TiltValid = IsFinite(person.AngleOffset),
@@ -659,7 +684,9 @@ namespace Mod
                 }
             }
             healthValid = IsFinite(limb.Health) && IsFinite(limb.InitialHealth) && limb.InitialHealth > 0f;
-            var health = healthValid ? Unit(limb.Health / Mathf.Max(1f, limb.InitialHealth)) : 0f;
+            // InitialHealth may legitimately be below one on a modified limb.
+            // Compare before dividing to avoid overflow for tiny valid baselines.
+            var health = healthValid ? (limb.Health >= limb.InitialHealth ? 1f : Unit(limb.Health / limb.InitialHealth)) : 0f;
             if (healthValid && connected)
             {
                 if (healthSamples.TryGetValue(limb, out var previous) && previous.InitialHealth == limb.InitialHealth && health < previous.Health)
@@ -671,6 +698,11 @@ namespace Mod
             }
             else
             {
+                // A previously measured connected part becoming explicitly lost
+                // is a one-shot injury event. Mere missing/invalid circulation
+                // cannot synthesize one. Terminal person state clears it below.
+                if (IsLostLimb(limb) && healthSamples.TryGetValue(limb, out var previous) && previous.InitialHealth == limb.InitialHealth)
+                    frame.DamageEvent = Mathf.Max(frame.DamageEvent, previous.Health);
                 healthSamples.Remove(limb);
             }
             if (!connected)
@@ -695,8 +727,10 @@ namespace Mod
             frame.Numbness = Mathf.Max(frame.Numbness, Unit(limb.Numbness));
             if (healthValid)
             {
-                var vitality = ReadVitality(limb, health);
-                frame.Vitality = frame.VitalityValid ? Mathf.Min(frame.Vitality, vitality) : vitality;
+                // Native LimbBehaviour.Vitality scales injury susceptibility;
+                // it is not remaining health. Keep this legacy field a clearly
+                // labeled derived minimum of valid connected-limb health.
+                frame.Vitality = frame.VitalityValid ? Mathf.Min(frame.Vitality, health) : health;
                 frame.VitalityValid = true;
             }
             frame.LungDamage = Mathf.Max(frame.LungDamage, limb.HasLungs && limb.LungsPunctured ? 1f : 0f);
@@ -757,7 +791,7 @@ namespace Mod
             }
             frame.Disconnected = Mathf.Max(frame.Disconnected, circulation.IsDisconnected || !circulation.HasCirculation ? 1f : 0f);
             frame.Wounds = Mathf.Max(frame.Wounds, Unit((circulation.StabWoundCount + circulation.GunshotWoundCount + circulation.BleedingPointCount) / 8f));
-            var bloodDeficit = ReadBloodDeficit(circulation, out var bloodValid);
+            var bloodDeficit = ReadBloodDeficit(ref frame, circulation, out var bloodValid);
             if (bloodValid)
             {
                 frame.Blood = frame.BloodValid ? Mathf.Max(frame.Blood, bloodDeficit) : bloodDeficit;
@@ -766,21 +800,26 @@ namespace Mod
             ReadLiquidIdentities(ref frame, circulation);
         }
 
-        private static float ReadVitality(LimbBehaviour limb, float health)
+        private float ReadBloodDeficit(ref SensoryFrame frame, CirculationBehaviour circulation, out bool valid)
         {
-            return IsFinite(limb.Vitality) && limb.Vitality > .001f ? Unit(limb.Vitality) : health;
-        }
-
-        private float ReadBloodDeficit(CirculationBehaviour circulation, out bool valid)
-        {
+            frame.BloodExpectedSamples++;
+            valid = false;
+            if (circulation.LiquidDistribution == null) return 0f;
+            // Native GetAmountOfBlood dereferences its original-liquid entry.
+            // Malformed containers must remain unavailable rather than throw.
+            foreach (var entry in circulation.LiquidDistribution)
+                if (entry.Value == null) return 0f;
             var amount = circulation.GetAmountOfBlood();
-            if (!IsFinite(amount))
+            if (!IsFinite(amount) || amount < 0f)
             {
                 valid = false;
                 return 0f;
             }
 
-            if (amount <= .001f)
+            frame.NativeBloodMinimum = frame.BloodSampleCount == 0 ? amount : Mathf.Min(frame.NativeBloodMinimum, amount);
+            frame.NativeBloodMaximum = frame.BloodSampleCount == 0 ? amount : Mathf.Max(frame.NativeBloodMaximum, amount);
+            frame.BloodSampleCount++;
+            if (amount == 0f)
             {
                 valid = bloodBaselines.ContainsKey(circulation);
                 return valid ? 1f : 0f;
@@ -1010,13 +1049,33 @@ namespace Mod
 
         private void ReadNearby(ref SensoryFrame f)
         {
+            lightOwners.Clear();
+            sampledLightSprites.Clear();
+            sampledAudioSources.Clear();
             var closest = float.MaxValue;
             var origin = (Vector2)FindStatusAnchor().position;
+            var head = FindStatusAnchor();
+            var brainLimb = head == null ? null : head.GetComponent<LimbBehaviour>();
+            f.FoodCuesValid = pumpkinAsset != null && brainLimb != null && brainLimb.HasBrain && IsConnectedLimb(brainLimb);
+            var headCollider = f.FoodCuesValid ? head.GetComponent<Collider2D>() : null;
+            var facing = head == null ? new Vector3() : head.TransformVector(new Vector3(1f, 0f, 0f));
+            var facingLength = (float)Math.Sqrt(facing.x * facing.x + facing.y * facing.y);
+            f.GazeValid = brainLimb != null && brainLimb.HasBrain && IsConnectedLimb(brainLimb) &&
+                IsFinite(facing.x) && IsFinite(facing.y) && IsFinite(facingLength) && facingLength > .0001f;
+            if (f.GazeValid)
+            {
+                facing.x /= facingLength;
+                facing.y /= facingLength;
+                f.GazeHeadingDegrees = (float)Math.Atan2(facing.y, facing.x) * 57.29578f;
+            }
+            Array.Clear(visualCandidates, 0, visualCandidates.Length);
+            var candidateCount = 0;
             ReadAmbientTemperature(ref f, origin);
             Collider2D closestCollider = null;
-            PhysicalBehaviour closestPhysical = null;
-            var closestPoint = origin;
             var hitCount = Physics2D.OverlapCircleNonAlloc(origin, visionRadius, nearbyColliders);
+            f.LocalLightLimited = hitCount == nearbyColliders.Length;
+            f.VisionLimited = hitCount == nearbyColliders.Length;
+            f.SoundLimited = hitCount == nearbyColliders.Length;
             for (var i = 0; i < hitCount; i++)
             {
                 var hit = nearbyColliders[i];
@@ -1050,49 +1109,186 @@ namespace Mod
                     continue;
                 }
 
+                // Match the original catalog asset, never a renameable object label.
+                // Proximity is an explicit gameplay convention (including behind
+                // walls), and contact requires the native head collision pair.
+                if (f.FoodCuesValid && !physical.isDisintegrated && physical.gameObject.activeInHierarchy &&
+                    hit.enabled && !hit.isTrigger && hit.gameObject.activeInHierarchy && !IsOwnTransform(physical.transform))
+                {
+                    var identity = physical.GetComponentInParent<SerialiseInstructions>();
+                    if (identity != null && identity.OriginalSpawnableAsset == pumpkinAsset)
+                    {
+                        f.FoodNearbyCue = Mathf.Max(f.FoodNearbyCue, Unit(1f - distance / visionRadius));
+                        if (headCollider != null && headCollider.enabled && !headCollider.isTrigger && headCollider.IsTouching(hit))
+                            f.FoodContactCue = 1f;
+                    }
+                }
+
+                if (lightOwners.Add(physical))
+                {
+                    ReadLocalLights(ref f, physical, origin);
+                    ReadExternalSound(ref f, physical, origin);
+                }
                 ReadExternalTemperature(ref f, physical, distance);
-                ReadExternalSound(ref f, physical, origin);
                 if (distance < closest)
                 {
                     closest = distance;
                     f.Nearby = Mathf.Clamp01(1f - distance / visionRadius);
                     f.NearbyDirection = Mathf.Abs(delta.x) < .001f ? 0f : Mathf.Sign(delta.x);
-                    closestCollider = hit;
-                    closestPhysical = physical;
-                    closestPoint = hit.ClosestPoint(origin);
                 }
+                // A frontal 180-degree field is an explicit Human gameplay
+                // projection. Proximity, hearing, temperature and local light
+                // remain independent of where the head points.
+                if (!f.GazeValid || distance <= .001f || facing.x * delta.x + facing.y * delta.y <= 0f) continue;
+                var slot = candidateCount;
+                if (slot == MaxVisualCandidates)
+                {
+                    f.VisionLimited = true;
+                    if (distance >= visualDistances[slot - 1]) continue;
+                    slot--;
+                }
+                else candidateCount++;
+                while (slot > 0 && distance < visualDistances[slot - 1])
+                {
+                    visualCandidates[slot] = visualCandidates[slot - 1];
+                    visualPoints[slot] = visualPoints[slot - 1];
+                    visualDistances[slot] = visualDistances[slot - 1];
+                    slot--;
+                }
+                visualCandidates[slot] = hit;
+                visualPoints[slot] = hit.ClosestPoint(origin);
+                visualDistances[slot] = distance;
             }
 
-            if (closestCollider != null && HasExternalLineOfSight(origin, closestPoint, closestCollider))
+            f.Light = Unit(f.AmbientLight + f.LocalLight);
+            f.VisualFieldValid = f.GazeValid;
+            var anchorBody = head == null ? null : head.GetComponent<Rigidbody2D>();
+            for (var i = 0; i < candidateCount; i++)
             {
-                f.Vision = Mathf.Clamp01(f.Nearby * f.Light);
-                f.VisionDirection = WorldHorizontalBearing(closestPoint - origin, out var visionDirectionValid);
-                f.VisionDirectionValid = visionDirectionValid;
-                visionTargetSummary = ClassifyVisualTarget(closestPhysical, closestCollider);
-                var targetBody = closestPhysical == null ? null : closestPhysical.rigidbody;
-                var anchorBody = FindStatusAnchor() == null ? null : FindStatusAnchor().GetComponent<Rigidbody2D>();
-                if (f.Vision > 0f && targetBody != null && anchorBody != null &&
+                var point = visualPoints[i];
+                var delta = point - origin;
+                var bearing = (float)Math.Atan2(facing.x * delta.y - facing.y * delta.x,
+                    facing.x * delta.x + facing.y * delta.y) * 57.29578f;
+                var band = bearing < -54f ? 0 : bearing < -18f ? 1 : bearing < 18f ? 2 : bearing < 54f ? 3 : 4;
+                if (f.ViewAt(band).Observed) continue;
+                var collider = visualCandidates[i];
+                if (!HasExternalLineOfSight(origin, point, collider, ref f)) continue;
+                var physical = collider.GetComponentInParent<PhysicalBehaviour>();
+                var targetBody = physical == null ? null : physical.rigidbody;
+                var strength = f.LightValid ? Mathf.Clamp01((1f - visualDistances[i] / visionRadius) * f.Light) : 0f;
+                var observation = new VisualObservation { Observed = strength > 0f, Strength = strength, BearingDegrees = bearing };
+                if (strength > 0f && targetBody != null && anchorBody != null &&
                     IsFinite(targetBody.velocity.x) && IsFinite(targetBody.velocity.y) && IsFinite(anchorBody.velocity.x) && IsFinite(anchorBody.velocity.y))
                 {
-                    var delta = closestPoint - origin;
-                    var distance = delta.magnitude;
-                    if (IsFinite(distance) && distance > .001f && IsFinite(delta.x) && IsFinite(delta.y))
-                    {
-                        var closing = -((targetBody.velocity.x - anchorBody.velocity.x) * delta.x + (targetBody.velocity.y - anchorBody.velocity.y) * delta.y) / distance;
-                        f.VisualApproach = Unit(closing / 10f) * f.Vision;
-                    }
+                    var closing = -((targetBody.velocity.x - anchorBody.velocity.x) * delta.x + (targetBody.velocity.y - anchorBody.velocity.y) * delta.y) / visualDistances[i];
+                    observation.Approach = Unit(closing / 10f) * strength;
+                    ReadVisualGeometry(ref observation, collider, origin, targetBody, anchorBody);
                 }
-                if (f.Vision > 0f) ReadVisualGeometry(ref f, closestCollider, origin, targetBody, anchorBody);
-                if (PersonConnectomeProjectileDetection.IsMovingProjectile(closestCollider, closestPhysical))
+                f.SetView(band, observation);
+                if (closestCollider == null)
                 {
-                    f.Projectile = Mathf.Max(f.Projectile, f.Vision);
+                    closestCollider = collider;
+                    f.Vision = strength;
+                    f.VisionHeadBearingDegrees = bearing;
+                    f.VisionHeadBearingValid = true;
+                    f.VisionDirection = WorldHorizontalBearing(delta, out var validDirection);
+                    f.VisionDirectionValid = validDirection;
+                    visionTargetSummary = ClassifyVisualTarget(physical, collider);
+                    f.VisualApproach = observation.Approach;
+                    f.VisualGeometryValid = observation.GeometryValid;
+                    f.VisualAngularSize = observation.AngularSize;
+                    f.VisualExpansion = observation.Expansion;
+                    f.VisualAngularSpeed = observation.AngularSpeed;
                 }
+                if (PersonConnectomeProjectileDetection.IsMovingProjectile(collider, physical))
+                    f.Projectile = Mathf.Max(f.Projectile, strength);
             }
         }
 
-        private bool HasExternalLineOfSight(Vector2 origin, Vector2 targetPoint, Collider2D target)
+        private void ReadLocalLights(ref SensoryFrame frame, PhysicalBehaviour owner, Vector2 origin)
+        {
+            // Only native light owners qualify. Arbitrary bright body sprites,
+            // UI labels and particles are not guessed to be light sources.
+            owner.gameObject.GetComponentsInChildren(false, nativeLightSprites);
+            foreach (var light in nativeLightSprites)
+            {
+                if (light != null) ReadLightSprite(ref frame, light.SpriteRenderer, origin, light.Brightness);
+            }
+            var tube = owner.GetComponent<GlowtubeBehaviour>();
+            if (tube != null) ReadLightSprite(ref frame, tube.LightSprite, origin, 1f);
+            var bulb = owner.GetComponent<BulbBehaviour>();
+            if (bulb != null) ReadLightSprite(ref frame, bulb.LightSprite, origin, 1f);
+            var led = owner.GetComponent<LEDBulbBehaviour>();
+            if (led != null) ReadLightSprite(ref frame, led.LightSprite, origin, 1f);
+            var toggle = owner.GetComponent<ActivationToggleBehaviour>();
+            if (toggle != null) ReadLightGroup(ref frame, toggle.LightObject, origin);
+            var floodlight = owner.GetComponent<SingleFloodlightBehaviour>();
+            if (floodlight != null) ReadLightGroup(ref frame, floodlight.ToToggle, origin);
+            owner.gameObject.GetComponentsInChildren(false, flashlightAttachments);
+            foreach (var attachment in flashlightAttachments)
+            {
+                if (attachment == null || attachment.Lights == null) continue;
+                foreach (var sprite in attachment.Lights) ReadLightSprite(ref frame, sprite, origin, 1f);
+            }
+        }
+
+        private void ReadLightGroup(ref SensoryFrame frame, GameObject group, Vector2 origin)
+        {
+            if (group == null || !group.activeInHierarchy) return;
+            group.GetComponentsInChildren(false, lightSpriteBuffer);
+            foreach (var sprite in lightSpriteBuffer) ReadLightSprite(ref frame, sprite, origin, 1f);
+        }
+
+        private void ReadLightSprite(ref SensoryFrame frame, SpriteRenderer renderer, Vector2 origin, float brightness)
+        {
+            if (renderer == null || !renderer.enabled || !renderer.gameObject.activeInHierarchy ||
+                renderer.sprite == null) return;
+            if (sampledLightSprites.Contains(renderer)) return;
+            if (sampledLightSprites.Count >= MaxLightSpritesPerSample) { frame.LocalLightLimited = true; return; }
+            sampledLightSprites.Add(renderer);
+            var color = renderer.color;
+            if (!IsFinite(brightness) || brightness <= 0f || !IsFinite(color.r) || !IsFinite(color.g) ||
+                !IsFinite(color.b) || !IsFinite(color.a)) return;
+            var strength = Unit(color.grayscale * Unit(color.a) * brightness);
+            if (strength <= 0f) return;
+            var scale = renderer.transform.lossyScale;
+            if (!IsFinite(scale.x) || !IsFinite(scale.y) || Math.Abs(scale.x) < .00001f || Math.Abs(scale.y) < .00001f) return;
+            var bounds = renderer.sprite.bounds;
+            var point = renderer.transform.InverseTransformPoint(new Vector3(origin.x, origin.y, renderer.transform.position.z));
+            if (renderer.flipX) point.x = -point.x;
+            if (renderer.flipY) point.y = -point.y;
+            if (!IsFinite(point.x) || !IsFinite(point.y) || !IsFinite(bounds.center.x) || !IsFinite(bounds.center.y) ||
+                !IsFinite(bounds.extents.x) || !IsFinite(bounds.extents.y) || bounds.extents.x <= 0f || bounds.extents.y <= 0f) return;
+            // A transformed sprite-footprint proxy, not GPU illumination/lux.
+            // Elliptical falloff preserves native reach/orientation but cannot
+            // reproduce texture alpha, cone profiles, material overrides or shadows.
+            var extentX = bounds.extents.x; var extentY = bounds.extents.y;
+            var centerX = bounds.center.x; var centerY = bounds.center.y;
+            if (renderer.drawMode != SpriteDrawMode.Simple)
+            {
+                if (renderer.drawMode != SpriteDrawMode.Sliced && renderer.drawMode != SpriteDrawMode.Tiled) return;
+                var size = renderer.size;
+                if (!IsFinite(size.x) || !IsFinite(size.y) || size.x <= 0f || size.y <= 0f) return;
+                centerX *= size.x / (2f * extentX); centerY *= size.y / (2f * extentY);
+                extentX = size.x * .5f; extentY = size.y * .5f;
+            }
+            var x = (point.x - centerX) / extentX;
+            var y = (point.y - centerY) / extentY;
+            var radiusSquared = x * x + y * y;
+            if (!IsFinite(radiusSquared) || radiusSquared >= 1f) return;
+            var contribution = strength * (1f - (float)Math.Sqrt(radiusSquared));
+            frame.LocalLight = Mathf.Max(frame.LocalLight, contribution);
+            frame.LocalLightSources++;
+        }
+
+        private bool HasExternalLineOfSight(Vector2 origin, Vector2 targetPoint, Collider2D target, ref SensoryFrame frame)
         {
             var hitCount = Physics2D.LinecastNonAlloc(origin, targetPoint, visionLinecastHits);
+            if (hitCount == visionLinecastHits.Length)
+            {
+                frame.VisionLimited = true;
+                return false;
+            }
             for (var i = 0; i < hitCount; i++)
             {
                 var hit = visionLinecastHits[i].collider;
@@ -1128,9 +1324,9 @@ namespace Mod
             return "object";
         }
 
-        private static void ReadVisualGeometry(ref SensoryFrame frame, Collider2D collider, Vector2 origin, Rigidbody2D targetBody, Rigidbody2D anchorBody)
+        private static void ReadVisualGeometry(ref VisualObservation frame, Collider2D collider, Vector2 origin, Rigidbody2D targetBody, Rigidbody2D anchorBody)
         {
-            if (collider == null || targetBody == null || anchorBody == null || !IsFinite(targetBody.velocity.x) || !IsFinite(targetBody.velocity.y) || !IsFinite(anchorBody.velocity.x) || !IsFinite(anchorBody.velocity.y)) return;
+            if (collider == null || targetBody == null || anchorBody == null || !IsFinite(targetBody.velocity.x) || !IsFinite(targetBody.velocity.y) || !IsFinite(anchorBody.velocity.x) || !IsFinite(anchorBody.velocity.y) || !IsFinite(anchorBody.angularVelocity)) return;
             var bounds = collider.bounds;
             var delta = (Vector2)bounds.center - origin;
             var distance = delta.magnitude;
@@ -1141,11 +1337,13 @@ namespace Mod
             var relativeY = targetBody.velocity.y - anchorBody.velocity.y;
             var closing = -(relativeX * delta.x + relativeY * delta.y) / distance;
             const float DegreesPerRadian = 57.29578f;
-            frame.VisualAngularSize = 2f * (float)Math.Atan(radius / distance) * DegreesPerRadian;
-            frame.VisualExpansion = Mathf.Max(0f, 2f * radius * closing / (distance * distance + radius * radius) * DegreesPerRadian);
-            frame.VisualAngularSpeed = Mathf.Abs(delta.x * relativeY - delta.y * relativeX) / (distance * distance) * DegreesPerRadian;
-            frame.VisualGeometryValid = IsFinite(frame.VisualAngularSize) && IsFinite(frame.VisualExpansion) && IsFinite(frame.VisualAngularSpeed);
-            if (!frame.VisualGeometryValid) frame.VisualAngularSize = frame.VisualExpansion = frame.VisualAngularSpeed = 0f;
+            frame.AngularSize = 2f * (float)Math.Atan(radius / distance) * DegreesPerRadian;
+            frame.Expansion = Mathf.Max(0f, 2f * radius * closing / (distance * distance + radius * radius) * DegreesPerRadian);
+            // Retinal sweep changes when the head rotates, even for a stationary
+            // object. Pure head rotation must not invent looming expansion.
+            frame.AngularSpeed = Mathf.Abs((delta.x * relativeY - delta.y * relativeX) / (distance * distance) * DegreesPerRadian - anchorBody.angularVelocity);
+            frame.GeometryValid = IsFinite(frame.AngularSize) && IsFinite(frame.Expansion) && IsFinite(frame.AngularSpeed);
+            if (!frame.GeometryValid) frame.AngularSize = frame.Expansion = frame.AngularSpeed = 0f;
         }
 
         private static bool ContainsAny(string value, string[] fragments)
@@ -1191,7 +1389,24 @@ namespace Mod
 
         private void ReadExternalSound(ref SensoryFrame frame, PhysicalBehaviour physical, Vector2 origin)
         {
-            var audio = physical == null ? null : physical.MainAudioSource;
+            if (physical == null || IsOwnPhysical(physical) || physical.isDisintegrated || !physical.gameObject.activeInHierarchy) return;
+            ReadExternalAudioSource(ref frame, physical, physical.MainAudioSource, origin);
+            var jukebox = physical.GetComponent<JukeboxBehaviour>();
+            if (jukebox != null) ReadExternalAudioSource(ref frame, physical, jukebox.audioSource, origin);
+            if (sampledAudioSources.Count >= MaxAudioSourcesPerSample) { frame.SoundLimited = true; return; }
+            physical.gameObject.GetComponentsInChildren(false, nearbyAudioSources);
+            foreach (var source in nearbyAudioSources)
+            {
+                if (sampledAudioSources.Count >= MaxAudioSourcesPerSample) { frame.SoundLimited = true; break; }
+                ReadExternalAudioSource(ref frame, physical, source, origin);
+            }
+        }
+
+        private void ReadExternalAudioSource(ref SensoryFrame frame, PhysicalBehaviour physical, AudioSource audio, Vector2 origin)
+        {
+            if (audio == null || sampledAudioSources.Contains(audio)) return;
+            if (sampledAudioSources.Count >= MaxAudioSourcesPerSample) { frame.SoundLimited = true; return; }
+            sampledAudioSources.Add(audio);
             var sourceDelta = audio == null ? new Vector2() : (Vector2)audio.transform.position - origin;
             var sourceDistance = sourceDelta.magnitude;
             if (physical == null || IsOwnPhysical(physical) || audio == null || !IsFinite(sourceDistance) || IsLikelySelfRootAudio(physical, audio, sourceDistance) ||

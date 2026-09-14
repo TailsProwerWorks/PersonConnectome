@@ -8,8 +8,8 @@ Counts below are resolved from the bundled asset, not invented neuron groups. `i
 
 | Observed game signal | Asset selection | Members | Interpretation and limits |
 |---|---|---:|---|
-| Global ambient grayscale | `ol_sensory` + class `visual` | 6,091 | Uniform photoreceptor amplitude; no color, UV or spatial retina. |
-| Increase/decrease between valid ambient-light samples | `Mi1` / `L2`, `L3` | 1,773 / 1,779 / 1,772 | ON/OFF entry choices adapted from the reference. Global change only; first sample, invalid data and terminal recovery establish a new baseline without a fabricated transition. No dark tonic current or per-column image is added. |
+| Ambient + bounded local-light estimate | `ol_sensory` + class `visual` | 6,091 | Uniform photoreceptor amplitude from ambient plus strongest supported nearby light footprint; no color channels, UV or spatial retina. |
+| Increase/decrease between valid combined-light samples | `Mi1` / `L2`, `L3` | 1,773 / 1,779 / 1,772 | ON/OFF entry choices adapted from the reference. Single scalar light-level change, including lamp movement/toggling; first sample, invalid data and terminal recovery establish a new baseline without a fabricated transition. No dark tonic current or per-column image is added. |
 | Strongest accepted external playback | class `mechanosensory`, subclass `auditory` | 114 | Volume/distance proxy with world-horizontal L/R weighting. Valid source spectra split energy below/above 100 Hz; drive is max(high, low * 0.7). Unavailable spectra use broad playback. No sound meaning or song recognition. |
 | Head contact | sensory superclass, type prefix `BM_` | 863 | Human head to fly head-bristle analogy. |
 | Arm contact | tactile class, nerve `ProLN` | 266 | Human arms to fly foreleg tactile analogy. |
@@ -28,7 +28,7 @@ Counts below are resolved from the bundled asset, not invented neuron groups. `i
 
 Thermal choices are supported by [adult thermo/hygrosensory connectomics](https://pmc.ncbi.nlm.nih.gov/articles/PMC7443704/). In particular, a `TRN` prefix alone is insufficient: VP1m participates in hygrosensation and is not included as a warm/cool receptor. Auditory and gravity modalities are supported by [Johnston's-organ auditory analysis](https://pmc.ncbi.nlm.nih.gov/articles/PMC4023023/) and [wind/gravity sensory analysis](https://pmc.ncbi.nlm.nih.gov/articles/PMC2755041/); these sources do not validate a human game body's input scaling.
 
-All eligible population members can receive input, replacing a first-N cutoff that favored low IDs. Refractory neurons still cannot integrate input. Direction is delta.x/distance in world coordinates, not head-relative anatomical localization: right reduces L drive, left reduces R drive. Missing direction uses equal bilateral drive without claiming localization; unknown-side annotations are not assigned a side. Amplitudes are clamped, finite normalized values, not firing rates. The Brain page reports requested encoder amplitudes and unique input neurons queued this tick; recurrent spikes can occur elsewhere too.
+All eligible population members can receive input, replacing a first-N cutoff that favored low IDs. Refractory neurons still cannot integrate input. Audio direction is delta.x/distance in world coordinates. Visual encoders use head-relative bearing/90: counterclockwise in the 2D plane reduces L drive and clockwise reduces R drive. This is an engineering projection, not anatomical fly-eye laterality. Missing direction uses equal bilateral drive without claiming localization; unknown-side annotations are not assigned a side. Amplitudes are clamped, finite normalized values, not firing rates. The Brain page reports requested encoder amplitudes and unique input neurons queued this tick; recurrent spikes can occur elsewhere too.
 
 ## Injury, contact and visual feature scales
 
@@ -38,13 +38,15 @@ The reference accumulates accepted Minecraft damage and merges it into tactile d
 
 Known regional floor/contact/held flags contribute amplitude 0.15. Broad impact plus vibration*0.35 is clamped; when regional localization is unavailable, sustained broad touch/contact contributes 0.15 per channel. Broad contact/injury and local input combine by maximum. Human-to-fly region names are engineering analogies, not anatomical homology. Water alone is not contact; whole-body impact/vibration can still stimulate several regions.
 
-Visual geometry uses the nearest visible collider's radius `r = max(bounds.extents.x, bounds.extents.y)`, center distance `d`, and target-minus-anchor native velocity. Size is `2*atan(r/d)`; expansion is positive `2*r*closing/(d*d+r*r)`; sweep is `abs(cross(delta, relativeVelocity))/(d*d)`, converted to degrees or degrees/second. This approximates rigid 2D bounds, omitting target deformation/rotation, rendered silhouettes and camera retinal flow. Finite positive geometry and velocities are required.
+Each of five 36-degree head-relative view bands uses its nearest visible collider's radius `r = max(bounds.extents.x, bounds.extents.y)`, center distance `d`, and target-minus-anchor native velocity. Size is `2*atan(r/d)`; expansion is positive `2*r*closing/(d*d+r*r)`; sweep is `abs(cross(delta, relativeVelocity)/(d*d)*180/pi - headAngularVelocity)` in degrees/second. This approximates rigid 2D bounds, omitting target deformation/rotation, rendered silhouettes and camera retinal flow. Finite positive geometry, velocities and head angular velocity are required. Visibility is restricted to the actual connected head's frontal 180-degree field and the nearest 16 candidates are checked in distance order. Per-band head bearing affects the existing visual population-side weights. Each feature takes the maximum L and R contributions across bands rather than summing duplicate drives; no new direct visual-to-motor bypass is added. See [head-relative vision](head-relative-vision.md).
 
 Following the reference, LC4 amplitude is `expansion/(expansion+200)`, LPLC2 is Gaussian size tuning centered at 60 degrees with sigma 25 while expanding, and LC11/LC18 use `sweep/(sweep+100)` for small moving targets. All are multiplied by existing visibility. The VS proxy uses `abs(nativeAngularSpeed)/(abs(nativeAngularSpeed)+300) * light`; it is unsigned and gated by valid light/rotation. These are deterministic feature encoders, not biological-rate measurements.
 
+Looming enters LC4/LPLC2; an actual DNp01 spike is still required for a neural escape request. Unlike the raw reference-style readout, the Human decoder now also requires recent threat evidence to avoid labeling unrelated recurrent activity as escape. `DNp01-fired` always reports raw firing, while `escape-request` reports the accepted request.
+
 ## Deliberate unmapped readings
 
-Apart from the new sampled health-drop event above, health, pain, shock, oxygen, consciousness, blood, wounds, brain injury, zombie state and internal liquid identities remain native/derived telemetry and existing control constraints or restorative adjustments. They are not injected into photoreceptors, descending walking neurons, taste or smell populations. Their separately measured mechanical or thermal consequences can still reach the corresponding encoders. A circulating syringe chemical does not establish a fly's external taste stimulus. Wetness/submersion is not ambient humidity; no unsupported hygro channel is synthesized. Velocity XY is telemetry, not wind. No semantic object vision, smell, feeding, flight, courtship or biologically established human grasping is implemented.
+Apart from the new sampled health-drop event above, health, pain, shock, oxygen, consciousness, blood, wounds, brain injury, zombie state and internal liquid identities remain native/derived telemetry and existing control constraints or restorative adjustments. They are not injected into photoreceptors, descending walking neurons, taste or smell populations. Their separately measured mechanical or thermal consequences can still reach the corresponding encoders. A circulating syringe chemical does not establish a fly's external taste stimulus. Wetness/submersion is not ambient humidity; no unsupported hygro channel is synthesized. Velocity XY is telemetry, not wind. No semantic object vision, measured smell/taste, feeding, flight, courtship or biologically established human grasping is implemented. Explicit stock-Pumpkin gameplay cues are described below; they never derive from internal blood chemistry.
 
 The injury-event route is explicitly a mechanical proxy adapted from the reference. It does not restore the older unrelated visual/descending hazard/liquid stimulation. The mod senses more state than it has defensible neural encoders for. An unmapped reading is still displayed; it is not proof that the brain understands that state.
 
@@ -58,38 +60,55 @@ Raw DNg60/DNg74_a/DNg74_b or AN19A018 fraction >=0.2 clears movement immediately
 
 The normal request rate limit is eight normalized units per elapsed game second, with elapsed time capped at 0.25 seconds. There is no added oscillator, sensor-only escape direction or force application. Actual walking depends on native pose selection, torque, grounding and sustained requests. Native standing mechanics and existing sensory-derived restorative adjustments remain; exclusive neural control of every game action is not claimed.
 
+Threat telemetry keeps the stages visible: `body` is normalized pain/fire/shock/submerged-hypoxia/projectile safety input; `looming` is effective LC4/LPLC2 input after manual overrides; `DNp01-fired` is actual neural firing. An escape request additionally requires movement permission and evidence within 0.5 game seconds (body >0.5, sampled DamageEvent >0.001, or effective looming >0.05). The sampled injury event is shown to four decimal places so qualifying small health changes do not round to zero. The remaining evidence window is displayed separately; temporal coincidence does not prove that evidence caused the spike. No injury is fabricated, and pre-impact looming remains eligible. Ordinary light, audio, floor contact and recurrent activity alone no longer qualify. Native hazard avoidance remains independent, and the existing 1.5-second event cooldown/0.25-second quiet rearm remain. Long callback gaps expire context using actual elapsed game time; invalid/terminal/unconscious states clear it. These are local gameplay thresholds, not validated biological escape criteria.
+
 ## Measured connection checks, not biological validation
 
-Reproduce with `dotnet run --project tests/PersonConnectome.Runtime.Tests -c Release -- --mapping-report`. Each case starts a fresh real graph and runs 40 measured ticks at 0.05 game seconds with the scenario-specific synthetic frame (normally amplitude 1). Injury cases submit one pulse, then zero; geometry/rotation cases use explicit units. ON/OFF cases first prime the preceding valid light sample. These are synthetic sensor frames against the shipped graph, not live game trials.
+Refreshed on 2026-09-14 after the scheduler propagation-budget change and rechecked after the head-relative vision update (identical counts). The two directional approach cases now supply head bearings of -90/+90 degrees to test the full population-side weighting range; native view selection excludes its exact perpendicular boundary. Reproduce with `dotnet run --project tests/PersonConnectome.Runtime.Tests -c Release -- --mapping-report`. The added spatial case uses two 45-degree bearings, strength 1, 60-degree size and 200 deg/s expansion. Each case starts a fresh real graph and runs 40 measured ticks at 0.05 game seconds with the scenario-specific synthetic frame (normally amplitude 1). Injury cases submit one pulse, then zero; geometry/rotation cases use explicit units. ON/OFF cases first prime the preceding valid light sample. These are synthetic sensor frames against the shipped graph, not live game trials.
 
-| Case | Input-population spikes | Whole-graph spikes | Dropped work | Peak absolute walk request |
+| Case | Input-population spikes | Whole-graph spikes | Dropped spikes | Peak absolute walk request |
 |---|---:|---:|---:|---:|
 | Quiet | 0 | 0 | 0 | 0.000 |
 | Constant light | 42,637 | 42,637 | 0 | 0.000 |
-| Light increase (Mi1) | 1,773 | 93,198 | 860,358 | 0.300 |
-| Light decrease (L2 counted) | 961 | 42,059 | 644,943 | 0.300 |
-| Left audio | 434 | 43,882 | 729,951 | 0.300 |
-| Right audio | 364 | 41,543 | 757,654 | 0.300 |
-| Impact (tactile counted) | 17,906 | 89,456 | 821,076 | 0.300 |
-| 50% injury pulse (head counted) | 863 | 59,507 | 824,160 | 0.300 |
-| 100% injury pulse (head counted) | 863 | 59,507 | 824,160 | 0.300 |
-| Head contact | 2,276 | 43,936 | 647,155 | 0.300 |
-| Arm contact | 738 | 29,703 | 499,487 | 0.000 |
-| Leg contact | 3,240 | 46,310 | 591,105 | 0.300 |
-| Core contact | 898 | 36,039 | 514,218 | 0.000 |
-| Loom (LPLC2 counted) | 1,294 | 57,592 | 797,869 | 0.300 |
-| Small moving (LC11 counted) | 712 | 34,059 | 658,640 | 0.300 |
-| Roll | 160 | 67,732 | 736,646 | 0.300 |
-| Low-band audio | 683 | 45,871 | 805,048 | 0.300 |
-| High-band audio | 798 | 46,372 | 746,658 | 0.300 |
-| Warm | 49 | 53,599 | 848,802 | 0.300 |
-| Cool | 49 | 48,559 | 769,621 | 0.300 |
-| Joint motion | 2,971 | 55,081 | 845,324 | 0.300 |
-| Left tilt | 1,589 | 59,474 | 823,945 | 0.300 |
-| Right tilt | 1,729 | 45,431 | 758,725 | 0.300 |
-| Left approach fallback (LC4 counted) | 463 | 48,320 | 817,307 | 0.300 |
-| Right approach fallback (LC4 counted) | 392 | 57,791 | 947,094 | 0.300 |
+| Light increase (Mi1) | 1,773 | 195,215 | 0 | 0.300 |
+| Light decrease (L2 counted) | 961 | 139,998 | 0 | 0.300 |
+| Left audio | 424 | 145,677 | 0 | 0.300 |
+| Right audio | 363 | 109,435 | 0 | 0.300 |
+| Impact (tactile counted) | 17,906 | 205,577 | 0 | 0.300 |
+| 50% injury pulse (head counted) | 863 | 129,862 | 0 | 0.300 |
+| 100% injury pulse (head counted) | 863 | 129,862 | 0 | 0.300 |
+| Head contact | 2,296 | 89,765 | 0 | 0.300 |
+| Arm contact | 720 | 89,860 | 0 | 0.300 |
+| Leg contact | 3,424 | 95,453 | 0 | 0.300 |
+| Core contact | 402 | 97,428 | 0 | 0.300 |
+| Loom (LPLC2 counted) | 1,295 | 141,902 | 0 | 0.300 |
+| Small moving (LC11 counted) | 286 | 126,574 | 0 | 0.300 |
+| Roll | 134 | 154,162 | 0 | 0.300 |
+| Low-band audio | 674 | 133,304 | 0 | 0.300 |
+| High-band audio | 784 | 145,089 | 0 | 0.300 |
+| Warm | 49 | 145,539 | 0 | 0.300 |
+| Cool | 49 | 132,540 | 0 | 0.300 |
+| Joint motion | 2,975 | 153,853 | 0 | 0.300 |
+| Left tilt | 1,591 | 157,731 | 0 | 0.300 |
+| Right tilt | 1,726 | 143,356 | 0 | 0.300 |
+| Left approach fallback (LC4 counted) | 483 | 133,844 | 0 | 0.300 |
+| Right approach fallback (LC4 counted) | 362 | 131,572 | 0 | 0.300 |
+| Two spatial approach bands (LC4 counted) | 329 | 141,902 | 0 | 0.300 |
 
 Totals include repeated spikes/work across ticks, not unique neurons. Left/right populations differ in membership and wiring; equal raw counts are not expected. The input counts can include recurrent firing of those same neurons. Constant photoreceptor drive alone produced no downstream spikes in this silent-start test; the photoreceptors have outgoing edges, so that is not evidence of disconnected data. Inhibitory input does not initiate excitation in a silent network. The reference supplies additional lamina tonic and spatial visual processing that this runtime does not reproduce.
 
-Strong sustained stimuli still overload the 24,000-neuron tick budget. Dropped work changes neural propagation; bounded memory/work is not equivalence to an unlimited simulation, nor a guaranteed CPU frame time. The model still uses discrete decay, five intervening refractory ticks and one-tick transmission delay at a default 20 Hz control rate. It does not implement the reference's 0.5 ms integrator, Poisson firing rates or a general Hill-rate sensory model (the injury encoder only adapts its normalized shape), adaptation constants or reported physiological validation. These tests establish distinct wiring and deterministic execution, not neural understanding, faithful biology, reliable walking, swimming or immunity to poisons. Native acceptance remains in [manual-game-test.md](manual-game-test.md).
+These cases all completed without truncation after separating full input integration from the 24,000-spike propagation budget. Larger/custom bursts can still drop threshold crossings. The new dropped-spikes count is not the old unintegrated-neuron count; their units differ. Bounded memory/spikes are not a guaranteed CPU frame time. See [scheduler measurements](scheduler-performance.md). The model still uses discrete decay, five intervening refractory ticks and one-tick transmission delay at a default 20 Hz control rate. It does not implement the reference's 0.5 ms integrator, Poisson firing rates or a general Hill-rate sensory model (the injury encoder only adapts its normalized shape), adaptation constants or reported physiological validation. These tests establish distinct wiring and deterministic execution, not neural understanding, faithful biology, reliable walking, swimming or immunity to poisons. Native acceptance remains in [manual-game-test.md](manual-game-test.md).
+
+The adapter now supplies combined ambient/local light to the same Light channel; synthetic table cases above directly specify Light and are unchanged by this adapter addition. Lamp sensor validation and approximation details are in [local-light-sensing.md](local-light-sensing.md).
+
+## Food and escape follow-up
+
+Stock Pumpkin identity comes from `SerialiseInstructions.OriginalSpawnableAsset == ModAPI.FindSpawnable("Pumpkin")`. Nearby strength is max(0, 1 - nearest collider distance / configured vision radius); it is a gameplay proximity convention, including through walls, not a measured odor field. It drives exact `type:ORN_DM1` (74), `type:ORN_DM2` (54), `type:ORN_VA2` (83) without directional bias. Actual native connected-head collision with that stock item drives `type:LB3b` (11) and `type:LB3c` (23) at amplitude 1. Both pass through the existing manual/live boundary and recurrent graph. There is no food-to-motor bypass, eating, nutrition, hunger, swallowing or healing. No other catalog foods are currently allowlisted. Missing stock asset/head, unknown identity, self, disabled/trigger/disintegrated objects provide no food input.
+
+An accepted DNp01 event now starts a 0.6-game-second walking burst, magnitude 0.7 before existing smoothing and native adapter limits. Existing neural backward intent is retained; otherwise the native forward convention is used. The damage sample does not localize the shooter. This can request movement from idle but does not guarantee retreat, a coordinated gait or a fly-like escape. Halt/brake, terminal/invalid state and loss of consciousness cancel it. Real elapsed time expires it across long callbacks. Sensor evidence without actual DNp01 firing cannot start it.
+
+Explicit dismemberment/disintegration of a previously sampled live connected limb emits its last measured health fraction once through the injury-event route. Unknown circulation or already-missing limbs do not invent an event. Dead/invalid person state clears it. Deleting a component between samples may still leave no readable transition.
+
+See [current checks and limitations](food-escape-blood.md).
+
+Object-audio follow-up: the bounded nearby scan includes the native jukebox music source and attached AudioSources, beyond MainAudioSource. Up to 64 unique sources are evaluated; partial scans are labeled. Playback/mute/ownership filters and strongest-source spectrum/direction remain. This is a playback proxy, not sound pressure or music understanding. See [checks](food-escape-blood.md).

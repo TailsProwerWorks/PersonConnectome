@@ -44,13 +44,20 @@ namespace Mod
         private long backlogCursor;
         private int processedThisStep;
         private int droppedThisStep;
+        private int decayedThisStep;
         private float lightDrive, audioDrive, touchDrive, damageDrive, regionalTouchDrive, smallVisualDrive, opticRollDrive, gravityDrive, jointDrive, hotDrive, coldDrive, approachDrive;
+        private float bodyThreat, visualThreat, neuralEscape;
+        private float neuralEscapeCooldown, neuralEscapeQuiet, escapeContextSeconds;
+        private float escapeWalkSeconds;
+        private int escapeWalkDirection;
+        private float foodNearbyDrive, foodContactDrive;
+        private bool neuralEscapeArmed = true;
         private int sensoryQueued;
         private bool hasPreviousLight;
         private float previousLight, lightOnDrive, lightOffDrive;
         private float forwardFilter, backwardFilter, yawFilter, leftLegFilter, rightLegFilter, locomotionDwell;
         private int locomotionMode;
-        private const int MaxActivePerStep = 24000;
+        private const int MaxSpikesPerStep = 24000;
         private const int RefractoryTicks = 5;
         private const float DefaultStepSeconds = .05f;
         // Requests are consumed by the game's fixed-step motor adapter.  Keeping
@@ -66,8 +73,8 @@ namespace Mod
         }
 
         public string Status => "MaleCNS v1.0 " + asset.NeuronCount + " neurons / " + asset.EdgeCount +
-            (stopped ? " STOPPED" : " queued=" + pending.Count + " processed=" + processedThisStep +
-            " dropped=" + droppedThisStep + " fired=" + fired.Count + " input=" + Format(LastSensoryDrive) +
+            (stopped ? " STOPPED" : " queued=" + pending.Count + " input-integrated=" + processedThisStep +
+            " dropped-spikes=" + droppedThisStep + " fired=" + fired.Count + " input=" + Format(LastSensoryDrive) +
             " request-walk=" + Format(lastCommand.Walk));
 
         public string DisplaySummary
@@ -76,14 +83,14 @@ namespace Mod
             {
                 if (stopped)
                 {
-                    return "NEURAL: STOPPED\n  queued=0  processed=0  dropped=0  fired=0";
+                    return "NEURAL: STOPPED\n  queued=0  integrated=0  decay-only=0  dropped-spikes=0  fired=0";
                 }
 
                 var scheduler = droppedThisStep > 0 ? "OVERLOADED" : "STEADY";
                 return "NEURAL:\n  input=" + Format(LastSensoryDrive) + "  queued=" + pending.Count + "  active=" + active.Count +
-                    "\n  processed=" + processedThisStep + "/" + MaxActivePerStep + "  dropped=" + droppedThisStep +
-                    "\n  fired=" + fired.Count + "  scheduler=" + scheduler +
-                    (droppedThisStep > 0 ? "\nWork limit reached; this is not a CPU-time measurement." : "");
+                    "\n  integrated=" + processedThisStep + "  decay-only=" + decayedThisStep + "  dropped-spikes=" + droppedThisStep +
+                    "\n  fired=" + fired.Count + "/" + MaxSpikesPerStep + "  scheduler=" + scheduler +
+                    (droppedThisStep > 0 ? "\nFiring-event limit reached; dropped spikes are not deferred. This is not a CPU-time measurement." : "");
             }
         }
 
@@ -91,23 +98,28 @@ namespace Mod
             "LIVE ENCODER REQUESTS (normalized amplitudes, not Hz):\n  light=" + Format(lightDrive) + "  audio=" + Format(audioDrive) +
             "  broad-touch=" + Format(touchDrive) + "  injury-proxy=" + Format(damageDrive) + "  regional-touch=" + Format(regionalTouchDrive) +
             "\n  gravity-proxy=" + Format(gravityDrive) + "  joints=" + Format(jointDrive) + "  small-visual=" + Format(smallVisualDrive) + "  optic-roll=" + Format(opticRollDrive) +
-            "\n  global light-change ON=" + Format(lightOnDrive) + "  OFF=" + Format(lightOffDrive) +
+            "\n  light-level change ON=" + Format(lightOnDrive) + "  OFF=" + Format(lightOffDrive) +
             "\n  warm=" + Format(hotDrive) + "  cool=" + Format(coldDrive) + "  approach-proxy=" + Format(approachDrive) +
+            "\n  food-nearby(gameplay)=" + Format(foodNearbyDrive) + "  food-head-contact(gameplay)=" + Format(foodContactDrive) +
             "\n  input neurons queued this tick=" + sensoryQueued +
-            "\nOnly measured damage events and supported external signals are encoded; health/chemistry remain telemetry and control constraints.\nDirections use world horizontal as an engineering L/R projection.";
+            "\nFood cues are explicit catalog-based gameplay mappings, not measured smell/taste. Health/chemistry remain telemetry and control constraints.\nVisual directions use head-relative 2D bearing (positive CCW to R); audio/tilt use world horizontal. These are engineering projections.";
 
         public string DisplayMotorSummary => stopped ?
-            "REQUEST: STOPPED\n  arms=0.00/0.00  legs=0.00/0.00\n  head=0.00  core=0.00  grips=0.00/0.00" :
-            "REQUEST (" + (locomotionMode > 0 ? "FORWARD" : locomotionMode < 0 ? "BACKWARD" : "IDLE") + "):\n  arms=" + Format(lastCommand.LeftArm) + "/" + Format(lastCommand.RightArm) +
+            "REQUEST: STOPPED\n  arms=0.00/0.00  legs=0.00/0.00\n  head=0.00  core=0.00  grips=0.00/0.00\nTHREAT SOURCES\n  body=0.00  injury-event=0.0000  looming=0.00  DNp01-fired=0.00  escape-request=0.00  response=stopped" :
+            "REQUEST (" + (escapeWalkSeconds > 0f ? "ESCAPE BURST" : "WALK " + (locomotionMode > 0 ? "FORWARD" : locomotionMode < 0 ? "BACKWARD" : "IDLE")) + "):\n  arms=" + Format(lastCommand.LeftArm) + "/" + Format(lastCommand.RightArm) +
             "  legs=" + Format(lastCommand.LeftLeg) + "/" + Format(lastCommand.RightLeg) +
             "\n  head=" + Format(lastCommand.Head) + "  core=" + Format(lastCommand.Core) +
             "  grips=" + Format(lastCommand.LeftGrip) + "/" + Format(lastCommand.RightGrip) +
+            "\n  escape-burst-remaining=" + Format(lastCommand.EscapeLocomotionSeconds) + " s (native walking adaptation; shooter direction unknown)" +
+            "\nTHREAT SOURCES\n  body=" + Format(lastCommand.BodyThreat) + "  injury-event=" + lastCommand.InjuryEvent.ToString("0.0000", CultureInfo.InvariantCulture) + "  looming=" + Format(lastCommand.VisualThreat) +
+            "  DNp01-fired=" + Format(lastCommand.DNp01Activity) + "  escape-request=" + Format(lastCommand.NeuralEscape) + "  recent-threat-window=" + Format(escapeContextSeconds) + " s  response=" + (lastCommand.NeuralEscape > 0f ? "neural escape" : lastCommand.Avoid > 0f ? "body avoidance" : "none") +
             "\nFILTERED NEURAL READOUT (fractions):\n  forward=" + Format(forwardFilter) + "  backward=" + Format(backwardFilter) + "  turn(R-L)=" + Format(yawFilter);
 
         public long SimulationTick => simulationTick;
         public int FiredCount => fired.Count;
         public int ProcessedCount => processedThisStep;
         public int DroppedCount => droppedThisStep;
+        public int DecayedCount => decayedThisStep;
         public int PendingCount => pending.Count;
         public int ActiveCount => active.Count;
         public bool IsStopped => stopped;
@@ -152,7 +164,9 @@ namespace Mod
             simulationTick++;
             processedThisStep = 0;
             droppedThisStep = 0;
+            decayedThisStep = 0;
             lightDrive = audioDrive = touchDrive = damageDrive = regionalTouchDrive = smallVisualDrive = opticRollDrive = gravityDrive = jointDrive = hotDrive = coldDrive = approachDrive = 0f;
+            bodyThreat = visualThreat = neuralEscape = foodNearbyDrive = foodContactDrive = 0f;
             sensoryQueued = 0;
             fired.Clear();
             firedIds.Clear();
@@ -201,7 +215,11 @@ namespace Mod
             previousLight = lightOnDrive = lightOffDrive = 0f;
             processedThisStep = 0;
             droppedThisStep = 0;
+            decayedThisStep = 0;
             lightDrive = audioDrive = touchDrive = damageDrive = regionalTouchDrive = smallVisualDrive = opticRollDrive = gravityDrive = jointDrive = hotDrive = coldDrive = approachDrive = 0f;
+            bodyThreat = visualThreat = neuralEscape = foodNearbyDrive = foodContactDrive = 0f;
+            neuralEscapeCooldown = neuralEscapeQuiet = escapeContextSeconds = escapeWalkSeconds = 0f;
+            neuralEscapeArmed = true;
             sensoryQueued = 0;
             lastCommand = new MotorCommand();
             forwardFilter = backwardFilter = yawFilter = leftLegFilter = rightLegFilter = locomotionDwell = 0f;
@@ -213,6 +231,7 @@ namespace Mod
         {
             processedThisStep = 0;
             droppedThisStep = 0;
+            decayedThisStep = 0;
             fired.Clear();
             firedIds.Clear();
             LastSensoryDrive = 0f;
@@ -220,6 +239,9 @@ namespace Mod
             hasPreviousLight = false;
             previousLight = lightOnDrive = lightOffDrive = 0f;
             lightDrive = audioDrive = touchDrive = damageDrive = regionalTouchDrive = smallVisualDrive = opticRollDrive = gravityDrive = jointDrive = hotDrive = coldDrive = approachDrive = 0f;
+            bodyThreat = visualThreat = neuralEscape = foodNearbyDrive = foodContactDrive = 0f;
+            neuralEscapeCooldown = neuralEscapeQuiet = escapeContextSeconds = escapeWalkSeconds = 0f;
+            neuralEscapeArmed = true;
             lastCommand = new MotorCommand();
             forwardFilter = backwardFilter = yawFilter = leftLegFilter = rightLegFilter = locomotionDwell = 0f;
             locomotionMode = 0;
@@ -228,31 +250,44 @@ namespace Mod
 
         private void ProcessActiveNeurons(Dictionary<int, float> next, HashSet<int> nextActiveState)
         {
-            if (active.Count > MaxActivePerStep)
+            // Integrate once per tick before propagating spikes. Subthreshold
+            // inputs and residual decay must not compete with outgoing-edge work.
+            // The active set is bounded by the loaded graph's neuron count.
+            orderedActive.Clear();
+            foreach (var id in active)
             {
-                ProcessFairBacklog(next, nextActiveState);
+                if (simulationTick < refractoryUntil[id]) { potential[id] = 0f; continue; }
+                var input = pending.TryGetValue(id, out var queued) ? queued : 0f;
+                var updated = Clamp(potential[id] * .92f + Clamp(input, -4f, 4f), -8f, 8f);
+                potential[id] = updated;
+                if (input == 0f) decayedThisStep++;
+                else processedThisStep++;
+                if (updated >= 1f) orderedActive.Add(id);
+                else if (Math.Abs(updated) > .001f) nextActiveState.Add(id);
+            }
+            if (orderedActive.Count > MaxSpikesPerStep)
+            {
+                ProcessFairSpikeBudget(next, nextActiveState);
                 return;
             }
 
-            foreach (var id in active)
-            {
-                ProcessActiveNeuron(id, next, nextActiveState);
-            }
+            foreach (var id in orderedActive) PropagateSpike(id, next, nextActiveState);
         }
 
-        private void ProcessFairBacklog(Dictionary<int, float> next, HashSet<int> nextActiveState)
+        private void ProcessFairSpikeBudget(Dictionary<int, float> next, HashSet<int> nextActiveState)
         {
-            orderedActive.Clear();
-            foreach (var id in active) orderedActive.Add(id);
+            // Only threshold crossings need sorting and fair propagation selection.
             orderedActive.Sort();
             var start = (int)(backlogCursor % orderedActive.Count);
             scheduled.Clear();
-            var budget = MaxActivePerStep;
+            foreach (var id in orderedActive) scheduled.Add(id);
+            var budget = MaxSpikesPerStep;
             foreach (var id in priority)
             {
                 if (budget == 0) break;
-                if (ProcessActiveNeuron(id, next, nextActiveState)) budget--;
-                scheduled.Add(id);
+                if (!scheduled.Remove(id)) continue;
+                PropagateSpike(id, next, nextActiveState);
+                budget--;
             }
 
             var examined = 0;
@@ -260,34 +295,27 @@ namespace Mod
             {
                 var id = orderedActive[(start + index) % orderedActive.Count];
                 examined++;
-                if (priority.Contains(id)) continue;
-                if (ProcessActiveNeuron(id, next, nextActiveState)) budget--;
-                scheduled.Add(id);
+                if (!scheduled.Remove(id)) continue;
+                PropagateSpike(id, next, nextActiveState);
+                budget--;
             }
 
-            foreach (var id in orderedActive)
+            foreach (var id in scheduled)
             {
-                if (!scheduled.Contains(id))
-                {
-                    if (simulationTick < refractoryUntil[id]) potential[id] = 0f;
-                    else DropNeuron(id);
-                }
+                if (simulationTick < refractoryUntil[id]) potential[id] = 0f;
+                else DropNeuron(id);
             }
 
             backlogCursor = (start + examined) % orderedActive.Count;
         }
 
-        private bool ProcessActiveNeuron(int id, Dictionary<int, float> next, HashSet<int> nextActiveState)
+        private void PropagateSpike(int id, Dictionary<int, float> next, HashSet<int> nextActiveState)
         {
-            if (simulationTick < refractoryUntil[id])
-            {
-                potential[id] = 0f;
-                return false;
-            }
-
-            processedThisStep++;
-            ProcessNeuron(id, next, nextActiveState);
-            return true;
+            potential[id] = 0f;
+            refractoryUntil[id] = simulationTick + RefractoryTicks + 1;
+            fired.Add(id);
+            firedIds.Add(id);
+            QueueOutgoing(id, next, nextActiveState);
         }
 
         private void DropNeuron(int id)
@@ -296,43 +324,22 @@ namespace Mod
             potential[id] = 0f;
         }
 
-        private void ProcessNeuron(int id, Dictionary<int, float> next, HashSet<int> nextActiveState)
-        {
-            var input = pending.TryGetValue(id, out var queued) ? queued : 0f;
-            var updatedPotential = Clamp(potential[id] * .92f + Clamp(input, -4f, 4f), -8f, 8f);
-            if (updatedPotential < 1f)
-            {
-                potential[id] = updatedPotential;
-                if (Math.Abs(updatedPotential) > .001f) nextActiveState.Add(id);
-                return;
-            }
-
-            potential[id] = 0f;
-            refractoryUntil[id] = simulationTick + RefractoryTicks + 1;
-            fired.Add(id);
-            firedIds.Add(id);
-            QueueOutgoing(id, next, nextActiveState);
-        }
-
         private void QueueOutgoing(int source, Dictionary<int, float> next, HashSet<int> nextActiveState)
         {
             var start = asset.OutgoingStart(source);
             var end = asset.OutgoingEnd(source);
+            var sign = asset.SignAt(source);
             for (var edge = start; edge < end; edge++)
             {
                 var target = asset.TargetAt(edge);
                 // Propagated input arrives on the next tick. Allow input on
                 // the exact recovery tick; earlier input cannot be integrated.
                 if (simulationTick + 1 < refractoryUntil[target]) continue;
-                MergePending(next, target, asset.WeightAt(edge) * asset.SignAt(source));
-                nextActiveState.Add(target);
+                var exists = next.TryGetValue(target, out var queued);
+                next[target] = queued + asset.WeightAt(edge) * sign;
+                // Existing pending entries already have an active target.
+                if (!exists) nextActiveState.Add(target);
             }
-        }
-
-        private static void MergePending(Dictionary<int, float> destination, int id, float amount)
-        {
-            var queued = destination.TryGetValue(id, out var value) ? value : 0f;
-            destination[id] = queued + amount;
         }
 
         private void SwapPendingState()
@@ -350,7 +357,19 @@ namespace Mod
 
         private MotorCommand BuildMotorCommand(SensoryFrame sensory, float elapsedSeconds)
         {
-            var danger = IsDangerous(sensory);
+            // DNp01 can fire from recurrent activity without an observed threat.
+            // Keep the spike visible, but qualify its Human avoidance request
+            // with recent evidence. This is a gameplay gate, not causal tracing
+            // or a biological claim about why the neuron fired.
+            var bodyThreatValue = BodyThreatValue(sensory);
+            var freeze = Unit(Unit(sensory.Unconscious) + Unit(sensory.LiquidSedation));
+            var movementPermitted = IsMovementPermitted(sensory, freeze);
+            var dnp01Activity = FiredMotorPopulation("type:DNp01");
+            var escapeEvidence = bodyThreatValue > .5f || Unit(sensory.DamageEvent) > .001f || visualThreat > .05f;
+            var neuralEscapeValue = DecodeNeuralEscape(elapsedSeconds, dnp01Activity, escapeEvidence, movementPermitted);
+            bodyThreat = bodyThreatValue;
+            neuralEscape = neuralEscapeValue;
+            var danger = bodyThreatValue > .5f || neuralEscapeValue > 0f;
             // Reference MotorMap walking/halting populations. Fractions below are
             // latest-tick activity, not the upstream biological firing-rate decoder.
             var rawForward = MotorActivity("type:DNp09") * .3f + MotorActivity("type:DNg100") * .25f +
@@ -362,6 +381,17 @@ namespace Mod
             var halt = Math.Max(MotorActivity("type:DNg60"), Math.Max(MotorActivity("type:DNg74_a"), MotorActivity("type:DNg74_b")));
             var brake = PopulationActivity("type:AN19A018");
             var stopRequested = halt >= .2f || brake >= .2f;
+            // A qualified DNp01 event previously only modified an existing walk:
+            // idle remained idle. Translate that neural event into a short native
+            // walking burst. Preserve neural backward intent; otherwise use native
+            // forward. No shooter localization, jump force or sensor-only reflex.
+            var escapeElapsed = IsFinite(elapsedSeconds) && elapsedSeconds > 0f ? elapsedSeconds : DefaultStepSeconds;
+            escapeWalkSeconds = Math.Max(0f, escapeWalkSeconds - escapeElapsed);
+            if (neuralEscapeValue > 0f && !stopRequested && movementPermitted)
+            {
+                escapeWalkSeconds = .6f;
+                escapeWalkDirection = rawBackward >= .5f || locomotionMode < 0 ? -1 : 1;
+            }
             if (stopRequested)
             {
                 locomotionMode = 0;
@@ -390,6 +420,7 @@ namespace Mod
             }
             var locomotionGate = stopRequested ? 0f : 1f;
             var neuralWalk = locomotionMode > 0 ? Math.Max(.3f, forwardFilter) : locomotionMode < 0 ? -Math.Max(.3f, backwardFilter) : 0f;
+            if (escapeWalkSeconds > 0f) neuralWalk = escapeWalkDirection * .7f;
             // Fly leg activity is a human joint-control proxy. Wing, song and
             // proboscis populations are not reinterpreted as human arm/grip intent.
             var left = Ema(leftLegFilter, MotorActivity("motor:leg", "L"), elapsedSeconds, .15f) * locomotionGate;
@@ -398,8 +429,6 @@ namespace Mod
             rightLegFilter = right;
             var center = (left + right) * .5f;
             var sideBias = right - left;
-            var freeze = Unit(sensory.Unconscious + sensory.LiquidSedation);
-            var movementPermitted = IsMovementPermitted(sensory, freeze);
             var walk = movementPermitted ? neuralWalk : 0f;
             var motorSideBias = movementPermitted ? sideBias : 0f;
             var motorCenter = movementPermitted ? center : 0f;
@@ -409,6 +438,7 @@ namespace Mod
             var requested = new MotorCommand
             {
                 Walk = walk,
+                EscapeLocomotionSeconds = escapeWalkSeconds,
                 LeftArm = Signed(-armSwing),
                 RightArm = armSwing,
                 LeftLeg = Signed(walk - motorSideBias * .2f),
@@ -419,8 +449,13 @@ namespace Mod
                 LeftGrip = reach,
                 RightGrip = reach,
                 Avoid = danger ? 1f : 0f,
+                BodyThreat = bodyThreatValue,
+                InjuryEvent = Unit(sensory.DamageEvent),
+                VisualThreat = visualThreat,
+                NeuralEscape = neuralEscapeValue,
+                DNp01Activity = dnp01Activity ? 1f : 0f,
                 Freeze = freeze,
-                Heal = Unit(sensory.Damage + sensory.Bleeding + sensory.LiquidHealing),
+                Heal = Unit(Unit(sensory.Damage) + Unit(sensory.Bleeding) + Unit(sensory.LiquidHealing)),
                 // Native stress values are inputs, not automatic instructions
                 // to amplify adrenaline or chemically calm an injured person.
                 Stimulate = Unit(sensory.LiquidStimulation),
@@ -432,6 +467,7 @@ namespace Mod
                 ClearMotorRequests(ref requested);
                 forwardFilter = backwardFilter = yawFilter = leftLegFilter = rightLegFilter = locomotionDwell = 0f;
                 locomotionMode = 0;
+                escapeWalkSeconds = 0f;
                 lastCommand = requested;
                 return lastCommand;
             }
@@ -443,6 +479,7 @@ namespace Mod
         private static void ClearMotorRequests(ref MotorCommand command)
         {
             command.Walk = 0f;
+            command.EscapeLocomotionSeconds = 0f;
             command.LeftArm = 0f;
             command.RightArm = 0f;
             command.LeftLeg = 0f;
@@ -459,9 +496,46 @@ namespace Mod
             return sensory.HealthValid && sensory.ConsciousnessValid && IsFinite(sensory.Consciousness) && Unit(sensory.Consciousness) > .8f && freeze < .5f;
         }
 
-        private bool IsDangerous(SensoryFrame sensory)
+        private static float BodyThreatValue(SensoryFrame sensory)
         {
-            return sensory.Pain + sensory.Fire + sensory.Shock + sensory.SubmergedHypoxia + sensory.Projectile > .5f || FiredMotorPopulation("type:DNp01");
+            return Unit(Unit(sensory.Pain) + Unit(sensory.Fire) + Unit(sensory.Shock) + Unit(sensory.SubmergedHypoxia) + Unit(sensory.Projectile));
+        }
+
+        private float DecodeNeuralEscape(float elapsedSeconds, bool rawSpike, bool evidence, bool permitted)
+        {
+            const float refractorySeconds = 1.5f;
+            const float rearmQuietSeconds = .25f;
+            if (!permitted)
+            {
+                neuralEscapeCooldown = neuralEscapeQuiet = escapeContextSeconds = escapeWalkSeconds = 0f;
+                neuralEscapeArmed = true;
+                return 0f;
+            }
+            // Use actual elapsed game time so a delayed callback cannot keep
+            // a stale threat alive through the motor smoother's 0.25 s cap.
+            var seconds = IsFinite(elapsedSeconds) && elapsedSeconds > 0f ? elapsedSeconds : DefaultStepSeconds;
+            escapeContextSeconds = evidence ? .5f : Math.Max(0f, escapeContextSeconds - seconds);
+            neuralEscapeCooldown = Math.Max(0f, neuralEscapeCooldown - seconds);
+            if (rawSpike)
+            {
+                neuralEscapeQuiet = 0f;
+                if (escapeContextSeconds > 0f && neuralEscapeArmed && neuralEscapeCooldown <= 0f)
+                {
+                    neuralEscapeArmed = false;
+                    neuralEscapeCooldown = refractorySeconds;
+                    return 1f;
+                }
+
+                return 0f;
+            }
+
+            neuralEscapeQuiet = Math.Min(rearmQuietSeconds, neuralEscapeQuiet + seconds);
+            if (neuralEscapeCooldown <= 0f && neuralEscapeQuiet >= rearmQuietSeconds)
+            {
+                neuralEscapeArmed = true;
+            }
+
+            return 0f;
         }
 
         private bool FiredMotorPopulation(string population)
@@ -541,7 +615,7 @@ namespace Mod
             previousLight = lightDrive;
             hasPreviousLight = lightValid;
             audioDrive = sensory.SoundSpectrumValid ? Math.Max(Unit(sensory.SoundHigh), Unit(sensory.SoundLow) * .7f) : Unit(sensory.Sound);
-            touchDrive = Math.Max(Unit(sensory.Impact + sensory.Vibration * .35f), sensory.RegionalTouchValid ? 0f : Unit(sensory.Touch * .15f + sensory.PhysicalContact * .15f));
+            touchDrive = Math.Max(Unit(Unit(sensory.Impact) + Unit(sensory.Vibration) * .35f), sensory.RegionalTouchValid ? 0f : Unit(Unit(sensory.Touch) * .15f + Unit(sensory.PhysicalContact) * .15f));
             gravityDrive = sensory.TiltValid ? Math.Abs(Signed(sensory.SignedTilt)) : 0f;
             var jointPosition = sensory.JointSensingValid ? Unit(sensory.JointPosition) : 0f;
             var jointMotion = sensory.JointSensingValid ? Unit(sensory.JointMotion) : 0f;
@@ -589,35 +663,46 @@ namespace Mod
             effectiveTotal += DriveChannel(manualInput, ManualInputChannel.JointLoad, jointLoad, 0f);
             effectiveTotal += DriveChannel(manualInput, ManualInputChannel.Warm, hotDrive, 0f);
             effectiveTotal += DriveChannel(manualInput, ManualInputChannel.Cool, coldDrive, 0f);
+            foodNearbyDrive = sensory.FoodCuesValid ? Unit(sensory.FoodNearbyCue) : 0f;
+            foodContactDrive = sensory.FoodCuesValid ? Unit(sensory.FoodContactCue) : 0f;
+            effectiveTotal += DriveChannel(manualInput, ManualInputChannel.FoodNearby, foodNearbyDrive, 0f);
+            effectiveTotal += DriveChannel(manualInput, ManualInputChannel.FoodContact, foodContactDrive, 0f);
             // Object geometry is only used when the adapter measured it. These
             // are feature encoders, not semantic object recognition.
-            var visualDirection = sensory.VisionDirectionValid ? Signed(sensory.VisionDirection) : 0f;
-            var existingVision = Unit(sensory.Vision);
-            var liveExpandingVisual = 0f;
-            var liveLoomingVisual = 0f;
-            var liveSmallMovingVisual = 0f;
-            if (sensory.VisualGeometryValid && existingVision > 0f && IsFinite(sensory.VisualExpansion) && IsFinite(sensory.VisualAngularSize) && IsFinite(sensory.VisualAngularSpeed) && sensory.VisualAngularSize > 0f && sensory.VisualAngularSize <= 180f && sensory.VisualAngularSpeed >= 0f)
+            var expansionInput = new VisualFeatureInput();
+            var loomingInput = new VisualFeatureInput();
+            var smallInput = new VisualFeatureInput();
+            if (sensory.VisualFieldValid)
             {
-                var expansion = Math.Max(0f, sensory.VisualExpansion);
-                var lc4 = expansion / (expansion + 200f) * existingVision;
-                var z = (sensory.VisualAngularSize - 60f) / 25f;
-                var lplc2 = expansion > 0f ? (float)Math.Exp(-.5f * z * z) * existingVision : 0f;
-                var small = sensory.VisualAngularSize < 15f && sensory.VisualAngularSpeed > 5f ?
-                    sensory.VisualAngularSpeed / (sensory.VisualAngularSpeed + 100f) * existingVision : 0f;
-                smallVisualDrive = small;
-                approachDrive = Math.Max(lc4, lplc2);
-                liveExpandingVisual = lc4;
-                liveLoomingVisual = lplc2;
-                liveSmallMovingVisual = small;
+                for (var band = 0; band < 5; band++)
+                {
+                    var view = sensory.ViewAt(band);
+                    if (!view.Observed || Unit(view.Strength) <= 0f || !IsFinite(view.BearingDegrees) || Math.Abs(view.BearingDegrees) > 90f) continue;
+                    AddVisualFeatures(view, Signed(view.BearingDegrees / 90f), ref expansionInput, ref loomingInput, ref smallInput);
+                }
             }
-            else if (!sensory.VisualGeometryValid)
+            else
             {
-                liveExpandingVisual = approachDrive;
-                liveLoomingVisual = approachDrive;
+                // Single-feature frames remain available to the test/manual
+                // interface. Native adapters supply the spatial field above.
+                var direction = sensory.VisionHeadBearingValid ? Signed(sensory.VisionHeadBearingDegrees / 90f) : 0f;
+                AddVisualFeatures(new VisualObservation
+                {
+                    Strength = sensory.Vision,
+                    Approach = sensory.VisualApproach,
+                    GeometryValid = sensory.VisualGeometryValid,
+                    AngularSize = sensory.VisualAngularSize,
+                    Expansion = sensory.VisualExpansion,
+                    AngularSpeed = sensory.VisualAngularSpeed
+                }, direction, ref expansionInput, ref loomingInput, ref smallInput);
             }
-            effectiveTotal += DriveChannel(manualInput, ManualInputChannel.ExpandingVisual, liveExpandingVisual, visualDirection);
-            effectiveTotal += DriveChannel(manualInput, ManualInputChannel.LoomingVisual, liveLoomingVisual, visualDirection);
-            effectiveTotal += DriveChannel(manualInput, ManualInputChannel.SmallMovingVisual, liveSmallMovingVisual, visualDirection);
+            smallVisualDrive = smallInput.Amplitude;
+            approachDrive = Math.Max(expansionInput.Amplitude, loomingInput.Amplitude);
+            var effectiveExpansion = DriveChannel(manualInput, ManualInputChannel.ExpandingVisual, expansionInput.Amplitude, expansionInput.Direction);
+            var effectiveLooming = DriveChannel(manualInput, ManualInputChannel.LoomingVisual, loomingInput.Amplitude, loomingInput.Direction);
+            visualThreat = Math.Max(effectiveExpansion, effectiveLooming);
+            effectiveTotal += effectiveExpansion + effectiveLooming;
+            effectiveTotal += DriveChannel(manualInput, ManualInputChannel.SmallMovingVisual, smallInput.Amplitude, smallInput.Direction);
             if (lightValid && lightDrive > 0f && sensory.AngularVelocityValid && IsFinite(sensory.AngularVelocity))
             {
                 var roll = Math.Abs(sensory.AngularVelocity) / (Math.Abs(sensory.AngularVelocity) + 300f) * lightDrive;
@@ -625,6 +710,41 @@ namespace Mod
             }
             effectiveTotal += DriveChannel(manualInput, ManualInputChannel.OpticRoll, opticRollDrive, 0f);
             LastSensoryDrive = Unit(effectiveTotal);
+        }
+
+        private struct VisualFeatureInput
+        {
+            private float left, right;
+            public float Amplitude => Math.Max(left, right);
+            public float Direction => Amplitude > 0f ? (right - left) / Amplitude : 0f;
+            public void Add(float amplitude, float direction)
+            {
+                amplitude = Unit(amplitude);
+                // Max pooling keeps additional colliders from multiplying drive
+                // while preserving simultaneous features on both neural sides.
+                left = Math.Max(left, amplitude * (1f - Math.Max(0f, direction)));
+                right = Math.Max(right, amplitude * (1f + Math.Min(0f, direction)));
+            }
+        }
+
+        private static void AddVisualFeatures(VisualObservation view, float direction,
+            ref VisualFeatureInput expansionInput, ref VisualFeatureInput loomingInput, ref VisualFeatureInput smallInput)
+        {
+            if (!view.GeometryValid)
+            {
+                expansionInput.Add(view.Approach, direction);
+                loomingInput.Add(view.Approach, direction);
+                return;
+            }
+            var vision = Unit(view.Strength);
+            if (vision <= 0f || !IsFinite(view.Expansion) || !IsFinite(view.AngularSize) || !IsFinite(view.AngularSpeed) ||
+                view.AngularSize <= 0f || view.AngularSize > 180f || view.AngularSpeed < 0f) return;
+            var expansion = Math.Max(0f, view.Expansion);
+            var z = (view.AngularSize - 60f) / 25f;
+            expansionInput.Add(expansion / (expansion + 200f) * vision, direction);
+            loomingInput.Add(expansion > 0f ? (float)Math.Exp(-.5f * z * z) * vision : 0f, direction);
+            smallInput.Add(view.AngularSize < 15f && view.AngularSpeed > 5f ?
+                view.AngularSpeed / (view.AngularSpeed + 100f) * vision : 0f, direction);
         }
 
         private float LastSensoryDrive { get; set; }

@@ -35,6 +35,8 @@ namespace Mod
         LoomingVisual,
         SmallMovingVisual,
         OpticRoll,
+        FoodNearby,
+        FoodContact,
         Count
     }
 
@@ -62,25 +64,27 @@ namespace Mod
     {
         public static readonly ManualInputChannelDescriptor[] All =
         {
-            new ManualInputChannelDescriptor(ManualInputChannel.Light, "Ambient light", "Broad photoreceptor drive · input:light", new[] { "input:light" }),
-            new ManualInputChannelDescriptor(ManualInputChannel.LightOn, "Light ON entry", "Explicit luminance-increase route · type:Mi1", new[] { "type:Mi1" }),
-            new ManualInputChannelDescriptor(ManualInputChannel.LightOff, "Light OFF entry", "Explicit luminance-decrease route · type:L2 + type:L3", new[] { "type:L2", "type:L3" }),
-            new ManualInputChannelDescriptor(ManualInputChannel.Auditory, "Auditory", "Playback proxy · input:auditory", new[] { "input:auditory" }, null, true),
-            new ManualInputChannelDescriptor(ManualInputChannel.TouchHead, "Head touch", "Regional bristle proxy · input:touch-head", new[] { "input:touch-head" }),
-            new ManualInputChannelDescriptor(ManualInputChannel.TouchArms, "Arm touch", "Regional bristle proxy · input:touch-arms", new[] { "input:touch-arms" }),
-            new ManualInputChannelDescriptor(ManualInputChannel.TouchLegs, "Leg touch", "Regional bristle proxy · input:touch-legs", new[] { "input:touch-legs" }),
-            new ManualInputChannelDescriptor(ManualInputChannel.TouchCore, "Core touch", "Regional bristle proxy · input:touch-core", new[] { "input:touch-core" }),
-            new ManualInputChannelDescriptor(ManualInputChannel.TouchOther, "Other touch", "Remaining tactile class · input:touch-other", new[] { "input:touch-other" }, "input:tactile"),
-            new ManualInputChannelDescriptor(ManualInputChannel.Gravity, "Gravity / tilt", "World-horizontal body tilt proxy · input:gravity", new[] { "input:gravity" }, null, true),
-            new ManualInputChannelDescriptor(ManualInputChannel.JointPosition, "Joint position", "Connected hinge angle proxy · input:joint-position", new[] { "input:joint-position" }),
-            new ManualInputChannelDescriptor(ManualInputChannel.JointMotion, "Joint motion", "Connected hinge speed proxy · input:joint-motion", new[] { "input:joint-motion" }),
-            new ManualInputChannelDescriptor(ManualInputChannel.JointLoad, "Joint load", "Connected hinge stress proxy · input:joint-load", new[] { "input:joint-load" }),
-            new ManualInputChannelDescriptor(ManualInputChannel.Warm, "Warm", "Thermal drive · input:hot", new[] { "input:hot" }),
-            new ManualInputChannelDescriptor(ManualInputChannel.Cool, "Cool", "Thermal drive · input:cold", new[] { "input:cold" }),
-            new ManualInputChannelDescriptor(ManualInputChannel.ExpandingVisual, "Expanding visual", "Engineered feature route · type:LC4", new[] { "type:LC4" }, null, true),
-            new ManualInputChannelDescriptor(ManualInputChannel.LoomingVisual, "Looming visual", "Engineered feature route · type:LPLC2", new[] { "type:LPLC2" }, null, true),
-            new ManualInputChannelDescriptor(ManualInputChannel.SmallMovingVisual, "Small moving visual", "Engineered feature route · type:LC11 + type:LC18", new[] { "type:LC11", "type:LC18" }, null, true),
-            new ManualInputChannelDescriptor(ManualInputChannel.OpticRoll, "Optic roll", "World-axis visual motion proxy · input:optic-roll", new[] { "input:optic-roll" })
+            new ManualInputChannelDescriptor(ManualInputChannel.Light, "Light level", "Ambient + local light proxy | input:light", new[] { "input:light" }),
+            new ManualInputChannelDescriptor(ManualInputChannel.LightOn, "Light ON entry", "Explicit luminance-increase route | type:Mi1", new[] { "type:Mi1" }),
+            new ManualInputChannelDescriptor(ManualInputChannel.LightOff, "Light OFF entry", "Explicit luminance-decrease route | type:L2 + type:L3", new[] { "type:L2", "type:L3" }),
+            new ManualInputChannelDescriptor(ManualInputChannel.Auditory, "Auditory", "Playback proxy | input:auditory", new[] { "input:auditory" }, null, true),
+            new ManualInputChannelDescriptor(ManualInputChannel.TouchHead, "Head touch", "Regional bristle proxy | input:touch-head", new[] { "input:touch-head" }),
+            new ManualInputChannelDescriptor(ManualInputChannel.TouchArms, "Arm touch", "Regional bristle proxy | input:touch-arms", new[] { "input:touch-arms" }),
+            new ManualInputChannelDescriptor(ManualInputChannel.TouchLegs, "Leg touch", "Regional bristle proxy | input:touch-legs", new[] { "input:touch-legs" }),
+            new ManualInputChannelDescriptor(ManualInputChannel.TouchCore, "Core touch", "Regional bristle proxy | input:touch-core", new[] { "input:touch-core" }),
+            new ManualInputChannelDescriptor(ManualInputChannel.TouchOther, "Other touch", "Remaining tactile class | input:touch-other", new[] { "input:touch-other" }, "input:tactile"),
+            new ManualInputChannelDescriptor(ManualInputChannel.Gravity, "Gravity / tilt", "World-horizontal body tilt proxy | input:gravity", new[] { "input:gravity" }, null, true),
+            new ManualInputChannelDescriptor(ManualInputChannel.JointPosition, "Joint position", "Connected hinge angle proxy | input:joint-position", new[] { "input:joint-position" }),
+            new ManualInputChannelDescriptor(ManualInputChannel.JointMotion, "Joint motion", "Connected hinge speed proxy | input:joint-motion", new[] { "input:joint-motion" }),
+            new ManualInputChannelDescriptor(ManualInputChannel.JointLoad, "Joint load", "Connected hinge stress proxy | input:joint-load", new[] { "input:joint-load" }),
+            new ManualInputChannelDescriptor(ManualInputChannel.Warm, "Warm", "Thermal drive | input:hot", new[] { "input:hot" }),
+            new ManualInputChannelDescriptor(ManualInputChannel.Cool, "Cool", "Thermal drive | input:cold", new[] { "input:cold" }),
+            new ManualInputChannelDescriptor(ManualInputChannel.ExpandingVisual, "Expanding visual", "Engineered feature route | type:LC4", new[] { "type:LC4" }, null, true),
+            new ManualInputChannelDescriptor(ManualInputChannel.LoomingVisual, "Looming visual", "Engineered feature route | type:LPLC2", new[] { "type:LPLC2" }, null, true),
+            new ManualInputChannelDescriptor(ManualInputChannel.SmallMovingVisual, "Small moving visual", "Engineered feature route | type:LC11 + type:LC18", new[] { "type:LC11", "type:LC18" }, null, true),
+            new ManualInputChannelDescriptor(ManualInputChannel.OpticRoll, "Optic roll", "World-axis visual motion proxy | input:optic-roll", new[] { "input:optic-roll" }),
+            new ManualInputChannelDescriptor(ManualInputChannel.FoodNearby, "Food nearby (gameplay)", "Stock Pumpkin proximity convention; no measured odor | ORN_DM1/DM2/VA2", new[] { "type:ORN_DM1", "type:ORN_DM2", "type:ORN_VA2" }),
+            new ManualInputChannelDescriptor(ManualInputChannel.FoodContact, "Food head contact (gameplay)", "Stock Pumpkin head contact convention; no eating or measured taste | LB3b/c", new[] { "type:LB3b", "type:LB3c" })
         };
 
         public static ManualInputChannelDescriptor For(ManualInputChannel channel)
@@ -175,7 +179,12 @@ namespace Mod
 
         public void ReturnToLive() => SetOverrideEnabled(false);
 
-        public void Deactivate() => SetOverrideEnabled(false);
+        public void Deactivate()
+        {
+            SetOverrideEnabled(false);
+            // No encoder tick was applied while suspended; discard stale readings.
+            Array.Clear(readings, 0, readings.Length);
+        }
 
         public ManualInputReading GetReading(ManualInputChannel channel) => readings[(int)channel];
 

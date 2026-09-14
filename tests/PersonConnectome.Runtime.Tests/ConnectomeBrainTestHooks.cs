@@ -49,6 +49,15 @@ namespace Mod
 
         internal float TestPendingValue(int id) => pending.TryGetValue(id, out var value) ? value : 0f;
         internal float TestPotentialValue(int id) => potential[id];
+        internal int TestTraversedEdges
+        {
+            get
+            {
+                var count = 0;
+                foreach (var id in fired) count += asset.OutgoingEnd(id) - asset.OutgoingStart(id);
+                return count;
+            }
+        }
         internal int TestPendingCount => pending.Count;
         internal int TestActiveCount => active.Count;
         internal int TestProcessedCount => processedThisStep;

@@ -30,10 +30,24 @@ foreach ($bad in @('using IO = System.IO;', 'using System.Security.Cryptography;
 }
 if (@(Find-RejectedSyntax 'class C { string x = "File Assembly Process"; /* Diagnostics */ }').Count -ne 0) { throw 'Guard incorrectly scanned comments or strings as identifiers.' }
 $modRoot = Join-Path $PSScriptRoot '../Mod'
+$strictUtf8 = [Text.UTF8Encoding]::new($false, $true)
+try {
+    [void]$strictUtf8.GetString([byte[]]@(0xB7))
+    throw 'Source encoding guard accepted an invalid standalone UTF-8 byte.'
+} catch [Text.DecoderFallbackException] { }
 $manifest = Get-Content -LiteralPath (Join-Path $modRoot 'mod.json') -Raw | ConvertFrom-Json
 $failures = @()
 foreach ($script in $manifest.Scripts) {
-    $source = Get-Content -LiteralPath (Join-Path $modRoot $script) -Raw
+    try {
+        $source = $strictUtf8.GetString([IO.File]::ReadAllBytes((Join-Path $modRoot $script)))
+    } catch [Text.DecoderFallbackException] {
+        $failures += "${script}: invalid UTF-8 can render replacement glyphs in the game."
+        continue
+    }
+    if ($script -in @('PersonConnectomeStatusDisplay.cs', 'ManualInput.cs') -and
+        ($source.Contains([char]0x00B7) -or $source.Contains('\u00B7'))) {
+        $failures += "${script}: use ASCII separators so status labels do not depend on fallback font glyphs."
+    }
     foreach ($finding in @(Find-RejectedSyntax $source)) { $failures += "${script}: $finding" }
 }
 if ($failures.Count -ne 0) { throw ($failures -join "`n") }

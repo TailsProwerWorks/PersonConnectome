@@ -7,6 +7,11 @@ internal static class Program
     {
         (string, Action)[] tests =
         [
+            ("food cues require original stock identity and actual head contact", FoodItemCues),
+            ("blood readings distinguish raw amount, relative baseline and detached limbs", BloodMeasurementContract),
+            ("explicit limb loss emits one measured injury event", LimbLossEvents),
+            ("jukebox and child playback feed current directional audio", JukeboxAudio),
+            ("audio source scans stay bounded and exclude self sources", BoundedAudioSources),
             ("terminal motors and grips clear immediately", TerminalStop),
             ("native pose context actions are suppressed", ContextMenuPoseActions),
             ("unconscious and locally damaged limbs clear old commands", IncapableStop),
@@ -18,8 +23,9 @@ internal static class Program
             ("liquid snapshots and native zombie state stay separate", LiquidSnapshots),
             ("acid pools produce an explicit acid signal", AcidPools),
             ("paralysis, breakage and limb loss stay distinct", LimbDamageCategories),
-            ("blood baseline and vitality fallback", BloodAndVitality),
+            ("blood baseline and derived minimum limb health", BloodAndVitality),
             ("invalid limb health and blood remain unknown", InvalidLimbSamples),
+            ("small health baselines preserve normalized health and injury events", SmallHealthBaselines),
             ("hypoxia and submersion remain distinct", Oxygen),
             ("invalid oxygen remains unknown without hypoxia", InvalidOxygen),
             ("invalid consciousness suspends output without an unconscious claim", InvalidConsciousness),
@@ -29,7 +35,16 @@ internal static class Program
         ("external audio excludes own limbs, mute and invalid distances", Audio),
         ("numbered and cloned Root audio remains conservatively filtered", NumberedRootAudio),
         ("last-heard audio persists without stimulating stale sound", AudioHistory),
+            ("native light owners affect the combined light sensor", NativeLightSources),
+            ("local light respects state, transformed footprint and invalid data", LocalLightGeometry),
+            ("local light scan reports truncation and avoids duplicate strength", LocalLightLimits),
             ("visible external objects produce a vision proxy", Vision),
+            ("head rotation and mirroring change the observed field", HeadRelativeVision),
+            ("visible target search skips blocked and out-of-view candidates", VisibleTargetSelection),
+            ("visual search stays bounded and reports incomplete queries", VisualSearchLimits),
+            ("head rotation produces sweep without inventing approach", HeadRelativeSweep),
+            ("stationary head requests reach only the healthy native head joint", StationaryHeadMotor),
+            ("surroundings retain independent visible bands as value snapshots", SpatialSurroundings),
             ("audio spectra use one current external source and reject invalid data", SpectrumValidity),
             ("visual geometry and rotation follow finite native measurements", GeometryAndRotation),
             ("directional native sensory readings clear and stay source-bound", DirectionalSensors),
@@ -68,7 +83,7 @@ internal static class Program
         var failures = 0;
         foreach (var (name, test) in tests)
         {
-            try { Physics2D.Hits = []; Physics2D.LinecastHits = []; Physics2D.LinecastResult = default; test(); Console.WriteLine("PASS " + name); }
+            try { Physics2D.LinecastHandler = null; Physics2D.LinecastCalls = 0; Physics2D.Hits = []; Physics2D.LinecastHits = []; Physics2D.LinecastResult = default; test(); Console.WriteLine("PASS " + name); }
             catch (Exception e) { failures++; Console.Error.WriteLine("FAIL " + name + ": " + e); }
         }
         return failures;
@@ -135,6 +150,7 @@ internal static class Program
             foreach (var id in ids)
             {
                 var f = new Fixture(); var c = f.Limb.CirculationBehaviour;
+                c.LiquidDistribution.Clear();
                 c.LiquidDistribution[new Liquid(id)] = new() { Raw = .4f };
                 var frame = f.Adapter.Read();
                 Equal(kind == "Blood" ? 0f : .4f, frame.LiquidExposure);
@@ -207,12 +223,14 @@ internal static class Program
         var sitting = new ContextMenuButton("startSit", "Forces the sitting animation override");
         var delete = new ContextMenuButton("delete", "Delete");
         options.Buttons.Add(walking); options.Buttons.Add(sitting); options.Buttons.Add(delete);
+        var unrelated = new ContextMenuButton("customProtection", "Toggle fire protection");
+        options.Buttons.Add(unrelated); options.Buttons.Add(default);
         var controller = f.Root.AddComponent<PersonConnectomeController>();
         var type = typeof(PersonConnectomeController);
         type.GetMethod("Awake", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(controller, null);
-        Equal(3, options.Buttons.Count);
+        Equal(5, options.Buttons.Count);
         type.GetMethod("OnEnable", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(controller, null);
-        Equal(1, options.Buttons.Count); True(options.Buttons.Contains(delete));
+        Equal(3, options.Buttons.Count); True(options.Buttons.Contains(delete)); True(options.Buttons.Contains(unrelated));
         type.GetMethod("Start", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(controller, null);
         var lateOptions = f.Root.AddComponent<ContextMenuOptionComponent>();
         lateOptions.Buttons.Add(new ContextMenuButton("startWalking", "Forces the walking animation override"));
@@ -222,19 +240,132 @@ internal static class Program
         type.GetMethod("LateUpdate", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(controller, null);
         Equal(1, lateOptions.Buttons.Count); True(lateOptions.Buttons.Any(button => button.Identity == "delete"));
         type.GetMethod("OnDisable", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(controller, null);
-        Equal(3, options.Buttons.Count); True(options.Buttons.Contains(walking)); True(options.Buttons.Contains(sitting));
+        Equal(5, options.Buttons.Count); True(options.Buttons.Contains(walking)); True(options.Buttons.Contains(sitting));
         Equal(3, lateOptions.Buttons.Count);
     }
+    private static void FoodItemCues()
+    {
+        ModAPI.Pumpkin = new SpawnableAsset { name = "Pumpkin" };
+        var f = new Fixture(); f.Limb.HasBrain = true;
+        var headCollider = f.Limb.gameObject.AddComponent<Collider2D>();
+        var item = new GameObject("Pumpkin"); var physical = item.AddComponent<PhysicalBehaviour>();
+        var collider = item.AddComponent<Collider2D>(); collider.Surface = new Vector2(2f, 0f);
+        Physics2D.Hits = [collider];
+        True(f.Adapter.Read().FoodCuesValid); Equal(0f, f.Adapter.Read().FoodNearbyCue);
+        var identity = item.AddComponent<SerialiseInstructions>();
+        identity.OriginalSpawnableAsset = new SpawnableAsset { name = "Pumpkin" };
+        Equal(0f, f.Adapter.Read().FoodNearbyCue); // Name alone is never sufficient.
+        identity.OriginalSpawnableAsset = ModAPI.Pumpkin; item.name = "Renamed stock object";
+        var frame = f.Adapter.Read(); Equal(.75f, frame.FoodNearbyCue); Equal(0f, frame.FoodContactCue);
+        headCollider.Touching = collider; Equal(1f, f.Adapter.Read().FoodContactCue);
+        headCollider.enabled = false; Equal(0f, f.Adapter.Read().FoodContactCue); headCollider.enabled = true;
+        collider.isTrigger = true; Equal(0f, f.Adapter.Read().FoodNearbyCue); collider.isTrigger = false;
+        physical.isDisintegrated = true; Equal(0f, f.Adapter.Read().FoodNearbyCue); physical.isDisintegrated = false;
+        item.activeSelf = false; Equal(0f, f.Adapter.Read().FoodNearbyCue); item.activeSelf = true;
+        item.transform.SetParent(f.Root.transform); Equal(0f, f.Adapter.Read().FoodNearbyCue); item.transform.SetParent(null);
+        // The proximity convention is independent of lighting/head direction.
+        collider.Surface = new Vector2(-4f, 0f); Equal(.5f, f.Adapter.Read().FoodNearbyCue);
+        collider.Surface = new Vector2(float.NaN, 0f); Equal(0f, f.Adapter.Read().FoodNearbyCue);
+        collider.Surface = new Vector2(2f, 0f); f.Limb.IsDismembered = true;
+        frame = f.Adapter.Read(); True(!frame.FoodCuesValid); Equal(0f, frame.FoodContactCue);
+        f.Limb.IsDismembered = false; ModAPI.Pumpkin.Destroyed = true; ModAPI.Pumpkin = null;
+        frame = f.Adapter.Read(); True(!frame.FoodCuesValid); Equal(0f, frame.FoodNearbyCue);
+        Physics2D.Hits = [];
+    }
+
+    private static void BloodMeasurementContract()
+    {
+        var f = new Fixture(); var circulation = f.Limb.CirculationBehaviour;
+        circulation.LiquidDistribution.Clear();
+        circulation.LiquidDistribution[new Liquid("ADRENALINE")] = new() { Raw = 1f };
+        var frame = f.Adapter.Read(); Equal(1, frame.BloodSampleCount); Equal(0f, frame.NativeBloodMinimum);
+        True(!frame.BloodValid); // Known empty amount; unknown deficit before a positive reference.
+        Equal(1f, circulation.BloodAmount); Equal(0f, circulation.GetAmountOfBlood());
+        circulation.OriginalBloodAmount = .2f; frame = f.Adapter.Read(); Equal(0f, frame.Blood); Equal(.2f, frame.NativeBloodMinimum);
+        circulation.TotalLiquidAmount = 2f; circulation.OriginalBloodAmount = .1f;
+        frame = f.Adapter.Read(); Equal(.5f, frame.Blood); Equal(.1f, frame.NativeBloodMaximum);
+        circulation.OriginalBloodAmount = .0001f; frame = f.Adapter.Read(); True(frame.Blood < 1f);
+        f = new Fixture(); circulation = f.Limb.CirculationBehaviour;
+        circulation.OriginalBloodAmount = .0001f; frame = f.Adapter.Read(); True(frame.BloodValid); Equal(0f, frame.Blood);
+        circulation.OriginalBloodAmount = .00005f; Equal(.5f, f.Adapter.Read().Blood);
+        var other = Fixture.AddLimb(f.Root, "LowerArmBack"); f.Person.Limbs = [f.Limb, other];
+        f.Adapter.Read(); other.CirculationBehaviour.OriginalBloodAmount = 0f; other.IsDismembered = true;
+        frame = f.Adapter.Read(); Equal(.5f, frame.Blood); Equal(1, frame.BloodExpectedSamples);
+        other.IsDismembered = false; other.CirculationBehaviour.OriginalBloodAmount = float.NaN;
+        frame = f.Adapter.Read(); Equal(1, frame.BloodSampleCount); Equal(2, frame.BloodExpectedSamples);
+    }
+
+    private static void LimbLossEvents()
+    {
+        var f = new Fixture(); f.Adapter.Read(); f.Limb.PhysicalBehaviour.isDisintegrated = true;
+        Equal(1f, f.Adapter.Read().DamageEvent); Equal(0f, f.Adapter.Read().DamageEvent);
+        f = new Fixture(); f.Limb.IsDismembered = true; Equal(0f, f.Adapter.Read().DamageEvent);
+        f = new Fixture(); f.Adapter.Read(); f.Limb.IsDismembered = true; f.Person.Braindead = true;
+        Equal(0f, f.Adapter.Read().DamageEvent);
+        f = new Fixture(); f.Adapter.Read(); f.Person.Consciousness = .2f;
+        f.Adapter.Read(); f.Adapter.Apply(Moving, false); f.Limb.IsDismembered = true;
+        Equal(1f, f.Adapter.Read().DamageEvent); Equal(0f, f.Limb.MotorSpeed);
+        f = new Fixture(); f.Adapter.Read(); f.Adapter.Apply(new MotorCommand { Freeze = 1f }, false);
+        f.Limb.PhysicalBehaviour.isDisintegrated = true; Equal(1f, f.Adapter.Read().DamageEvent);
+        f = new Fixture(); f.Adapter.Read(); f.Adapter.Apply(Moving, false); f.Person.Consciousness = .2f;
+        f.Adapter.RefreshWalkingRequest(); f.Limb.IsDismembered = true;
+        Equal(1f, f.Adapter.Read().DamageEvent); Equal(0f, f.Person.DesiredWalkingDirection);
+    }
+
+    private static void JukeboxAudio()
+    {
+        var f = new Fixture(); var item = new GameObject("Jukebox");
+        var physical = item.AddComponent<PhysicalBehaviour>();
+        var collider = item.AddComponent<Collider2D>(); collider.Surface = new Vector2(2f, 0f);
+        var musicObject = new GameObject("Music channel"); musicObject.transform.SetParent(item.transform);
+        musicObject.transform.position = new Vector3(-2f, 0f, 0f);
+        var music = musicObject.AddComponent<AudioSource>(); music.isPlaying = true; music.volume = .8f;
+        music.Spectrum = new float[512]; music.Spectrum[4] = 1f;
+        item.AddComponent<JukeboxBehaviour>().audioSource = music;
+        physical.MainAudioSource = item.AddComponent<AudioSource>(); // Idle impact source.
+        Physics2D.Hits = [collider, collider];
+        var frame = f.Adapter.Read(); Equal(.6f, frame.Sound); Equal(-1f, frame.SoundDirection);
+        True(frame.SoundSpectrumValid); Equal(1, music.SpectrumCalls);
+        music.mute = true; Equal(0f, f.Adapter.Read().Sound); music.mute = false;
+        music.isPlaying = false; Equal(0f, f.Adapter.Read().Sound); music.isPlaying = true;
+        music.isActiveAndEnabled = false; Equal(0f, f.Adapter.Read().Sound); music.isActiveAndEnabled = true;
+        physical.isDisintegrated = true; Equal(0f, f.Adapter.Read().Sound); physical.isDisintegrated = false;
+        // Sources attached to ordinary objects work without a jukebox component.
+        item.GetComponent<JukeboxBehaviour>().audioSource = null;
+        musicObject.transform.position = new Vector3(4f, 0f, 0f); frame = f.Adapter.Read(); Equal(.4f, frame.Sound); Equal(1f, frame.SoundDirection);
+        musicObject.activeSelf = false; Equal(0f, f.Adapter.Read().Sound);
+        Physics2D.Hits = [];
+    }
+
+    private static void BoundedAudioSources()
+    {
+        var f = new Fixture(); var item = new GameObject("Sound fixture"); item.AddComponent<PhysicalBehaviour>();
+        var collider = item.AddComponent<Collider2D>(); collider.Surface = new Vector2(2f, 0f);
+        var sources = new List<AudioSource>();
+        for (var i = 0; i < 70; i++)
+        {
+            var child = new GameObject("Source " + i); child.transform.SetParent(item.transform); child.transform.position = new Vector3(2f, 0f, 0f);
+            var source = child.AddComponent<AudioSource>(); source.isPlaying = true; sources.Add(source);
+        }
+        Physics2D.Hits = [collider]; var frame = f.Adapter.Read(); True(frame.SoundLimited); Equal(.75f, frame.Sound);
+        Equal(1, sources.Sum(source => source.SpectrumCalls));
+        var ownMusic = f.Limb.gameObject.AddComponent<AudioSource>(); ownMusic.isPlaying = true;
+        item.AddComponent<JukeboxBehaviour>().audioSource = ownMusic;
+        foreach (var source in sources) source.isPlaying = false;
+        Equal(0f, f.Adapter.Read().Sound);
+        Physics2D.Hits = []; frame = f.Adapter.Read(); Equal(0f, frame.Sound); True(!frame.SoundLimited);
+    }
+
     private static void BloodAndVitality()
     {
         var f = new Fixture();
         Equal(0, f.Adapter.Read().Blood);
-        f.Limb.CirculationBehaviour.BloodAmount = .5f;
+        f.Limb.CirculationBehaviour.OriginalBloodAmount = .5f;
         Equal(.5f, f.Adapter.Read().Blood);
-        f.Limb.CirculationBehaviour.BloodAmount = 0;
+        f.Limb.CirculationBehaviour.OriginalBloodAmount = 0;
         Equal(1, f.Adapter.Read().Blood);
-        f.Limb.CirculationBehaviour.BloodAmount = 1;
-        f.Limb.Vitality = 0;
+        f.Limb.CirculationBehaviour.OriginalBloodAmount = 1;
+        f.Limb.Vitality = .2f; // Native injury susceptibility is not remaining health.
         var frame = f.Adapter.Read();
         Equal(1, frame.Vitality);
         f.Limb.Health = 40;
@@ -245,17 +376,31 @@ internal static class Program
     {
         var f = new Fixture();
         f.Adapter.Read(); // Establish the observed native blood baseline.
-        f.Limb.CirculationBehaviour.BloodAmount = float.NaN;
-        var frame = f.Adapter.Read(); True(!frame.BloodValid); Equal(0f, frame.Blood); True(f.Adapter.LiveInjurySummary.Contains("blood-loss=unknown"));
+        f.Limb.CirculationBehaviour.OriginalBloodAmount = float.NaN;
+        var frame = f.Adapter.Read(); True(!frame.BloodValid); Equal(0f, frame.Blood); True(f.Adapter.LiveInjurySummary.Contains("max-limb-blood-drop(observed peak)=unknown"));
+        f.Limb.CirculationBehaviour.OriginalBloodAmount = -1f;
+        frame = f.Adapter.Read(); True(!frame.BloodValid); Equal(0f, frame.Blood);
+        f.Limb.CirculationBehaviour.OriginalBloodAmount = .5f;
+        frame = f.Adapter.Read(); True(frame.BloodValid); Equal(.5f, frame.Blood);
 
         f = new Fixture(); f.Limb.Health = float.NaN;
         frame = f.Adapter.Read(); True(!frame.DamageValid); Equal(0f, frame.Damage); True(!frame.VitalityValid); Equal(0f, frame.Vitality);
-        True(f.Adapter.LiveBodySummary.Contains("damage=unknown")); True(f.Adapter.LiveInjurySummary.Contains("vitality=unknown"));
+        True(f.Adapter.LiveBodySummary.Contains("damage=unknown")); True(f.Adapter.LiveInjurySummary.Contains("min-limb-health=unknown"));
         f.Adapter.Apply(Moving, false); Equal(0f, f.Limb.MotorSpeed); True(f.Adapter.LiveLimbSummary.Contains("LowerArmFront:invalid-health"));
 
         f.Limb.Health = 100f;
         var healthy = Fixture.AddLimb(f.Root, "LowerArmBack"); f.Person.Limbs = [f.Limb, healthy]; healthy.IsDismembered = true;
         frame = f.Adapter.Read(); Equal(.5f, frame.LimbLoss); True(frame.DamageValid); True(frame.VitalityValid);
+    }
+    private static void SmallHealthBaselines()
+    {
+        var f = new Fixture(); f.Limb.InitialHealth = .5f; f.Limb.Health = .5f;
+        var frame = f.Adapter.Read(); True(frame.DamageValid); Equal(0f, frame.Damage); Equal(0f, frame.DamageEvent);
+        f.Limb.Health = .25f; frame = f.Adapter.Read(); Equal(.5f, frame.Damage); Equal(.5f, frame.DamageEvent);
+        Equal(0f, f.Adapter.Read().DamageEvent);
+        f.Limb.InitialHealth = float.Epsilon; f.Limb.Health = float.MaxValue;
+        frame = f.Adapter.Read(); Equal(0f, frame.Damage); Equal(0f, frame.DamageEvent);
+        f.Limb.Health = -1f; frame = f.Adapter.Read(); Equal(1f, frame.Damage); Equal(1f, frame.DamageEvent);
     }
     private static void AcidPools()
     {
@@ -310,6 +455,10 @@ internal static class Program
     {
         var f = new Fixture(); f.Limb.CirculationBehaviour = null;
         var frame = f.Adapter.Read(); True(!frame.CirculationValid); Equal(0f, frame.Circulation); True(f.Adapter.LiveInjurySummary.Contains("circulation=unknown"));
+        var healthyLimb = Fixture.AddLimb(f.Root, "LowerArmBack"); f.Person.Limbs = [f.Limb, healthyLimb];
+        f.Adapter.Read(); f.Adapter.Apply(Moving, false);
+        Equal(0f, f.Limb.MotorSpeed); True(healthyLimb.MotorSpeed != 0f);
+        True(f.Adapter.LiveLimbSummary.Contains("unknown-circulation"));
 
         f = new Fixture(); f.Limb.CirculationBehaviour.BloodFlow = float.NaN;
         frame = f.Adapter.Read(); True(!frame.CirculationValid); True(f.Adapter.LiveInjurySummary.Contains("circulation=unknown"));
@@ -618,14 +767,23 @@ internal static class Program
         type.GetMethod("LateUpdate", flags).Invoke(enabledController, null);
         Equal(1, PersonConnectomeStatusDisplay.RenderedUpdates);
         type.GetMethod("OnDisable", flags).Invoke(enabledController, null);
+        Equal(0, PersonConnectomeStatusDisplay.ActiveCount);
         type.GetMethod("OnDestroy", flags).Invoke(disabledController, null);
         type.GetMethod("OnDestroy", flags).Invoke(enabledController, null);
+        Equal(0, PersonConnectomeStatusDisplay.ActiveCount);
+        var replacement = new Fixture().Root.AddComponent<PersonConnectomeController>();
+        type.GetMethod("Awake", flags).Invoke(replacement, null);
+        type.GetMethod("OnEnable", flags).Invoke(replacement, null);
+        Equal(1, PersonConnectomeStatusDisplay.ActiveCount);
+        type.GetMethod("OnDisable", flags).Invoke(replacement, null);
+        type.GetMethod("OnDestroy", flags).Invoke(replacement, null);
+        Equal(0, PersonConnectomeStatusDisplay.ActiveCount);
         PersonConnectomeStatusDisplay.ResetForTest();
     }
 
     private static void Vision()
     {
-        var f = new Fixture();
+        var f = new Fixture(); f.Limb.HasBrain = true;
         RenderSettings.ambientLight = new Color { grayscale = 1f };
         var visible = new GameObject("Visible object");
         visible.AddComponent<PhysicalBehaviour>();
@@ -647,6 +805,130 @@ internal static class Program
         Physics2D.LinecastResult = default;
         Equal(0, f.Adapter.Read().Vision);
         RenderSettings.ambientLight = default;
+    }
+    private static void HeadRelativeVision()
+    {
+        var f = new Fixture(); f.Limb.HasBrain = true;
+        RenderSettings.ambientLight = new Color { grayscale = 1f };
+        var target = new GameObject("Target"); target.AddComponent<PhysicalBehaviour>();
+        var hit = target.AddComponent<Collider2D>(); hit.Surface = new Vector2(2, 2);
+        Physics2D.Hits = [hit]; Physics2D.LinecastResult = new RaycastHit2D { collider = hit };
+        var frame = f.Adapter.Read(); True(frame.GazeValid && frame.Vision > 0f); Equal(45f, frame.VisionHeadBearingDegrees);
+        // This is observation of native pose, not integration of a requested motor value.
+        f.Limb.transform.RotationDegrees = 90;
+        frame = f.Adapter.Read(); Equal(90f, frame.GazeHeadingDegrees); Equal(-45f, frame.VisionHeadBearingDegrees);
+        f.Limb.transform.RotationDegrees = 180;
+        frame = f.Adapter.Read(); Equal(0f, frame.Vision); True(!frame.VisionHeadBearingValid); True(frame.Nearby > 0f);
+        f.Limb.transform.RotationDegrees = 0; f.Limb.transform.lossyScale = new Vector3(-1, 1, 1);
+        hit.Surface = new Vector2(-2, 0);
+        frame = f.Adapter.Read(); True(frame.Vision > 0f); Equal(0f, frame.VisionHeadBearingDegrees);
+        f.Limb.transform.lossyScale = new Vector3(0, 1, 1);
+        frame = f.Adapter.Read(); True(!frame.GazeValid); Equal(0f, frame.Vision);
+        f.Limb.transform.lossyScale = new Vector3(1, 1, 1); f.Limb.transform.RotationDegrees = float.NaN;
+        frame = f.Adapter.Read(); True(!frame.GazeValid); Equal(0f, frame.Vision);
+        f.Limb.transform.RotationDegrees = 0; f.Limb.HasBrain = false;
+        frame = f.Adapter.Read(); True(!frame.GazeValid); Equal(0f, frame.Vision);
+        f.Limb.HasBrain = true; f.Limb.CirculationBehaviour.IsDisconnected = true;
+        frame = f.Adapter.Read(); True(!frame.GazeValid); Equal(0f, frame.Vision);
+    }
+    private static void VisibleTargetSelection()
+    {
+        var f = new Fixture(); f.Limb.HasBrain = true;
+        RenderSettings.ambientLight = new Color { grayscale = 1f };
+        Collider2D Target(string name, float x, float y)
+        {
+            var go = new GameObject(name); go.AddComponent<PhysicalBehaviour>();
+            var hit = go.AddComponent<Collider2D>(); hit.Surface = new Vector2(x, y); return hit;
+        }
+        var behind = Target("Behind", -.1f, 0); var blocked = Target("Blocked", 1, 0); var visible = Target("Visible", 3, 1);
+        var wall = new GameObject("Wall").AddComponent<Collider2D>();
+        Physics2D.Hits = [visible, behind, blocked];
+        Physics2D.LinecastHandler = (_, end) => [new RaycastHit2D { collider = end.x == 1 ? wall : visible }];
+        var frame = f.Adapter.Read(); True(frame.Vision > 0f && frame.VisionHeadBearingValid);
+        Equal((1f - MathF.Sqrt(10f) / 8f), frame.Vision); Equal(2f, Physics2D.LinecastCalls);
+        True(frame.Nearby > frame.Vision); // Proximity still reports the closest object, independently.
+        RenderSettings.ambientLight = default; frame = f.Adapter.Read(); Equal(0f, frame.Vision); Equal(0f, frame.VisualApproach);
+    }
+    private static void VisualSearchLimits()
+    {
+        var f = new Fixture(); f.Limb.HasBrain = true;
+        RenderSettings.ambientLight = new Color { grayscale = 1f };
+        var hits = new List<Collider2D>();
+        for (var i = 0; i < 20; i++)
+        {
+            var go = new GameObject("Candidate"); go.AddComponent<PhysicalBehaviour>();
+            var hit = go.AddComponent<Collider2D>(); hit.Surface = new Vector2(1 + i * .1f, 0); hits.Add(hit);
+        }
+        Physics2D.Hits = hits.AsEnumerable().Reverse().ToArray();
+        var wall = new GameObject("Wall").AddComponent<Collider2D>();
+        var visited = new List<float>();
+        Physics2D.LinecastHandler = (_, end) => { visited.Add(end.x); return [new RaycastHit2D { collider = wall }]; };
+        var frame = f.Adapter.Read(); True(frame.VisionLimited); Equal(16f, Physics2D.LinecastCalls); Equal(0f, frame.Vision);
+        Equal(1f, visited[0]); Equal(2.5f, visited[^1]);
+        Physics2D.Hits = [hits[0]];
+        Physics2D.LinecastHandler = (_, _) => Enumerable.Repeat(new RaycastHit2D { collider = hits[0] }, 32).ToArray();
+        frame = f.Adapter.Read(); True(frame.VisionLimited); Equal(0f, frame.Vision);
+        Physics2D.Hits = []; frame = f.Adapter.Read(); True(!frame.VisionLimited && !frame.VisionHeadBearingValid);
+    }
+    private static void HeadRelativeSweep()
+    {
+        var f = new Fixture(); f.Limb.HasBrain = true;
+        var headBody = f.Limb.gameObject.AddComponent<Rigidbody2D>(); headBody.angularVelocity = 30f;
+        RenderSettings.ambientLight = new Color { grayscale = 1f };
+        var go = new GameObject("Stationary target"); var physical = go.AddComponent<PhysicalBehaviour>();
+        var targetBody = go.AddComponent<Rigidbody2D>(); physical.rigidbody = targetBody;
+        var hit = go.AddComponent<Collider2D>(); hit.Surface = new Vector2(2, 0);
+        hit.bounds = new Bounds { center = new Vector3(2, 0, 0), extents = new Vector3(.1f, .1f, 0) };
+        Physics2D.Hits = [hit]; Physics2D.LinecastResult = new RaycastHit2D { collider = hit };
+        var frame = f.Adapter.Read(); True(frame.VisualGeometryValid); Equal(30f, frame.VisualAngularSpeed);
+        Equal(0f, frame.VisualExpansion); Equal(0f, frame.VisualApproach);
+        targetBody.velocity = new Vector2(0, 2 * 30f / 57.29578f);
+        frame = f.Adapter.Read(); Equal(0f, frame.VisualAngularSpeed);
+        headBody.angularVelocity = float.NaN; frame = f.Adapter.Read(); True(!frame.VisualGeometryValid);
+    }
+    private static void StationaryHeadMotor()
+    {
+        var f = new Fixture();
+        var head = Fixture.AddLimb(f.Root, "Head"); head.HasBrain = true;
+        f.Person.Limbs = [f.Limb, head]; f.Adapter.Read();
+        f.Limb.Broken = true;
+        f.Adapter.Apply(new MotorCommand { Head = .5f }, false);
+        // Native head influence is 0.18 of the 15 deg/s target.
+        Equal(0f, f.Person.DesiredWalkingDirection); Equal(2.7f, head.MotorSpeed); Equal(0f, f.Limb.MotorSpeed);
+        // The adapter requests native motor speed; it must not set head pose.
+        Equal(0f, head.transform.RotationDegrees);
+        head.Broken = true; f.Adapter.Apply(new MotorCommand { Head = .5f }, false); Equal(0f, head.MotorSpeed);
+        head.Broken = false; f.Person.Consciousness = .1f;
+        f.Adapter.Read(); f.Adapter.Apply(new MotorCommand { Head = .5f }, false); Equal(0f, head.MotorSpeed);
+    }
+    private static void SpatialSurroundings()
+    {
+        var f = new Fixture(); f.Limb.HasBrain = true; f.Limb.gameObject.AddComponent<Rigidbody2D>();
+        RenderSettings.ambientLight = new Color { grayscale = 1f };
+        Collider2D Target(float y, float velocityY)
+        {
+            var go = new GameObject("External object"); var physical = go.AddComponent<PhysicalBehaviour>();
+            var body = go.AddComponent<Rigidbody2D>(); body.velocity = new Vector2(0, velocityY); physical.rigidbody = body;
+            var hit = go.AddComponent<Collider2D>(); hit.Surface = new Vector2(2, y);
+            hit.bounds = new Bounds { center = new Vector3(2, y, 0), extents = new Vector3(.2f, .2f, 0) }; return hit;
+        }
+        var below = Target(-2, 3); var center = Target(0, 0); var above = Target(2, -3);
+        Physics2D.Hits = [below, above, center];
+        Physics2D.LinecastHandler = (_, end) => [new RaycastHit2D { collider = end.y < 0 ? below : end.y > 0 ? above : center }];
+        var first = f.Adapter.Read(); True(first.VisualFieldValid);
+        True(first.ViewClockwiseInner.Observed && first.ViewFront.Observed && first.ViewCounterclockwiseInner.Observed);
+        Equal(0f, first.VisualApproach); // The nearest center object is stationary.
+        True(first.ViewClockwiseInner.Expansion > 0f && first.ViewCounterclockwiseInner.Expansion > 0f);
+        Equal(-45f, first.ViewClockwiseInner.BearingDegrees); Equal(45f, first.ViewCounterclockwiseInner.BearingDegrees);
+        var wall = new GameObject("Occluder").AddComponent<Collider2D>();
+        Physics2D.LinecastHandler = (_, end) => [new RaycastHit2D { collider = end.y > 0 ? wall : end.y < 0 ? below : center }];
+        var next = f.Adapter.Read(); True(!next.ViewCounterclockwiseInner.Observed && next.ViewClockwiseInner.Observed);
+        True(first.ViewCounterclockwiseInner.Observed); // Later reads must not mutate retained snapshots.
+        f.Limb.transform.RotationDegrees = 180; next = f.Adapter.Read();
+        for (var i = 0; i < 5; i++) True(!next.ViewAt(i).Observed);
+        f.Limb.transform.RotationDegrees = 0; RenderSettings.ambientLight = default; next = f.Adapter.Read();
+        for (var i = 0; i < 5; i++) True(!next.ViewAt(i).Observed && next.ViewAt(i).Strength == 0f);
+        f.Limb.HasBrain = false; True(!f.Adapter.Read().VisualFieldValid);
     }
     private static void DirectionalSensors()
     {
@@ -682,7 +964,10 @@ internal static class Program
         frame = f.Adapter.Read();
         True(frame.VisionDirectionValid); Equal(1f, frame.VisionDirection); True(frame.VisualApproach > 0f); True(frame.VisualGeometryValid); True(frame.VisualAngularSize > 0f && frame.VisualExpansion > 0f);
         target.Surface = new Vector2(-2, 0); // Vision direction follows the current LOS point.
-        frame = f.Adapter.Read(); Equal(-1f, frame.VisionDirection);
+        frame = f.Adapter.Read(); Equal(0f, frame.Vision); True(!frame.VisionDirectionValid);
+        f.Limb.transform.lossyScale = new Vector3(-1, 1, 1);
+        frame = f.Adapter.Read(); Equal(-1f, frame.VisionDirection); Equal(0f, frame.VisionHeadBearingDegrees);
+        f.Limb.transform.lossyScale = new Vector3(1, 1, 1);
         target.Surface = new Vector2(2, 0); targetBody.velocity = new Vector2(5, 0); frame = f.Adapter.Read(); Equal(0f, frame.VisualApproach);
         Physics2D.LinecastResult = default; frame = f.Adapter.Read(); Equal(0f, frame.Vision); True(!frame.VisionDirectionValid); Equal(0f, frame.VisualApproach); True(!frame.VisualGeometryValid);
 
@@ -721,7 +1006,7 @@ internal static class Program
         f.Limb.InitialHealth = 200f; f.Limb.Health = 40f; frame = f.Adapter.Read(); Equal(0f, frame.DamageEvent); // Baseline changes re-prime.
         f.Limb.Health = float.NaN; frame = f.Adapter.Read(); Equal(0f, frame.DamageEvent);
         f.Limb.Health = 40f; frame = f.Adapter.Read(); Equal(0f, frame.DamageEvent); // Invalid samples re-prime.
-        f.Limb.IsDismembered = true; f.Limb.Health = 10f; frame = f.Adapter.Read(); Equal(0f, frame.DamageEvent);
+        f.Limb.IsDismembered = true; f.Limb.Health = 10f; frame = f.Adapter.Read(); Equal(.2f, frame.DamageEvent); Equal(0f, f.Adapter.Read().DamageEvent);
         f.Limb.IsDismembered = false; f.Limb.IsOnFloor = false; f.Limb.PhysicalBehaviour.IsUnderWater = true; frame = f.Adapter.Read(); True(!frame.RegionalTouchValid);
         f.Limb.Health = 20f; f.Adapter.Read(); f.Limb.Health = 0f; Equal(.1f, f.Adapter.Read().DamageEvent); Equal(0f, f.Adapter.Read().DamageEvent);
         f.Limb.Health = 100f; f.Adapter.Read(); f.Limb.CirculationBehaviour.IsDisconnected = true; f.Limb.Health = 50f; Equal(0f, f.Adapter.Read().DamageEvent);
@@ -778,9 +1063,9 @@ internal static class Program
         collider.bounds = new Bounds { center = new Vector3(2, 0, 0), extents = new Vector3(1, 1, 0) };
         Physics2D.Hits = [collider]; Physics2D.LinecastResult = new RaycastHit2D { collider = collider }; RenderSettings.ambientLight = new Color { grayscale = 1f };
         var frame = f.Adapter.Read(); True(frame.VisualGeometryValid); True(Math.Abs(frame.VisualAngularSize - 53.1301f) < .001f);
-        True(Math.Abs(frame.VisualExpansion - 22.9183f) < .001f); True(Math.Abs(frame.VisualAngularSpeed - 57.2958f) < .001f);
+        True(Math.Abs(frame.VisualExpansion - 22.9183f) < .001f); True(Math.Abs(frame.VisualAngularSpeed - 147.2958f) < .001f);
         True(frame.AngularVelocityValid); Equal(-90f, frame.AngularVelocity);
-        body.velocity = new Vector2(1, 0); frame = f.Adapter.Read(); Equal(0f, frame.VisualExpansion); Equal(0f, frame.VisualAngularSpeed);
+        body.velocity = new Vector2(1, 0); frame = f.Adapter.Read(); Equal(0f, frame.VisualExpansion); Equal(90f, frame.VisualAngularSpeed);
         foreach (var radius in new[] { 0f, float.NaN, float.PositiveInfinity })
         { collider.bounds = new Bounds { center = new Vector3(2, 0, 0), extents = new Vector3(radius, 0, 0) }; True(!f.Adapter.Read().VisualGeometryValid); }
         collider.bounds = new Bounds { center = new Vector3(2, 0, 0), extents = new Vector3(1, 1, 0) };
@@ -792,7 +1077,7 @@ internal static class Program
 
     private static void AdditionalSenses()
     {
-        var f = new Fixture();
+        var f = new Fixture(); f.Limb.HasBrain = true;
         f.Person.AngleOffset = 90f;
         f.Person.BalanceOffset = 5f;
         f.Limb.JointStress = 100f;
@@ -1024,6 +1309,86 @@ internal static class Program
         f.Adapter.Read();
         True(f.Adapter.HasSample);
     }
+    private static void NativeLightSources()
+    {
+        foreach (var kind in new[] { "tube", "bulb", "led", "toggle", "flood", "attachment", "native" })
+        {
+            var f = new Fixture(); f.Limb.HasBrain = true; RenderSettings.ambientLight = new Color { grayscale = .2f };
+            var lamp = new GameObject(kind); lamp.AddComponent<PhysicalBehaviour>();
+            var hit = lamp.AddComponent<Collider2D>(); hit.Surface = new Vector2(1f, 0f);
+            var sprite = lamp.AddComponent<SpriteRenderer>();
+            sprite.sprite = new Sprite { bounds = new Bounds { extents = new Vector3(2f, 2f, 0f) } };
+            sprite.transform.position = new Vector3(1f, 0f, 0f);
+            switch (kind)
+            {
+                case "tube": lamp.AddComponent<GlowtubeBehaviour>().LightSprite = sprite; break;
+                case "bulb": lamp.AddComponent<BulbBehaviour>().LightSprite = sprite; break;
+                case "led": lamp.AddComponent<LEDBulbBehaviour>().LightSprite = sprite; break;
+                case "toggle": lamp.AddComponent<ActivationToggleBehaviour>().LightObject = lamp; break;
+                case "flood": lamp.AddComponent<SingleFloodlightBehaviour>().ToToggle = lamp; break;
+                case "attachment": lamp.AddComponent<FlashlightAttachmentBehaviour>().Lights = [sprite]; break;
+                case "native": lamp.AddComponent<LightSprite>().SpriteRenderer = sprite; break;
+            }
+            Physics2D.Hits = [hit, hit]; Physics2D.LinecastResult = new RaycastHit2D { collider = hit };
+            var frame = f.Adapter.Read(); True(frame.LightValid); Equal(.2f, frame.AmbientLight);
+            Equal(.5f, frame.LocalLight); Equal(.7f, frame.Light); Equal(1, frame.LocalLightSources);
+            True(frame.Vision > 0f);
+            RenderSettings.ambientLight = new Color { grayscale = float.NaN };
+            frame = f.Adapter.Read(); True(!frame.LightValid); Equal(0f, frame.Vision);
+            RenderSettings.ambientLight = new Color { grayscale = .2f };
+            lamp.AddComponent<LightSprite>().SpriteRenderer = sprite; // Same renderer through a second native owner.
+            Equal(1, f.Adapter.Read().LocalLightSources);
+            sprite.enabled = false; frame = f.Adapter.Read(); Equal(.2f, frame.Light); Equal(0, frame.LocalLightSources);
+            sprite.enabled = true; lamp.activeSelf = false; Equal(.2f, f.Adapter.Read().Light);
+            lamp.activeSelf = true; sprite.color = new Color(1f, 1f, 1f, 0f); Equal(.2f, f.Adapter.Read().Light);
+        }
+        Physics2D.Hits = []; Physics2D.LinecastResult = default; RenderSettings.ambientLight = default;
+    }
+
+    private static void LocalLightGeometry()
+    {
+        var f = new Fixture(); RenderSettings.ambientLight = default;
+        f.Root.transform.position = new Vector3(2f, 0f, 0f);
+        var lamp = new GameObject("beam"); lamp.AddComponent<PhysicalBehaviour>();
+        var hit = lamp.AddComponent<Collider2D>(); hit.Surface = new Vector2(1f, 0f);
+        var sprite = lamp.AddComponent<SpriteRenderer>();
+        sprite.sprite = new Sprite { bounds = new Bounds { center = new Vector3(2f, 0f, 0f), extents = new Vector3(2f, 1f, 0f) } };
+        Physics2D.Hits = [hit];
+        Equal(0f, f.Adapter.Read().LocalLight); // An arbitrary bright sprite is not a light source.
+        var light = lamp.AddComponent<LightSprite>(); light.SpriteRenderer = sprite;
+        Equal(1f, f.Adapter.Read().LocalLight);
+        sprite.transform.RotationDegrees = 180f; Equal(0f, f.Adapter.Read().LocalLight);
+        sprite.transform.RotationDegrees = 0f; sprite.flipX = true; Equal(0f, f.Adapter.Read().LocalLight);
+        sprite.flipX = false; sprite.transform.lossyScale = new Vector3(0f, 1f, 1f); Equal(0f, f.Adapter.Read().LocalLight);
+        sprite.transform.lossyScale = new Vector3(1f, 1f, 1f); light.Brightness = .5f; Equal(.5f, f.Adapter.Read().LocalLight);
+        light.Brightness = float.NaN; Equal(0f, f.Adapter.Read().LocalLight);
+        light.Brightness = 1f; sprite.color = new Color(float.NaN, 1f, 1f, 1f); Equal(0f, f.Adapter.Read().LocalLight);
+        sprite.color = new Color(1f, 1f, 1f, 1f); sprite.drawMode = SpriteDrawMode.Sliced; Equal(0f, f.Adapter.Read().LocalLight);
+        sprite.size = new Vector2(4f, 2f); Equal(1f, f.Adapter.Read().LocalLight);
+        sprite.drawMode = SpriteDrawMode.Tiled; Equal(1f, f.Adapter.Read().LocalLight);
+        sprite.drawMode = SpriteDrawMode.Simple; sprite.sprite = null; Equal(0f, f.Adapter.Read().LocalLight);
+        Physics2D.Hits = []; RenderSettings.ambientLight = default;
+    }
+
+    private static void LocalLightLimits()
+    {
+        var f = new Fixture(); RenderSettings.ambientLight = new Color { grayscale = .1f };
+        var lamp = new GameObject("many lights"); lamp.AddComponent<PhysicalBehaviour>();
+        var hit = lamp.AddComponent<Collider2D>(); hit.Surface = new Vector2(1f, 0f);
+        lamp.AddComponent<ActivationToggleBehaviour>().LightObject = lamp;
+        for (var index = 0; index < 65; index++)
+        {
+            var child = new GameObject("light"); child.transform.SetParent(lamp.transform);
+            var sprite = child.AddComponent<SpriteRenderer>(); sprite.color = new Color(.5f, .5f, .5f, 1f);
+            sprite.sprite = new Sprite { bounds = new Bounds { extents = new Vector3(2f, 2f, 0f) } };
+        }
+        Physics2D.Hits = [hit]; var frame = f.Adapter.Read();
+        Equal(64, frame.LocalLightSources); True(frame.LocalLightLimited);
+        Equal(.5f, frame.LocalLight); Equal(.6f, frame.Light); // Strongest footprint, not double-counted sum.
+        Physics2D.Hits = []; frame = f.Adapter.Read(); Equal(0f, frame.LocalLight); True(!frame.LocalLightLimited);
+        RenderSettings.ambientLight = default;
+    }
+
     private sealed class Fixture
     {
         public readonly GameObject Root = new("Human");
@@ -1038,7 +1403,7 @@ internal static class Program
         public static LimbBehaviour AddLimb(GameObject parent, string name)
         {
             var go = new GameObject(name); go.transform.SetParent(parent.transform);
-            var limb = go.AddComponent<LimbBehaviour>(); limb.Person = parent.transform.GetComponentInParent<PersonBehaviour>(); limb.CirculationBehaviour = go.AddComponent<CirculationBehaviour>();
+            var limb = go.AddComponent<LimbBehaviour>(); limb.Person = parent.transform.GetComponentInParent<PersonBehaviour>(); limb.CirculationBehaviour = go.AddComponent<CirculationBehaviour>(); limb.CirculationBehaviour.OriginalBloodAmount = 1f;
             limb.PhysicalBehaviour = go.AddComponent<PhysicalBehaviour>(); limb.GripBehaviour = new(); return limb;
         }
     }

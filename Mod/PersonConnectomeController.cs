@@ -174,11 +174,7 @@ namespace Mod
         private static bool ContainsPoseDescription(string description)
         {
             return !string.IsNullOrEmpty(description) &&
-                (description.IndexOf("animation override", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                 description.IndexOf("stumbling", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                 description.IndexOf("protection", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                 description.IndexOf("sitting", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                 description.IndexOf("resting", StringComparison.OrdinalIgnoreCase) >= 0) &&
+                description.IndexOf("animation override", StringComparison.OrdinalIgnoreCase) >= 0 &&
                 (description.IndexOf("walk", StringComparison.OrdinalIgnoreCase) >= 0 ||
                  description.IndexOf("stumbling", StringComparison.OrdinalIgnoreCase) >= 0 ||
                  description.IndexOf("protection", StringComparison.OrdinalIgnoreCase) >= 0 ||

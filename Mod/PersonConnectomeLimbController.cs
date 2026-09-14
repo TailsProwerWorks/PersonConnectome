@@ -293,7 +293,8 @@ namespace Mod
             if (limb.IsParalysed) return "paralysed";
 
             var circulation = limb.CirculationBehaviour;
-            if (circulation != null && (circulation.IsDisconnected || !circulation.HasCirculation)) return "disconnected";
+            if (circulation == null) return "unknown-circulation";
+            if (circulation.IsDisconnected || !circulation.HasCirculation) return "disconnected";
             return null;
         }
 
