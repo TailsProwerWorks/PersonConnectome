@@ -99,6 +99,24 @@ namespace Mod.Adapters
             RestoreChemistry();
         }
 
+        /// <summary>
+        /// Clears only this limb's commanded joint target. Neural halt and
+        /// brake requests use this rather than <see cref="Stop"/> so they do
+        /// not take ownership of a held object or alter chemistry.
+        /// </summary>
+        public bool ClearMotorTarget()
+        {
+            if (limb == null || !limb.HasJoint)
+            {
+                return false;
+            }
+
+            // As with Stop(), full influence is necessary to clear an old
+            // target in one physics update instead of blending toward zero.
+            limb.InfluenceMotorSpeed(0f, 1f);
+            return true;
+        }
+
         private float ResolveSpeed(PersonMotorCommand command)
         {
             switch (role)

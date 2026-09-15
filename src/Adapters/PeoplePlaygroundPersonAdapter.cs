@@ -654,7 +654,11 @@ namespace Mod.Adapters
             var chemistryElapsed = ElapsedSeconds(elapsedSeconds);
             foreach (var controller in limbControllers)
             {
-                if (controller.Apply(command, jointSpeedDegreesPerSecond)) appliedLimbCount++;
+                if (command.MotionStopRequested)
+                {
+                    if (controller.ClearMotorTarget()) appliedLimbCount++;
+                }
+                else if (controller.Apply(command, jointSpeedDegreesPerSecond)) appliedLimbCount++;
                 controller.ApplyChemistry(command, chemistry, chemistryElapsed);
             }
 

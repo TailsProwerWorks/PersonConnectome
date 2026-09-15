@@ -14,6 +14,10 @@ namespace Mod.Adapters
         public float Walk, LeftArm, RightArm, LeftLeg, RightLeg, Core, Head;
         public float ReachGrab, LeftGrip, RightGrip, Avoid;
         public float Freeze, Heal, Stimulate, Calm, Extinguish;
+        // A fly halt/brake owns joint-target clearing, but not the person's
+        // grip or chemistry policy. Keeping this separate from Freeze avoids
+        // turning a partial neural halt into sedation or object release.
+        public bool MotionStopRequested;
     }
 
     /// <summary>
@@ -81,6 +85,7 @@ namespace Mod.Adapters
             {
                 ResetMotion();
                 lastCommand = BodyState(frame, bodyThreat, Mathf.Max(halt, freeze));
+                lastCommand.MotionStopRequested = stopRequested;
                 return lastCommand;
             }
 

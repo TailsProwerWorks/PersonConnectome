@@ -20,10 +20,12 @@ internal static class Program
             ("terminal motors and grips clear immediately", TerminalStop),
             ("native pose context actions are suppressed", ContextMenuPoseActions),
             ("direct fly control suppresses native balance assists and restores them", DirectFlyControl),
+            ("direct fly control discovers nested limbs added after cache warmup", DirectFlyControlNestedLimbCache),
             ("failed brain loading leaves native pose assists unchanged", DirectFlyControlFailedLoad),
             ("direct fly control maps fly channels to available human joints", DirectFlyMotorMapping),
             ("fly-to-person projection retains locomotion filtering and escape bursts", StatefulFlyMotorProjection),
             ("published fly locomotion decisions preempt and halt person movement", PublishedFlyLocomotionDecisions),
+            ("fly halt and brake clear joint targets without changing neutral policy", FlyHaltAndBrakeClearMotors),
             ("fly mapper clears retained movement on terminal and between-tick safety stops", FlyMappingSafetyStops),
             ("unconscious and locally damaged limbs clear old commands", IncapableStop),
             ("brain injury remains alive with matching signal value", BrainInjury),
@@ -339,6 +341,77 @@ internal static class Program
         Equal(1.5f, pose.UprightForceMultiplier);
         Equal(2f, pose.ForceMultiplier);
         type.GetMethod("OnDestroy", flags).Invoke(controller, null);
+    }
+
+    private static void DirectFlyControlNestedLimbCache()
+    {
+        var f = new Fixture();
+        var nestedGroup = new GameObject("Nested group");
+        nestedGroup.transform.SetParent(f.Root.transform);
+        var controller = f.Root.AddComponent<PersonConnectomeController>();
+        var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        var type = typeof(PersonConnectomeController);
+        var previousTime = Time.time;
+        try
+        {
+            type.GetMethod("Awake", flags).Invoke(controller, null);
+            type.GetMethod("OnEnable", flags).Invoke(controller, null);
+
+            // This limb is added beneath an existing child after the cache is
+            // warm. Person.Limbs and root.childCount deliberately stay the
+            // same, so discovery must observe nested hierarchy changes too.
+            var added = Fixture.AddLimb(nestedGroup, "Nested late arm");
+            added.FakeUprightForce = 8f;
+            added.BalanceMuscleMovement = 3f;
+            added.DoBalanceJerk = true;
+            added.DoStumble = true;
+            // The inexpensive fingerprint is checked each short interval; the
+            // full hierarchy fallback is deliberately less frequent.
+            for (var i = 0; i < 8; i++)
+            {
+                Time.time += .3f;
+                type.GetMethod("LateUpdate", flags).Invoke(controller, null);
+            }
+
+            Equal(0f, added.FakeUprightForce);
+            Equal(0f, added.BalanceMuscleMovement);
+            True(!added.DoBalanceJerk && !added.DoStumble);
+            type.GetMethod("SetDirectFlyControl", flags).Invoke(controller, [false]);
+            Equal(8f, added.FakeUprightForce);
+            Equal(3f, added.BalanceMuscleMovement);
+            True(added.DoBalanceJerk && added.DoStumble);
+        }
+        finally
+        {
+            Time.time = previousTime;
+            type.GetMethod("OnDestroy", flags).Invoke(controller, null);
+        }
+    }
+
+    private static void FlyHaltAndBrakeClearMotors()
+    {
+        foreach (var command in new[]
+        {
+            new FlyMotorCommand { FlyHalt = .25f },
+            new FlyMotorCommand { FlyBrake = .25f }
+        })
+        {
+            var f = new Fixture();
+            f.Adapter.Read();
+            f.Limb.MotorSpeed = 12f;
+            f.Limb.GripBehaviour.isHolding = true;
+            f.Person.AdrenalineLevel = 1.5f;
+
+            // Use the public fly-command boundary: this verifies that a
+            // decoded stop request reaches the native joint controller rather
+            // than only clearing mapper-local walking state.
+            f.Adapter.Apply(command, true, 30f, 2f, .05f);
+            Equal(0f, f.Limb.MotorSpeed);
+            // Stop channels do not claim an otherwise-unmapped grip or alter
+            // neutral physiology.
+            True(f.Limb.GripBehaviour.isHolding);
+            Equal(1.5f, f.Person.AdrenalineLevel);
+        }
     }
     private static void DirectFlyMotorMapping()
     {

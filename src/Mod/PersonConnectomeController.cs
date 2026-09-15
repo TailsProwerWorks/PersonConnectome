@@ -38,9 +38,14 @@ namespace Mod
         private readonly List<NativePoseSnapshot> directControlPoseSnapshotValues = [];
         private readonly Dictionary<RagdollPose, NativePoseSnapshot> directControlPoseSnapshots = [];
         private const float DirectControlTopologyCheckSeconds = .25f;
+        // The fingerprint catches the common root-level changes cheaply.  It
+        // cannot see components added below an existing child, so periodically
+        // rescan the hierarchy as a bounded fallback for modified bodies.
+        private const float DirectControlHierarchyDiscoverySeconds = 2f;
         private bool directControlTopologyKnown;
         private int directControlTopologyFingerprint;
         private float nextDirectControlTopologyCheck;
+        private float nextDirectControlHierarchyDiscovery;
         private float pendingDirectControlMs;
         private static readonly List<PersonConnectomeController> activeControllers = [];
 
@@ -322,13 +327,15 @@ namespace Mod
 
             nextDirectControlTopologyCheck = Time.time + DirectControlTopologyCheckSeconds;
             var fingerprint = GetDirectControlTopologyFingerprint();
-            if (directControlTopologyKnown && fingerprint == directControlTopologyFingerprint)
+            var hierarchyDiscoveryDue = Time.time >= nextDirectControlHierarchyDiscovery;
+            if (directControlTopologyKnown && fingerprint == directControlTopologyFingerprint && !hierarchyDiscoveryDue)
             {
                 return;
             }
 
             directControlTopologyKnown = true;
             directControlTopologyFingerprint = fingerprint;
+            nextDirectControlHierarchyDiscovery = Time.time + DirectControlHierarchyDiscoverySeconds;
             gameObject.GetComponentsInChildren(true, directControlLimbBuffer);
             directControlLimbs.Clear();
             foreach (var limb in directControlLimbBuffer)
@@ -345,7 +352,7 @@ namespace Mod
             unchecked
             {
                 var fingerprint = transform.childCount;
-                var limbs = person.Limbs;
+                var limbs = person == null ? null : person.Limbs;
                 fingerprint = fingerprint * 31 + (limbs == null ? 0 : limbs.Length);
                 if (limbs == null)
                 {
@@ -374,6 +381,7 @@ namespace Mod
                 directControlLimbs.Clear();
                 directControlTopologyKnown = false;
                 nextDirectControlTopologyCheck = 0f;
+                nextDirectControlHierarchyDiscovery = 0f;
                 return;
             }
 
@@ -388,6 +396,7 @@ namespace Mod
             directControlLimbs.Clear();
             directControlTopologyKnown = false;
             nextDirectControlTopologyCheck = 0f;
+            nextDirectControlHierarchyDiscovery = 0f;
             RestoreDirectPoseControl();
         }
 
