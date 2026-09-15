@@ -61,6 +61,9 @@ namespace Mod.UI
         private readonly ManualInputState manualInput;
         private GameObject worldLabelObject = null!;
         private TextMeshProUGUI worldLabel = null!;
+        private Vector3 lastWorldLabelPosition;
+        private bool hasWorldLabelPosition;
+        private bool lastWorldLabelManual;
         private Image historyBackground = null!;
         private RawImage mapImage = null!;
         private Texture2D mapTexture = null!;
@@ -68,6 +71,7 @@ namespace Mod.UI
         private Color32[] mapFlashColors = null!;
         private byte[] mapFlashAges = null!;
         private int[] mapIndexes = null!;
+        private int[] mapPointByNeuron = null!;
         private BrainMapSample map = null!;
         private Color[] mapColors = null!;
         private const int MapWidth = 256, MapHeight = 320;
@@ -1310,14 +1314,27 @@ namespace Mod.UI
             var currentAnchor = adapter?.StatusAnchor;
             if (currentAnchor == null)
             {
-                worldLabelObject.SetActive(false);
+                if (worldLabelObject.activeSelf) worldLabelObject.SetActive(false);
+                hasWorldLabelPosition = false;
                 return;
             }
 
-            worldLabelObject.SetActive(true);
-            worldLabelObject.transform.position = currentAnchor.position + new Vector3(0f, 1.35f, 0f);
-            worldLabel.text = "#" + id + (manualInput.OverrideEnabled ? "  MANUAL" : "");
-            worldLabel.color = manualInput.OverrideEnabled ? LatestBar : Accent;
+            if (!worldLabelObject.activeSelf) worldLabelObject.SetActive(true);
+            var position = currentAnchor.position + new Vector3(0f, 1.35f, 0f);
+            if (!hasWorldLabelPosition || (lastWorldLabelPosition - position).sqrMagnitude > .000001f)
+            {
+                worldLabelObject.transform.position = position;
+                lastWorldLabelPosition = position;
+                hasWorldLabelPosition = true;
+            }
+
+            var manual = manualInput.OverrideEnabled;
+            if (manual != lastWorldLabelManual)
+            {
+                worldLabel.text = "#" + id + (manual ? "  MANUAL" : "");
+                worldLabel.color = manual ? LatestBar : Accent;
+                lastWorldLabelManual = manual;
+            }
         }
 
         private void ReleaseWorldLabel()
@@ -1325,6 +1342,9 @@ namespace Mod.UI
             if (worldLabelObject != null) UnityEngine.Object.Destroy(worldLabelObject);
             worldLabelObject = null!;
             worldLabel = null!;
+            hasWorldLabelPosition = false;
+            lastWorldLabelPosition = default;
+            lastWorldLabelManual = false;
         }
 
         private void ReleaseUi()
@@ -1361,41 +1381,67 @@ namespace Mod.UI
             mapFlashColors = null!;
             mapFlashAges = null!;
             mapIndexes = null!;
+            mapPointByNeuron = null!;
         }
 
         private void RefreshMap()
         {
-            if (brain.BrainMap == null) return;
+            var currentMap = brain.BrainMap;
+            if (currentMap == null) return;
             var currentTick = brain.SimulationTick;
-            var reset = map == brain.BrainMap && currentTick < capturedTick;
-            if (reset)
-            {
-                Array.Clear(mapFlashAges, 0, mapFlashAges.Length);
-                Array.Clear(mapFlashColors, 0, mapFlashColors.Length);
-            }
-            if (!reset && map == brain.BrainMap && capturedTick == currentTick) return;
-            if (map != brain.BrainMap)
-            {
-                map = brain.BrainMap;
-                mapColors = CreateMapColors(map.Classes);
-                BuildMap();
-            }
+            var reset = map == currentMap && currentTick < capturedTick;
+            if (reset) ResetMapFlashes();
+            if (!reset && map == currentMap && capturedTick == currentTick) return;
+            EnsureMap(currentMap);
+            AgeMapFlashes();
+            Array.Copy(mapBackground, mapPixels, mapPixels.Length);
+            MarkFiredNeurons();
+            ApplyMapFlashColors();
+            capturedTick = currentTick;
+            mapTexture.SetPixels32(mapPixels);
+            mapTexture.Apply(false, false);
+        }
+
+        private void ResetMapFlashes()
+        {
+            Array.Clear(mapFlashAges, 0, mapFlashAges.Length);
+            Array.Clear(mapFlashColors, 0, mapFlashColors.Length);
+        }
+
+        private void EnsureMap(BrainMapSample currentMap)
+        {
+            if (map == currentMap) return;
+            map = currentMap;
+            mapColors = CreateMapColors(map.Classes);
+            BuildMap();
+        }
+
+        private void AgeMapFlashes()
+        {
             for (var i = 0; i < mapFlashAges.Length; i++)
             {
                 if (mapFlashAges[i] > 0) mapFlashAges[i]--;
             }
-            Array.Copy(mapBackground, mapPixels, mapPixels.Length);
-            for (var i = 0; i < map.Points.Length; i++)
+        }
+
+        private void MarkFiredNeurons()
+        {
+            var firedNeurons = brain.FiredNeurons;
+            for (var i = 0; i < firedNeurons.Count; i++)
             {
-                if (brain.DidFire(map.Points[i].NeuronId)) MarkMapFlash(mapIndexes[i], mapColors[map.Points[i].Category]);
+                var neuronId = firedNeurons[i];
+                if (neuronId < 0 || neuronId >= mapPointByNeuron.Length) continue;
+                var pointIndex = mapPointByNeuron[neuronId];
+                if (pointIndex >= 0) MarkMapFlash(mapIndexes[pointIndex], mapColors[map.Points[pointIndex].Category]);
             }
+        }
+
+        private void ApplyMapFlashColors()
+        {
             for (var i = 0; i < mapPixels.Length; i++)
             {
                 if (mapFlashAges[i] > 0) mapPixels[i] = MapFlashColor(mapFlashAges[i], mapFlashColors[i]);
             }
-            capturedTick = currentTick;
-            mapTexture.SetPixels32(mapPixels);
-            mapTexture.Apply(false, false);
         }
 
         private void BuildMap()
@@ -1409,6 +1455,8 @@ namespace Mod.UI
             mapFlashAges = new byte[mapBackground.Length];
             for (var i = 0; i < mapBackground.Length; i++) mapBackground[i] = new Color32(9, 14, 19, 255);
             mapIndexes = new int[map.Points.Length];
+            mapPointByNeuron = new int[map.NeuronCount];
+            for (var i = 0; i < mapPointByNeuron.Length; i++) mapPointByNeuron[i] = -1;
             if (map.Points.Length == 0) return;
             var minX = float.MaxValue; var maxX = float.MinValue;
             var minZ = float.MaxValue; var maxZ = float.MinValue;
@@ -1427,6 +1475,7 @@ namespace Mod.UI
                 var z = MapHeight - 1 - (int)(offsetZ + (point.Z - minZ) * scale);
                 var index = z * MapWidth + x;
                 mapIndexes[i] = index;
+                mapPointByNeuron[point.NeuronId] = i;
                 mapBackground[index] = mapColors[point.Category];
             }
         }

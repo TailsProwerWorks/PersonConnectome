@@ -29,6 +29,7 @@ namespace Mod
         private bool pendingPoseSweep;
         private readonly List<SuppressedContextMenuButton> suppressedContextMenuButtons = [];
         private readonly List<ContextMenuOptionComponent> contextMenuOptions = [];
+        private static readonly List<PersonConnectomeController> activeControllers = [];
 
         private void Awake()
         {
@@ -57,6 +58,8 @@ namespace Mod
 
         private void OnEnable()
         {
+            if (!activeControllers.Contains(this)) activeControllers.Add(this);
+            RebalanceTickPhases();
             acceptingEvents = true;
             pendingPoseSweep = true;
             statusDisplay?.SetActive(true);
@@ -88,6 +91,34 @@ namespace Mod
             }
         }
 
+        private static void RebalanceTickPhases()
+        {
+            for (var i = activeControllers.Count - 1; i >= 0; i--)
+            {
+                if (activeControllers[i] == null) activeControllers.RemoveAt(i);
+            }
+
+            var count = activeControllers.Count;
+            if (count == 0) return;
+
+            // Redistribute phases whenever the population changes. Each
+            // controller keeps its own interval; only its position within that
+            // interval moves, so no population size is hardcoded here.
+            for (var i = 0; i < count; i++)
+            {
+                var controller = activeControllers[i];
+                var interval = controller.TickInterval();
+                var phase = interval * i / count;
+                controller.accumulator = Mathf.Min(Mathf.Max(0f, interval - .000001f), phase);
+            }
+        }
+
+        private float TickInterval()
+        {
+            var rate = float.IsNaN(TickRateHz) || float.IsInfinity(TickRateHz) ? 20f : Mathf.Clamp(TickRateHz, 1f, 60f);
+            return 1f / rate;
+        }
+
         private void LateUpdate()
         {
             if (pendingPoseSweep)
@@ -106,6 +137,8 @@ namespace Mod
         {
             acceptingEvents = false;
             accumulator = 0f;
+            activeControllers.Remove(this);
+            RebalanceTickPhases();
             sampleElapsed = 0f;
             statusDisplay?.SetActive(false);
             manualInput.Deactivate();
@@ -117,6 +150,7 @@ namespace Mod
         private void OnDestroy()
         {
             acceptingEvents = false;
+            activeControllers.Remove(this);
             manualInput.Deactivate();
             RestoreNativePoseOptions();
             sensor = null;

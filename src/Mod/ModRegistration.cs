@@ -1,6 +1,9 @@
 using UnityEngine;
 using Mod;
 
+// The loader entry point intentionally uses the author's unique namespace.
+// changing that project-wide would alter every game-facing type name.
+#pragma warning disable IDE0130
 namespace ShadowNineX.PersonConnectome
 {
     public static class ModEntry
@@ -32,3 +35,4 @@ namespace ShadowNineX.PersonConnectome
     }
 
 }
+#pragma warning restore IDE0130

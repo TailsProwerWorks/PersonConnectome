@@ -36,7 +36,7 @@ namespace Mod.Core
         private readonly HashSet<int> priority = [];
         private readonly HashSet<int> scheduled = [];
         private readonly List<int> fired = [];
-        private readonly HashSet<int> firedIds = [];
+        private readonly bool[] firedPresent;
         private Dictionary<int, float> nextPending = [];
         private HashSet<int> nextActive = [];
         private readonly List<int> orderedActive = [];
@@ -72,6 +72,7 @@ namespace Mod.Core
             this.asset = asset ?? throw new ArgumentNullException(nameof(asset));
             potential = new float[asset.NeuronCount];
             refractoryUntil = new long[asset.NeuronCount];
+            firedPresent = new bool[asset.NeuronCount];
         }
 
         public string Status => "MaleCNS v1.0 " + asset.NeuronCount + " neurons / " + asset.EdgeCount +
@@ -119,6 +120,7 @@ namespace Mod.Core
 
         public long SimulationTick => simulationTick;
         public int FiredCount => fired.Count;
+        public IReadOnlyList<int> FiredNeurons => fired;
         public int ProcessedCount => processedThisStep;
         public int DroppedCount => droppedThisStep;
         public int DecayedCount => decayedThisStep;
@@ -127,7 +129,7 @@ namespace Mod.Core
         public bool IsStopped => stopped;
         public MotorCommand LastCommand => lastCommand;
 
-        public bool DidFire(int neuronId) => neuronId >= 0 && neuronId < potential.Length && firedIds.Contains(neuronId);
+        public bool DidFire(int neuronId) => neuronId >= 0 && neuronId < potential.Length && firedPresent[neuronId];
 
         public int PopulationCount(string name) => string.IsNullOrEmpty(name) ? 0 : asset.Population(name).Count;
 
@@ -136,7 +138,7 @@ namespace Mod.Core
             if (string.IsNullOrEmpty(name)) return 0;
             var ids = asset.Population(name);
             var count = 0;
-            for (var i = 0; i < ids.Count; i++) if (firedIds.Contains(ids[i])) count++;
+            for (var i = 0; i < ids.Count; i++) if (firedPresent[ids[i]]) count++;
             return count;
         }
 
@@ -170,8 +172,7 @@ namespace Mod.Core
             lightDrive = audioDrive = touchDrive = damageDrive = regionalTouchDrive = smallVisualDrive = opticRollDrive = gravityDrive = jointDrive = hotDrive = coldDrive = approachDrive = 0f;
             visualThreat = neuralEscape = foodNearbyDrive = foodContactDrive = 0f;
             sensoryQueued = 0;
-            fired.Clear();
-            firedIds.Clear();
+            ClearFired();
             nextPending.Clear();
             nextActive.Clear();
             priority.Clear();
@@ -192,6 +193,12 @@ namespace Mod.Core
             return BuildMotorCommand(sensory, elapsedSeconds);
         }
 
+        private void ClearFired()
+        {
+            for (var i = 0; i < fired.Count; i++) firedPresent[fired[i]] = false;
+            fired.Clear();
+        }
+
         public MotorCommand Stop()
         {
             if (!stopped)
@@ -202,8 +209,7 @@ namespace Mod.Core
                 active.Clear();
                 priority.Clear();
                 scheduled.Clear();
-                fired.Clear();
-                firedIds.Clear();
+                ClearFired();
                 nextPending.Clear();
                 nextActive.Clear();
                 orderedActive.Clear();
@@ -234,8 +240,7 @@ namespace Mod.Core
             processedThisStep = 0;
             droppedThisStep = 0;
             decayedThisStep = 0;
-            fired.Clear();
-            firedIds.Clear();
+            ClearFired();
             LastSensoryDrive = 0f;
             sensoryQueued = 0;
             hasPreviousLight = false;
@@ -316,7 +321,7 @@ namespace Mod.Core
             potential[id] = 0f;
             refractoryUntil[id] = simulationTick + RefractoryTicks + 1;
             fired.Add(id);
-            firedIds.Add(id);
+            firedPresent[id] = true;
             QueueOutgoing(id, next, nextActiveState);
         }
 
@@ -573,7 +578,7 @@ namespace Mod.Core
             var ids = asset.Population(population);
             for (var i = 0; i < ids.Count; i++)
             {
-                if (firedIds.Contains(ids[i]) && IsMotorNeuron(ids[i])) return true;
+                if (firedPresent[ids[i]] && IsMotorNeuron(ids[i])) return true;
             }
 
             return false;
@@ -618,7 +623,7 @@ namespace Mod.Core
                 if (side != null && asset.SideAt(id) != side) continue;
                 if (motorOnly && !IsMotorNeuron(id)) continue;
                 count++;
-                if (firedIds.Contains(id)) firing++;
+                if (firedPresent[id]) firing++;
             }
             return count == 0 ? 0f : (float)firing / count;
         }

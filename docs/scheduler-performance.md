@@ -32,6 +32,30 @@ Same machine, .NET 10 Release, same real graph and synthetic combined-input fram
 
 The improvement is retained neural information and lower allocation, not lower CPU time. Mean/p95 cost increased. The tested graph workload stayed below the new firing cap; deliberate synthetic cap-overflow tests exercise its fallback. Native Unity/Mono, cold loading, several people and unusual stimulation can cost more. The residual-only prototype was also measured, but retained fewer inputs and still dropped work; it was not kept.
 
+## Rendering and membership follow-up
+
+The post-freeze performance pass keeps graph and scheduler semantics unchanged.
+The Brain page now indexes each displayed soma by neuron ID and walks only the
+current fired-neuron list (at most 24,000 entries) when painting flashes, instead
+of probing all 141,781 displayed points through a hash set on every map refresh.
+The runtime also uses a dense per-neuron fired marker for repeated population and
+map membership checks. On the matched .NET 10 benchmark, neural ticks improved
+from roughly 5.8-6.4 ms mean with small per-run allocations to 4.9-5.2 ms mean
+with zero measured tick allocations; this is still not a Unity Mono frame-time
+guarantee. The map optimization is most visible when the Brain page is selected.
+Native sensing, physics and UI layout remain CPU/main-thread work.
+
+## Multi-person cadence follow-up
+
+Each enabled controller keeps its configured neural tick rate, but the active
+controllers are assigned evenly distributed fixed-step phases. Phases are
+rebalanced when the enabled population changes, so this does not assume a fixed
+number of people. This prevents people spawned together from running their
+sensor scan, neural step and motor application in the same physics callback. It
+smooths frame-time bursts; it does not reduce the total CPU work or change the
+per-person tick rate. The installed game must be restarted after deployment
+before measuring multi-person behavior.
+
 All 25 sensory mapping scenarios were rerun with the new scheduler and completed with zero dropped crossings. The refreshed input/whole-graph spike counts are in [sensory-mapping.md](sensory-mapping.md). Quiet input remained silent. No biological understanding or reliable human gait follows from these results.
 
 ## Regression coverage
