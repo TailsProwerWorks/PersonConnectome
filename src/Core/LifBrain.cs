@@ -70,6 +70,7 @@ namespace Mod.Core
         private const int MaxSpikesPerStep = 24000;
         private const int RefractoryTicks = 5;
         private const float DefaultStepSeconds = .05f;
+        private const string FlyLegPopulation = "motor:leg";
         // Requests are consumed by the game's fixed-step motor adapter.  Keeping
         // their change rate bounded avoids alternating full-strength joint input
         // on consecutive neural ticks while retaining a responsive control loop.
@@ -618,8 +619,8 @@ namespace Mod.Core
             var neuralWalk = ResolveNeuralWalk();
             // The People Playground body uses fly leg activity only as a
             // locomotor proxy; fly-native channels are populated separately below.
-            var left = Ema(leftLegFilter, MotorActivity("motor:leg", "L"), elapsedSeconds, .15f) * locomotionGate;
-            var right = Ema(rightLegFilter, MotorActivity("motor:leg", "R"), elapsedSeconds, .15f) * locomotionGate;
+            var left = Ema(leftLegFilter, MotorActivity(FlyLegPopulation, "L"), elapsedSeconds, .15f) * locomotionGate;
+            var right = Ema(rightLegFilter, MotorActivity(FlyLegPopulation, "R"), elapsedSeconds, .15f) * locomotionGate;
             leftLegFilter = left;
             rightLegFilter = right;
             var center = (left + right) * .5f;
@@ -656,8 +657,8 @@ namespace Mod.Core
 
         private void PopulateFlyRequests(ref MotorCommand command, MotorCommandContext context)
         {
-            var leftLeg = MotorActivity("motor:leg", "L");
-            var rightLeg = MotorActivity("motor:leg", "R");
+            var leftLeg = MotorActivity(FlyLegPopulation, "L");
+            var rightLeg = MotorActivity(FlyLegPopulation, "R");
             command.FlyForward = Signed(forwardFilter);
             command.FlyYaw = Signed(yawFilter);
             command.FlyBackward = Unit(backwardFilter);
@@ -676,7 +677,8 @@ namespace Mod.Core
             command.FlyGroomHead = AverageMotorActivity("type:DNg12", "type:DNg07", "type:DNg08");
             command.FlyGroomLeg = MotorActivity("type:DNg11");
             command.FlyGroomAbdomen = MotorActivity("type:DNp29");
-            command.FlyFeed = WeightedMotorActivity("type:MN9", .6f, "type:DNg67", .1f, "type:DNge080", .1f, "type:DNge173", .1f, "type:DNge174", .1f);
+            command.FlyFeed = Unit(WeightedMotorActivity("type:MN9", .6f, "type:DNg67", .1f, "type:DNge080", .1f) +
+                WeightedMotorActivity("type:DNge173", .1f, "type:DNge174", .1f));
             // pC1/P1 courtship neurons are central-brain intrinsic cells in
             // MaleCNS, so this explicitly selected population must not use the
             // locomotor motor-neuron filter.
@@ -696,13 +698,6 @@ namespace Mod.Core
             string third, float thirdWeight)
         {
             return Unit(MotorActivity(first) * firstWeight + MotorActivity(second) * secondWeight + MotorActivity(third) * thirdWeight);
-        }
-
-        private float WeightedMotorActivity(string first, float firstWeight, string second, float secondWeight,
-            string third, float thirdWeight, string fourth, float fourthWeight, string fifth, float fifthWeight)
-        {
-            return Unit(MotorActivity(first) * firstWeight + MotorActivity(second) * secondWeight + MotorActivity(third) * thirdWeight +
-                MotorActivity(fourth) * fourthWeight + MotorActivity(fifth) * fifthWeight);
         }
 
         private float AverageMotorActivity(string first, string second) =>
