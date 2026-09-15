@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 using UnityEngine;
 using Mod.Core;
@@ -40,6 +39,7 @@ namespace Mod.Adapters
         private bool hasAppliedControl;
         private readonly float visionRadius;
         private readonly Collider2D[] nearbyColliders = new Collider2D[128];
+        private readonly NearbyScanState nearbyScanState = new();
         private readonly HashSet<PhysicalBehaviour> lightOwners = [];
         private readonly HashSet<SpriteRenderer> sampledLightSprites = [];
         private readonly List<LightSprite> nativeLightSprites = [];
@@ -172,16 +172,31 @@ namespace Mod.Adapters
                     if (!String.IsNullOrEmpty(diagnostic) && diagnostic != null) excluded.Add(diagnostic);
                 }
 
-                return excluded.Count == 0 ? "none" : String.Join(",", excluded.ToArray());
+                return excluded.Count == 0 ? "none" : String.Join(",", excluded);
             }
         }
-        private int LimbCount => limbs.Count(limb => limb != null);
+        private int LimbCount
+        {
+            get
+            {
+                var count = 0;
+                for (var i = 0; i < limbs.Count; i++)
+                {
+                    if (limbs[i] != null) count++;
+                }
+
+                return count;
+            }
+        }
         private int LostLimbCount
         {
             get
             {
                 var count = 0;
-                foreach (var limb in limbs.Where(IsLostLimb)) count++;
+                for (var i = 0; i < limbs.Count; i++)
+                {
+                    if (IsLostLimb(limbs[i])) count++;
+                }
 
                 return count;
             }
@@ -196,7 +211,11 @@ namespace Mod.Adapters
                 }
 
                 var count = 0;
-                foreach (var controller in limbControllers.Where(controller => controller != null && controller.CanDrive)) count++;
+                for (var i = 0; i < limbControllers.Count; i++)
+                {
+                    var controller = limbControllers[i];
+                    if (controller != null && controller.CanDrive) count++;
+                }
 
                 return count;
             }
@@ -503,8 +522,8 @@ namespace Mod.Adapters
             {
                 if (limb == null) continue;
                 trackedLimbCount++;
-                var health = ReadLimb(ref frame, limb, out var healthValid);
-                if (healthValid && IsConnectedLimb(limb))
+                var health = ReadLimb(ref frame, limb, out var healthValid, out var connected);
+                if (healthValid && connected)
                 {
                     healthSum += health;
                     healthCount++;
@@ -520,7 +539,14 @@ namespace Mod.Adapters
                 return 0f;
             }
 
-            var maximumDownwardSpeed = limbs.Where(IsConnectedLimb).Select(GetDownwardSpeed).Where(IsFinite).DefaultIfEmpty(0f).Max();
+            var maximumDownwardSpeed = 0f;
+            for (var i = 0; i < limbs.Count; i++)
+            {
+                var limb = limbs[i];
+                if (!IsConnectedLimb(limb)) continue;
+                var downwardSpeed = GetDownwardSpeed(limb);
+                if (IsFinite(downwardSpeed) && downwardSpeed > maximumDownwardSpeed) maximumDownwardSpeed = downwardSpeed;
+            }
 
             return Mathf.Clamp01(maximumDownwardSpeed / 12f);
         }
@@ -702,9 +728,9 @@ namespace Mod.Adapters
             return !float.IsNaN(averageHealth) && !float.IsInfinity(averageHealth) && averageHealth <= DeathHealthThreshold;
         }
 
-        private float ReadLimb(ref SensoryFrame frame, LimbBehaviour limb, out bool healthValid)
+        private float ReadLimb(ref SensoryFrame frame, LimbBehaviour limb, out bool healthValid, out bool connected)
         {
-            var connected = IsConnectedLimb(limb);
+            connected = IsConnectedLimb(limb);
             ReadJoint(ref frame, limb, connected);
             healthValid = IsFinite(limb.Health) && IsFinite(limb.InitialHealth) && limb.InitialHealth > 0f;
             // InitialHealth may legitimately be below one on a modified limb.
@@ -789,7 +815,6 @@ namespace Mod.Adapters
 
         private void ReadRegionalTouch(ref SensoryFrame frame, LimbBehaviour limb)
         {
-            if (!IsConnectedLimb(limb)) return;
             var physical = limb.PhysicalBehaviour;
             var contact = limb.IsOnFloor || (physical != null && (physical.IsTouchingSomething || physical.beingHeldByGripper));
             if (!contact) return;
@@ -852,7 +877,10 @@ namespace Mod.Adapters
             if (circulation.LiquidDistribution == null) return 0f;
             // Native GetAmountOfBlood dereferences its original-liquid entry.
             // Malformed containers must remain unavailable rather than throw.
-            if (circulation.LiquidDistribution.Any(entry => entry.Value == null)) return 0f;
+            foreach (var entry in circulation.LiquidDistribution)
+            {
+                if (entry.Value == null) return 0f;
+            }
             var amount = circulation.GetAmountOfBlood();
             if (!IsFinite(amount) || amount < 0f)
             {
@@ -1085,7 +1113,13 @@ namespace Mod.Adapters
             }
 
             if (candidate == root.transform || candidate.IsChildOf(root.transform)) return true;
-            return limbs.Any(limb => limb != null && (candidate == limb.transform || candidate.IsChildOf(limb.transform)));
+            for (var i = 0; i < limbs.Count; i++)
+            {
+                var limb = limbs[i];
+                if (limb != null && (candidate == limb.transform || candidate.IsChildOf(limb.transform))) return true;
+            }
+
+            return false;
         }
 
         private void ReadNearby(ref SensoryFrame f, ref string audioSourceSummary)
@@ -1096,7 +1130,8 @@ namespace Mod.Adapters
             var head = FindStatusAnchor();
             var origin = (Vector2)head.position;
             var facing = InitializeNearbyState(ref f, head, out var headCollider);
-            var scanState = new NearbyScanState(origin, facing, headCollider);
+            nearbyScanState.Reset(origin, facing, headCollider);
+            var scanState = nearbyScanState;
             Array.Clear(visualCandidates, 0, visualCandidates.Length);
             ReadAmbientTemperature(ref f, origin);
             var hitCount = Physics2D.OverlapCircleNonAlloc(origin, visionRadius, nearbyColliders);
@@ -1116,18 +1151,21 @@ namespace Mod.Adapters
 
         private sealed class NearbyScanState
         {
-            public readonly Vector2 Origin;
-            public readonly Vector3 Facing;
-            public readonly Collider2D? HeadCollider;
+            public Vector2 Origin;
+            public Vector3 Facing;
+            public Collider2D? HeadCollider;
             public float Closest = float.MaxValue;
             public int CandidateCount;
             public string AudioSourceSummary = "none";
 
-            public NearbyScanState(Vector2 origin, Vector3 facing, Collider2D? headCollider)
+            public void Reset(Vector2 origin, Vector3 facing, Collider2D? headCollider)
             {
                 Origin = origin;
                 Facing = facing;
                 HeadCollider = headCollider;
+                Closest = float.MaxValue;
+                CandidateCount = 0;
+                AudioSourceSummary = "none";
             }
         }
 
@@ -1269,8 +1307,11 @@ namespace Mod.Adapters
             // Only native light owners qualify. Arbitrary bright body sprites,
             // UI labels and particles are not guessed to be light sources.
             owner.gameObject.GetComponentsInChildren(false, nativeLightSprites);
-            foreach (var light in nativeLightSprites.Where(light => light != null))
-                ReadLightSprite(ref frame, light.SpriteRenderer, origin, light.Brightness);
+            for (var i = 0; i < nativeLightSprites.Count; i++)
+            {
+                var light = nativeLightSprites[i];
+                if (light != null) ReadLightSprite(ref frame, light.SpriteRenderer, origin, light.Brightness);
+            }
             var tube = owner.GetComponent<GlowtubeBehaviour>();
             if (tube != null) ReadLightSprite(ref frame, tube.LightSprite, origin, 1f);
             var bulb = owner.GetComponent<BulbBehaviour>();
@@ -1282,8 +1323,10 @@ namespace Mod.Adapters
             var floodlight = owner.GetComponent<SingleFloodlightBehaviour>();
             if (floodlight != null) ReadLightGroup(ref frame, floodlight.ToToggle, origin);
             owner.gameObject.GetComponentsInChildren(false, flashlightAttachments);
-            foreach (var attachment in flashlightAttachments.Where(attachment => attachment != null && attachment.Lights != null))
+            for (var i = 0; i < flashlightAttachments.Count; i++)
             {
+                var attachment = flashlightAttachments[i];
+                if (attachment == null || attachment.Lights == null) continue;
                 foreach (var sprite in attachment.Lights) ReadLightSprite(ref frame, sprite, origin, 1f);
             }
         }
@@ -1440,7 +1483,12 @@ namespace Mod.Adapters
 
         private static bool ContainsAny(string value, string[] fragments)
         {
-            return fragments.Any(fragment => value.IndexOf(fragment, StringComparison.OrdinalIgnoreCase) >= 0);
+            for (var i = 0; i < fragments.Length; i++)
+            {
+                if (value.IndexOf(fragments[i], StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            }
+
+            return false;
         }
 
         private struct LimbHealthSample
@@ -1486,8 +1534,10 @@ namespace Mod.Adapters
             if (jukebox != null) ReadExternalAudioSource(ref frame, physical, jukebox.audioSource, origin, ref audioSourceSummary);
             if (sampledAudioSources.Count >= MaxAudioSourcesPerSample) { frame.SoundLimited = true; return; }
             physical.gameObject.GetComponentsInChildren(false, nearbyAudioSources);
-            foreach (var source in nearbyAudioSources.Where(source => source != null))
+            for (var i = 0; i < nearbyAudioSources.Count; i++)
             {
+                var source = nearbyAudioSources[i];
+                if (source == null) continue;
                 if (sampledAudioSources.Count >= MaxAudioSourcesPerSample) { frame.SoundLimited = true; break; }
                 ReadExternalAudioSource(ref frame, physical, source, origin, ref audioSourceSummary);
             }
@@ -1572,7 +1622,13 @@ namespace Mod.Adapters
                 return true;
             }
 
-            return limbs.Any(ownedLimb => ownedLimb != null && ownedLimb.PhysicalBehaviour == physical);
+            for (var i = 0; i < limbs.Count; i++)
+            {
+                var ownedLimb = limbs[i];
+                if (ownedLimb != null && ownedLimb.PhysicalBehaviour == physical) return true;
+            }
+
+            return false;
         }
 
         private bool IsLikelySelfRootAudio(PhysicalBehaviour physical, AudioSource audio, float distance)
@@ -1604,7 +1660,14 @@ namespace Mod.Adapters
 
         private static bool IsValidRootSuffix(string suffix)
         {
-            return string.Equals(suffix, "Clone", StringComparison.OrdinalIgnoreCase) || suffix.All(digit => digit >= '0' && digit <= '9');
+            if (string.Equals(suffix, "Clone", StringComparison.OrdinalIgnoreCase)) return true;
+            for (var i = 0; i < suffix.Length; i++)
+            {
+                var digit = suffix[i];
+                if (digit < '0' || digit > '9') return false;
+            }
+
+            return true;
         }
 
         private static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
