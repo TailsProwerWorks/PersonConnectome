@@ -59,6 +59,8 @@ namespace Mod.UI
         private readonly List<TextMeshProUGUI> stimulationSections = [];
         private readonly StimulationRow[] stimulationRows = new StimulationRow[(int)ManualInputChannel.Count];
         private readonly ManualInputState manualInput;
+        private readonly Func<bool>? isDirectFlyControlEnabled;
+        private readonly Action<bool>? setDirectFlyControl;
         private GameObject worldLabelObject = null!;
         private TextMeshProUGUI worldLabel = null!;
         private Vector3 lastWorldLabelPosition;
@@ -115,13 +117,15 @@ namespace Mod.UI
             public float PanelHeight = 660f;
         }
 
-        private TextMeshProUGUI stimulationHeading = null!, stimulationPerson = null!, stimulationStatus = null!, stimulationExplanation = null!, stimulationResponse = null!, stimulationModeHeading = null!;
-        private Button stimulationMaster = null!;
+        private TextMeshProUGUI stimulationHeading = null!, stimulationPerson = null!, stimulationStatus = null!, stimulationExplanation = null!, stimulationResponse = null!, stimulationModeHeading = null!, directControlHeading = null!, directControlExplanation = null!, directControlLabel = null!;
+        private Button stimulationMaster = null!, directControlToggle = null!;
         private Button mixedMode = null!, manualOnlyMode = null!, zeroManual = null!, returnToLive = null!;
 
-        public PersonConnectomeStatusDisplay(Transform anchor, ManualInputState inputState)
+        public PersonConnectomeStatusDisplay(Transform anchor, ManualInputState inputState, Func<bool>? isDirectFlyControlEnabled = null, Action<bool>? setDirectFlyControl = null)
         {
             manualInput = inputState ?? new ManualInputState();
+            this.isDirectFlyControlEnabled = isDirectFlyControlEnabled;
+            this.setDirectFlyControl = setDirectFlyControl;
         }
 
         public void SetActive(bool active)
@@ -341,6 +345,14 @@ namespace Mod.UI
             }, out _);
             stimulationElements.Add(zeroManual.gameObject);
             stimulationElements.Add(returnToLive.gameObject);
+            directControlHeading = AddText(stimulationElements, "NATIVE BALANCE ASSISTS", Accent);
+            directControlExplanation = AddText(stimulationElements, "Best effort: disables native upright, stumble and pose-force helpers while enabled. Gravity, joints, collisions and pose selection remain active.", Foreground);
+            directControlToggle = CreateToggleButton(content, "Direct fly control", () => isDirectFlyControlEnabled?.Invoke() ?? false, value =>
+            {
+                setDirectFlyControl?.Invoke(value);
+                refreshTimer = 0f;
+            }, out directControlLabel);
+            stimulationElements.Add(directControlToggle.gameObject);
             stimulationResponse = AddText(stimulationElements, "", Foreground);
 
             BuildStimulationRows();
@@ -490,6 +502,13 @@ namespace Mod.UI
             y += 34f;
             SetRect((RectTransform)zeroManual.transform, 0f, y, width * .48f, 26f);
             SetRect((RectTransform)returnToLive.transform, width * .52f, y, width * .48f, 26f);
+            y += 34f;
+            PlaceText(directControlHeading, 0f, ref y, width, directControlHeading.text);
+            PlaceText(directControlExplanation, 0f, ref y, width, directControlExplanation.text);
+            var directControlOn = isDirectFlyControlEnabled?.Invoke() ?? false;
+            directControlLabel.text = directControlOn ? "Direct fly control (ON)" : "Direct fly control (OFF)";
+            SetRect((RectTransform)directControlToggle.transform, 0f, y, width, 26f);
+            SetButtonColor(directControlToggle, directControlOn ? ActiveControl : Track);
             y += 34f;
             PlaceText(stimulationResponse, 0f, ref y, width, FormatStimulationResponse());
         }
@@ -1389,8 +1408,8 @@ namespace Mod.UI
             legendLabels.Clear();
             legendColors.Clear();
             Array.Clear(stimulationRows, 0, stimulationRows.Length);
-            stimulationHeading = stimulationPerson = stimulationStatus = stimulationExplanation = stimulationResponse = stimulationModeHeading = null!;
-            stimulationMaster = mixedMode = manualOnlyMode = zeroManual = returnToLive = null!;
+            stimulationHeading = stimulationPerson = stimulationStatus = stimulationExplanation = stimulationResponse = stimulationModeHeading = directControlHeading = directControlExplanation = directControlLabel = null!;
+            stimulationMaster = directControlToggle = mixedMode = manualOnlyMode = zeroManual = returnToLive = null!;
             ReleaseMap();
         }
 

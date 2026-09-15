@@ -22,6 +22,7 @@ public sealed class AdapterScenarioTests
             yield return Case("component discovery cleanup and refresh budgets stay bounded and fair", "ComponentDiscoveryBudgets");
             yield return Case("terminal motors and grips clear immediately", "TerminalStop");
             yield return Case("native pose context actions are suppressed", "ContextMenuPoseActions");
+            yield return Case("direct fly control suppresses native balance assists and restores them", "DirectFlyControl");
             yield return Case("unconscious and locally damaged limbs clear old commands", "IncapableStop");
             yield return Case("brain injury remains alive with matching signal value", "BrainInjury");
             yield return Case("invalid health stops control without inventing death", "InvalidHealth");

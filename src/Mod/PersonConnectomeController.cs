@@ -27,17 +27,29 @@ namespace Mod
         private float sampleElapsed;
         private bool acceptingEvents;
         private bool pendingPoseSweep;
+        private bool directFlyControl = true;
+        private PersonBehaviour? person;
         private readonly List<SuppressedContextMenuButton> suppressedContextMenuButtons = [];
         private readonly List<ContextMenuOptionComponent> contextMenuOptions = [];
+        private readonly List<LimbBehaviour> directControlLimbBuffer = [];
+        private readonly List<NativeAssistSnapshot> directControlSnapshotValues = [];
+        private readonly Dictionary<LimbBehaviour, NativeAssistSnapshot> directControlSnapshots = [];
+        private readonly List<NativePoseSnapshot> directControlPoseSnapshotValues = [];
+        private readonly Dictionary<RagdollPose, NativePoseSnapshot> directControlPoseSnapshots = [];
         private static readonly List<PersonConnectomeController> activeControllers = [];
+
+        public bool DirectFlyControlEnabled => directFlyControl;
 
         private void Awake()
         {
             pendingPoseSweep = true;
+            person = gameObject.GetComponent<PersonBehaviour>();
             adapter = new PeoplePlaygroundPersonAdapter(gameObject, VisionRadius, RegisterCollision, RegisterProjectile);
             sensor = adapter;
             actuator = adapter;
-            statusDisplay = new PersonConnectomeStatusDisplay(adapter.StatusAnchor, manualInput);
+            statusDisplay = new PersonConnectomeStatusDisplay(adapter.StatusAnchor, manualInput,
+                () => directFlyControl,
+                SetDirectFlyControl);
             brain = LifBrain.TryCreate(out var loadStatus);
             if (!adapter.IsUsable)
             {
@@ -63,11 +75,17 @@ namespace Mod
             acceptingEvents = true;
             pendingPoseSweep = true;
             statusDisplay?.SetActive(true);
+            if (!directFlyControl)
+            {
+                directFlyControl = true;
+            }
+            ApplyDirectFlyControl();
             SuppressNativePoseOptions();
         }
 
         private void FixedUpdate()
         {
+            ApplyDirectFlyControl();
             if (sensor == null || actuator == null || brain == null || adapter == null)
             {
                 return;
@@ -133,6 +151,7 @@ namespace Mod
                 pendingPoseSweep = false;
                 SuppressNativePoseOptions();
             }
+            ApplyDirectFlyControl();
             (actuator ?? adapter as IBodyActuator)?.RefreshWalkingRequest();
             if (statusDisplay != null && brain != null && adapter != null)
             {
@@ -151,6 +170,7 @@ namespace Mod
             manualInput.Deactivate();
             brain?.Stop();
             (actuator ?? adapter as IBodyActuator)?.Suspend();
+            RestoreDirectFlyControl();
             RestoreNativePoseOptions();
         }
 
@@ -159,6 +179,7 @@ namespace Mod
             acceptingEvents = false;
             activeControllers.Remove(this);
             manualInput.Deactivate();
+            RestoreDirectFlyControl();
             RestoreNativePoseOptions();
             sensor = null;
             actuator = null;
@@ -207,6 +228,204 @@ namespace Mod
             }
 
             suppressedContextMenuButtons.Clear();
+        }
+
+        private void SetDirectFlyControl(bool enabled)
+        {
+            if (directFlyControl == enabled)
+            {
+                if (enabled) ApplyDirectFlyControl();
+                return;
+            }
+
+            directFlyControl = enabled;
+            if (enabled) ApplyDirectFlyControl();
+            else RestoreDirectFlyControl();
+        }
+
+        private void ApplyDirectFlyControl()
+        {
+            if (!directFlyControl || gameObject == null)
+            {
+                return;
+            }
+
+            gameObject.GetComponentsInChildren(true, directControlLimbBuffer);
+            foreach (var limb in directControlLimbBuffer)
+            {
+                if (limb == null)
+                {
+                    continue;
+                }
+
+                if (!directControlSnapshots.ContainsKey(limb))
+                {
+                    directControlSnapshots.Add(limb, new NativeAssistSnapshot(limb));
+                }
+
+                // Keep the connectome responsible for the motor command while
+                // retaining native joints, gravity, collisions and pose state.
+                limb.FakeUprightForce = 0f;
+                limb.BalanceMuscleMovement = 0f;
+                limb.DoBalanceJerk = false;
+                limb.DoStumble = false;
+            }
+
+            // A dismembered limb can leave the hierarchy without being destroyed.
+            // Restore and forget it so the cache does not grow for the person's
+            // entire lifetime.
+            directControlSnapshotValues.Clear();
+            foreach (var snapshot in directControlSnapshots.Values)
+            {
+                directControlSnapshotValues.Add(snapshot);
+            }
+
+            foreach (var snapshot in directControlSnapshotValues)
+            {
+                if (snapshot.IsAttached(transform))
+                {
+                    continue;
+                }
+
+                snapshot.Restore();
+                directControlSnapshots.Remove(snapshot.Limb);
+            }
+
+            ApplyDirectPoseControl();
+        }
+
+        private void RestoreDirectFlyControl()
+        {
+            foreach (var snapshot in directControlSnapshots.Values)
+            {
+                snapshot.Restore();
+            }
+
+            directControlSnapshots.Clear();
+            directControlSnapshotValues.Clear();
+            directControlLimbBuffer.Clear();
+            RestoreDirectPoseControl();
+            directFlyControl = false;
+        }
+
+        private void ApplyDirectPoseControl()
+        {
+            if (person == null)
+            {
+                return;
+            }
+
+            var poses = person.Poses;
+            if (poses != null)
+            {
+                foreach (var pose in poses)
+                {
+                    SuppressPose(pose);
+                }
+            }
+
+            SuppressPose(person.ActivePose);
+        }
+
+        private void SuppressPose(RagdollPose pose)
+        {
+            if (pose == null)
+            {
+                return;
+            }
+
+            if (!directControlPoseSnapshots.ContainsKey(pose))
+            {
+                directControlPoseSnapshots.Add(pose, new NativePoseSnapshot(pose));
+            }
+
+            pose.ShouldStandUpright = false;
+            pose.ShouldStumble = false;
+            pose.UprightForceMultiplier = 0f;
+            pose.ForceMultiplier = 0f;
+        }
+
+        private void RestoreDirectPoseControl()
+        {
+            directControlPoseSnapshotValues.Clear();
+            foreach (var snapshot in directControlPoseSnapshots.Values)
+            {
+                directControlPoseSnapshotValues.Add(snapshot);
+            }
+
+            foreach (var snapshot in directControlPoseSnapshotValues)
+            {
+                snapshot.Restore();
+            }
+
+            directControlPoseSnapshots.Clear();
+            directControlPoseSnapshotValues.Clear();
+        }
+
+        private sealed class NativeAssistSnapshot
+        {
+            private readonly LimbBehaviour limb;
+            private readonly float fakeUprightForce;
+            private readonly float balanceMuscleMovement;
+            private readonly bool doBalanceJerk;
+            private readonly bool doStumble;
+
+            public NativeAssistSnapshot(LimbBehaviour limb)
+            {
+                this.limb = limb;
+                fakeUprightForce = limb.FakeUprightForce;
+                balanceMuscleMovement = limb.BalanceMuscleMovement;
+                doBalanceJerk = limb.DoBalanceJerk;
+                doStumble = limb.DoStumble;
+            }
+
+            public LimbBehaviour Limb => limb;
+
+            public bool IsAttached(Transform root) => limb != null && limb.transform.IsChildOf(root);
+
+            public void Restore()
+            {
+                if (limb == null)
+                {
+                    return;
+                }
+
+                limb.FakeUprightForce = fakeUprightForce;
+                limb.BalanceMuscleMovement = balanceMuscleMovement;
+                limb.DoBalanceJerk = doBalanceJerk;
+                limb.DoStumble = doStumble;
+            }
+        }
+
+        private sealed class NativePoseSnapshot
+        {
+            private readonly RagdollPose pose;
+            private readonly bool shouldStandUpright;
+            private readonly bool shouldStumble;
+            private readonly float uprightForceMultiplier;
+            private readonly float forceMultiplier;
+
+            public NativePoseSnapshot(RagdollPose pose)
+            {
+                this.pose = pose;
+                shouldStandUpright = pose.ShouldStandUpright;
+                shouldStumble = pose.ShouldStumble;
+                uprightForceMultiplier = pose.UprightForceMultiplier;
+                forceMultiplier = pose.ForceMultiplier;
+            }
+
+            public void Restore()
+            {
+                if (pose == null)
+                {
+                    return;
+                }
+
+                pose.ShouldStandUpright = shouldStandUpright;
+                pose.ShouldStumble = shouldStumble;
+                pose.UprightForceMultiplier = uprightForceMultiplier;
+                pose.ForceMultiplier = forceMultiplier;
+            }
         }
 
         private static bool IsNativePoseOption(ContextMenuButton button)

@@ -19,6 +19,7 @@ internal static class Program
             ("component discovery cleanup and refresh budgets stay bounded and fair", ComponentDiscoveryBudgets),
             ("terminal motors and grips clear immediately", TerminalStop),
             ("native pose context actions are suppressed", ContextMenuPoseActions),
+            ("direct fly control suppresses native balance assists and restores them", DirectFlyControl),
             ("unconscious and locally damaged limbs clear old commands", IncapableStop),
             ("brain injury remains alive with matching signal value", BrainInjury),
             ("invalid health stops control without inventing death", InvalidHealth),
@@ -257,6 +258,46 @@ internal static class Program
         type.GetMethod("OnDisable", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).Invoke(controller, null);
         Equal(5, options.Buttons.Count); True(options.Buttons.Contains(walking)); True(options.Buttons.Contains(sitting));
         Equal(3, lateOptions.Buttons.Count);
+    }
+    private static void DirectFlyControl()
+    {
+        var f = new Fixture();
+        f.Limb.FakeUprightForce = 12f;
+        f.Limb.BalanceMuscleMovement = 2f;
+        f.Limb.DoBalanceJerk = true;
+        f.Limb.DoStumble = true;
+        var pose = new RagdollPose { ShouldStandUpright = true, ShouldStumble = true, UprightForceMultiplier = 1.5f, ForceMultiplier = 2f };
+        f.Person.Poses.Add(pose);
+        f.Person.ActivePose = pose;
+        var controller = f.Root.AddComponent<PersonConnectomeController>();
+        var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        var type = typeof(PersonConnectomeController);
+        type.GetMethod("Awake", flags).Invoke(controller, null);
+        type.GetMethod("OnEnable", flags).Invoke(controller, null);
+        True((bool)type.GetProperty("DirectFlyControlEnabled").GetValue(controller));
+        type.GetMethod("SetDirectFlyControl", flags).Invoke(controller, [true]);
+        Equal(0f, f.Limb.FakeUprightForce);
+        Equal(0f, f.Limb.BalanceMuscleMovement);
+        True(!f.Limb.DoBalanceJerk && !f.Limb.DoStumble);
+        True(!pose.ShouldStandUpright && !pose.ShouldStumble);
+        Equal(0f, pose.UprightForceMultiplier);
+        Equal(0f, pose.ForceMultiplier);
+        var added = Fixture.AddLimb(f.Root, "LateArm");
+        added.FakeUprightForce = 8f;
+        added.BalanceMuscleMovement = 3f;
+        type.GetMethod("LateUpdate", flags).Invoke(controller, null);
+        Equal(0f, added.FakeUprightForce);
+        Equal(0f, added.BalanceMuscleMovement);
+        type.GetMethod("SetDirectFlyControl", flags).Invoke(controller, [false]);
+        Equal(12f, f.Limb.FakeUprightForce);
+        Equal(2f, f.Limb.BalanceMuscleMovement);
+        True(f.Limb.DoBalanceJerk && f.Limb.DoStumble);
+        True(pose.ShouldStandUpright && pose.ShouldStumble);
+        Equal(1.5f, pose.UprightForceMultiplier);
+        Equal(2f, pose.ForceMultiplier);
+        Equal(8f, added.FakeUprightForce);
+        Equal(3f, added.BalanceMuscleMovement);
+        type.GetMethod("OnDestroy", flags).Invoke(controller, null);
     }
     private static void FoodItemCues()
     {

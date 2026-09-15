@@ -1,3 +1,4 @@
+using System;
 using Mod.Adapters;
 using Mod.Core;
 using Mod.UI;
@@ -182,9 +183,16 @@ namespace UnityEngine
     public static class Time { public static float fixedDeltaTime = .02f, deltaTime = .02f, unscaledDeltaTime = .02f, realtimeSinceStartup, time; }
     public static class Debug { public static void Log(string message) { } }
 }
+public class RagdollPose
+{
+    public bool ShouldStandUpright = true, ShouldStumble = true;
+    public float UprightForceMultiplier = 1f, ForceMultiplier = 1f;
+}
 public class PersonBehaviour : UnityEngine.Component
 {
     public LimbBehaviour[] Limbs = [];
+    public List<RagdollPose> Poses = [];
+    public RagdollPose ActivePose;
     public bool Braindead, BrainDamaged, IsTouchingFloor;
     public float AverageHealth = 1, Consciousness = 1, OxygenLevel = 1;
     public float PainLevel, ShockLevel, AdrenalineLevel, AverageFireIntensity, AverageWetness, AverageSpeed, AngleOffset, BalanceOffset, Heartbeat, SeizureTime, BrainDamagedTime, DesiredWalkingDirection;
@@ -192,11 +200,13 @@ public class PersonBehaviour : UnityEngine.Component
 public class LimbBehaviour : UnityEngine.Component
 {
     public bool IsCapable = true, HasJoint = true;
+    public bool DoBalanceJerk = true, DoStumble = true, IsActiveInCurrentPose = true;
     public bool HasBrain, IsDismembered, Broken, Frozen, IsParalysed, HasLungs, LungsPunctured, IsOnFloor, IsZombie;
     public PersonBehaviour Person;
     public int CurrentlyShattered;
     public float Health = 100, InitialHealth = 100, Vitality = 1, BodyTemperature = 37, InternalTemperature = 37;
     public float JointStress, Numbness, RegenerationSpeed, MotorSpeed;
+    public float FakeUprightForce = 10f, BalanceMuscleMovement = 1f;
     public int MotorCalls;
     public GripBehaviour GripBehaviour;
     public UnityEngine.HingeJoint2D Joint;
@@ -315,7 +325,7 @@ namespace Mod
         public static int ActiveCount => activeCount;
         public static int RenderedUpdates => renderedUpdates;
         public static void ResetForTest() { activeCount = 0; renderedUpdates = 0; }
-        public PersonConnectomeStatusDisplay(UnityEngine.Transform anchor, ManualInputState manualInput) { }
+        public PersonConnectomeStatusDisplay(UnityEngine.Transform anchor, ManualInputState manualInput, Func<bool> isDirectFlyControlEnabled = null, Action<bool> setDirectFlyControl = null) { }
         public void Update(float elapsed, LifBrain brain, PeoplePlaygroundPersonAdapter adapter) { if (active) renderedUpdates++; }
         public void SetActive(bool value)
         {
