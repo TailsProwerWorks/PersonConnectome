@@ -134,24 +134,6 @@ $managedDirectory = Join-Path $GameInstall 'People Playground_Data\Managed'
 $targetDirectory = Join-Path $GameInstall 'Mods\PersonConnectome'
 $manifestSourcePath = Join-Path $modSource 'mod.json'
 $readmeSourcePath = Join-Path $assetRoot 'README.txt'
-# These files belonged to the pre-refactor flat layout. Keep this list explicit:
-# the target directory can contain files owned by other mods or by the user, so
-# deployment must never prune arbitrary unlisted content.
-$staleLegacySourcePaths = @(
-    'BrainVisualization.cs',
-    'ConnectomeRuntimeAsset.cs',
-    'ConnectomeRuntimeAssetReader.cs',
-    'ConnectomeSensoryRouter.cs',
-    'ManualInput.cs',
-    'PeoplePlaygroundPersonAdapter.cs',
-    'PersonConnectomeController.cs',
-    'PersonConnectomeLimbController.cs',
-    'PersonConnectomeStatusDisplay.cs',
-    'RuntimeBrain.cs',
-    'RuntimeTypes.cs',
-    'script.cs',
-    'TelemetryLayout.cs'
-)
 
 if (-not (Test-Path -LiteralPath $modProject -PathType Leaf)) {
     throw "Mod project was not found: $modProject"
@@ -197,6 +179,10 @@ foreach ($script in $manifest.Scripts) {
 
     $files += [pscustomobject]@{ SourcePath = $scriptPath; RelativePath = $script }
 }
+$manifestScriptPaths = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+foreach ($script in $manifest.Scripts) {
+    [void]$manifestScriptPaths.Add(([string]$script).Replace('/', '\'))
+}
 
 # The game-side loader consumes only the PNG through ModAPI.LoadTexture. The
 # raw FLYB/GZip payload remains a repository input for Build-ConnectomeCarrier.
@@ -236,12 +222,12 @@ if ($PSCmdlet.ShouldProcess($targetDirectory, 'deploy Person Connectome mod file
         }
     }
 
-    foreach ($relativePath in $staleLegacySourcePaths) {
-        $stalePath = Join-Path $targetDirectory $relativePath
-        if (Test-Path -LiteralPath $stalePath -PathType Leaf) {
-            if ($PSCmdlet.ShouldProcess($stalePath, 'remove legacy flat-layout source')) {
-                Remove-Item -LiteralPath $stalePath -Force
-            }
+    # The manifest is the source of truth. Remove only C# source files that are
+    # no longer listed there; other target-owned assets and files are preserved.
+    foreach ($candidate in @(Get-ChildItem -LiteralPath $targetDirectory -File -Filter '*.cs' -Recurse)) {
+        $relativePath = $candidate.FullName.Substring($targetDirectory.Length + 1).Replace('/', '\')
+        if (-not $manifestScriptPaths.Contains($relativePath) -and $PSCmdlet.ShouldProcess($candidate.FullName, 'remove unlisted mod source')) {
+            Remove-Item -LiteralPath $candidate.FullName -Force
         }
     }
 
