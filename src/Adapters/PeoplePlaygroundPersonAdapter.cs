@@ -656,7 +656,18 @@ namespace Mod.Adapters
             {
                 if (command.MotionStopRequested)
                 {
-                    if (controller.ClearMotorTarget()) appliedLimbCount++;
+                    // A neural halt preserves a healthy limb's grip and
+                    // chemistry, but it must not bypass the usual cleanup for
+                    // a locally failed limb (broken, detached, paralysed, or
+                    // otherwise unable to drive).
+                    if (controller.CanDrive)
+                    {
+                        if (controller.ClearMotorTarget()) appliedLimbCount++;
+                    }
+                    else
+                    {
+                        controller.Stop();
+                    }
                 }
                 else if (controller.Apply(command, jointSpeedDegreesPerSecond)) appliedLimbCount++;
                 controller.ApplyChemistry(command, chemistry, chemistryElapsed);

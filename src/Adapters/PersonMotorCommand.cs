@@ -84,7 +84,12 @@ namespace Mod.Adapters
             if (!movementPermitted || stopRequested)
             {
                 ResetMotion();
-                lastCommand = BodyState(frame, bodyThreat, Mathf.Max(halt, freeze));
+                // A neural halt owns only the requested joint targets.  Do not
+                // encode it as physical freeze: Freeze routes through the
+                // person safety stop, which also releases grips and restores
+                // chemistry.  Actual unconsciousness/sedation remains in the
+                // sampled body state and therefore still takes that path.
+                lastCommand = BodyState(frame, bodyThreat, freeze);
                 lastCommand.MotionStopRequested = stopRequested;
                 return lastCommand;
             }

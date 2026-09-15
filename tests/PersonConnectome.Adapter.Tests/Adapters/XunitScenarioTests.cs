@@ -29,6 +29,7 @@ public sealed class AdapterScenarioTests
             yield return Case("fly-to-person projection retains locomotion filtering and escape bursts", "StatefulFlyMotorProjection");
             yield return Case("published fly locomotion decisions preempt and halt person movement", "PublishedFlyLocomotionDecisions");
             yield return Case("fly halt and brake clear joint targets without changing neutral policy", "FlyHaltAndBrakeClearMotors");
+            yield return Case("fly halt preserves healthy holds while cleaning failed limbs", "FlyHaltCleansFailedLimbs");
             yield return Case("fly mapper clears retained movement on terminal and between-tick safety stops", "FlyMappingSafetyStops");
             yield return Case("unconscious and locally damaged limbs clear old commands", "IncapableStop");
             yield return Case("brain injury remains alive with matching signal value", "BrainInjury");
