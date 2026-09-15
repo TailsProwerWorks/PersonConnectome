@@ -45,16 +45,20 @@ namespace Mod.Adapters
         private readonly HashSet<SpriteRenderer> sampledLightSprites = [];
         private readonly List<LightSprite> nativeLightSprites = [];
         private readonly List<SpriteRenderer> lightSpriteBuffer = [];
+        private readonly List<SpriteRenderer> groupSpriteBuffer = [];
         private readonly List<FlashlightAttachmentBehaviour> flashlightAttachments = [];
         private readonly Dictionary<PhysicalBehaviour, ComponentDiscovery> componentCache = [];
-        private readonly HashSet<PhysicalBehaviour> refreshedOwners = [];
+        private readonly List<PhysicalBehaviour> componentCacheOwners = [];
         private readonly HashSet<PhysicalBehaviour> sampledOwners = [];
         private readonly List<Component> componentBuffer = [];
-        private int discoverySamples;
+        private int componentCacheSweepIndex;
         private int limbDiscoverySamples;
         private int lastRootChildCount = -1;
         private const int MaxLightSpritesPerSample = 64;
-        private const int ComponentDiscoveryRefreshSamples = 60;
+        // Keep discovery work bounded even when many nearby objects expire together.
+        private const int MaxComponentDiscoveryRefreshesPerSample = 4;
+        private const int MaxComponentDiscoveryRemovalsPerSample = 4;
+        private const float ComponentDiscoveryMaxAgeSeconds = 3f;
         private const int LimbDiscoveryRefreshSamples = 20;
         private readonly RaycastHit2D[] visionLinecastHits = new RaycastHit2D[32];
         private const int MaxVisualCandidates = 16;
@@ -1165,13 +1169,8 @@ namespace Mod.Adapters
             var head = FindStatusAnchor();
             var origin = (Vector2)head.position;
             var facing = InitializeNearbyState(ref f, head, out var headCollider);
-            var refreshDiscovery = ++discoverySamples >= ComponentDiscoveryRefreshSamples;
-            if (refreshDiscovery)
-            {
-                discoverySamples = 0;
-                ResetComponentDiscoveryCache();
-            }
-            nearbyScanState.Reset(origin, facing, headCollider, refreshDiscovery);
+            PruneComponentDiscoveryCache(MaxComponentDiscoveryRemovalsPerSample);
+            nearbyScanState.Reset(origin, facing, headCollider, MaxComponentDiscoveryRefreshesPerSample);
             var scanState = nearbyScanState;
             Array.Clear(visualCandidates, 0, visualCandidates.Length);
             ReadAmbientTemperature(ref f, origin);
@@ -1190,19 +1189,24 @@ namespace Mod.Adapters
             ReadVisualCandidates(ref f, origin, facing, head, scanState.CandidateCount);
         }
 
-        private ComponentDiscovery GetComponentDiscovery(PhysicalBehaviour owner, bool refresh)
+        private ComponentDiscovery GetComponentDiscovery(PhysicalBehaviour owner, NearbyScanState state)
         {
             var firstOwnerThisSample = sampledOwners.Add(owner);
-            var refreshOwner = refresh && refreshedOwners.Add(owner);
             if (!firstOwnerThisSample && componentCache.TryGetValue(owner, out var repeatedCached)) return repeatedCached;
             componentCache.TryGetValue(owner, out var cached);
             owner.GetComponents(componentBuffer);
-            if (!refreshOwner && cached != null && cached.ChildCount == owner.transform.childCount && cached.ComponentCount == componentBuffer.Count) return cached;
+            var directHintsChanged = cached == null || cached.ChildCount != owner.transform.childCount || cached.ComponentCount != componentBuffer.Count;
+            var age = cached == null ? float.MaxValue : Time.time - cached.LastRefreshTime;
+            var expired = directHintsChanged || !IsFinite(age) || age < 0f || age >= ComponentDiscoveryMaxAgeSeconds;
+            if (cached != null && !expired) return cached;
+            if (cached != null && state.DiscoveryRefreshBudget == 0) return cached;
+            if (cached != null) state.DiscoveryRefreshBudget--;
 
             var discovery = new ComponentDiscovery
             {
                 ChildCount = owner.transform.childCount,
                 ComponentCount = componentBuffer.Count,
+                LastRefreshTime = Time.time,
                 Glowtube = owner.GetComponent<GlowtubeBehaviour>(),
                 Bulb = owner.GetComponent<BulbBehaviour>(),
                 Led = owner.GetComponent<LEDBulbBehaviour>(),
@@ -1212,33 +1216,67 @@ namespace Mod.Adapters
                 Identity = owner.GetComponentInParent<SerialiseInstructions>()
             };
             owner.gameObject.GetComponentsInChildren(true, nativeLightSprites);
-            discovery.NativeLightSprites = nativeLightSprites.ToArray();
+            discovery.NativeLightSprites = CopyToArray(nativeLightSprites, cached?.NativeLightSprites);
             owner.gameObject.GetComponentsInChildren(true, flashlightAttachments);
-            discovery.FlashlightAttachments = flashlightAttachments.ToArray();
+            discovery.FlashlightAttachments = CopyToArray(flashlightAttachments, cached?.FlashlightAttachments);
             owner.gameObject.GetComponentsInChildren(true, nearbyAudioSources);
-            discovery.AudioSources = nearbyAudioSources.ToArray();
-            var groupSprites = new List<SpriteRenderer>();
+            discovery.AudioSources = CopyToArray(nearbyAudioSources, cached?.AudioSources);
+            groupSpriteBuffer.Clear();
             if (discovery.Toggle?.LightObject != null)
             {
                 discovery.Toggle.LightObject.GetComponentsInChildren(true, lightSpriteBuffer);
-                groupSprites.AddRange(lightSpriteBuffer);
+                groupSpriteBuffer.AddRange(lightSpriteBuffer);
             }
             if (discovery.Floodlight?.ToToggle != null)
             {
                 discovery.Floodlight.ToToggle.GetComponentsInChildren(true, lightSpriteBuffer);
-                groupSprites.AddRange(lightSpriteBuffer);
+                groupSpriteBuffer.AddRange(lightSpriteBuffer);
             }
-            discovery.GroupLightSprites = groupSprites.ToArray();
+            discovery.GroupLightSprites = CopyToArray(groupSpriteBuffer, cached?.GroupLightSprites);
             componentCache[owner] = discovery;
+            if (cached == null) componentCacheOwners.Add(owner);
             return discovery;
+        }
+
+        private static T[] CopyToArray<T>(List<T> source, T[]? destination)
+        {
+            destination = destination == null || destination.Length != source.Count ? new T[source.Count] : destination;
+            source.CopyTo(destination);
+            return destination;
+        }
+
+        private void PruneComponentDiscoveryCache(int budget)
+        {
+            var inspected = 0;
+            while (inspected < budget && componentCacheOwners.Count > 0)
+            {
+                if (componentCacheSweepIndex >= componentCacheOwners.Count) componentCacheSweepIndex = 0;
+                var owner = componentCacheOwners[componentCacheSweepIndex];
+                if (owner == null)
+                {
+                    componentCache.Remove(owner!);
+                    componentCacheOwners.RemoveAt(componentCacheSweepIndex);
+                    continue;
+                }
+                if (!componentCache.ContainsKey(owner))
+                {
+                    componentCacheOwners.RemoveAt(componentCacheSweepIndex);
+                    continue;
+                }
+
+                componentCacheSweepIndex++;
+                inspected++;
+            }
         }
 
         private void ResetComponentDiscoveryCache()
         {
             componentCache.Clear();
-            refreshedOwners.Clear();
+            componentCacheOwners.Clear();
             sampledOwners.Clear();
             componentBuffer.Clear();
+            groupSpriteBuffer.Clear();
+            componentCacheSweepIndex = 0;
         }
 
         private sealed class NearbyScanState
@@ -1248,17 +1286,17 @@ namespace Mod.Adapters
             public Collider2D? HeadCollider;
             public float Closest = float.MaxValue;
             public int CandidateCount;
-            public bool RefreshDiscovery;
+            public int DiscoveryRefreshBudget;
             public string AudioSourceSummary = "none";
 
-            public void Reset(Vector2 origin, Vector3 facing, Collider2D? headCollider, bool refreshDiscovery)
+            public void Reset(Vector2 origin, Vector3 facing, Collider2D? headCollider, int discoveryRefreshBudget)
             {
                 Origin = origin;
                 Facing = facing;
                 HeadCollider = headCollider;
                 Closest = float.MaxValue;
                 CandidateCount = 0;
-                RefreshDiscovery = refreshDiscovery;
+                DiscoveryRefreshBudget = discoveryRefreshBudget;
                 AudioSourceSummary = "none";
             }
         }
@@ -1267,6 +1305,7 @@ namespace Mod.Adapters
         {
             public int ChildCount;
             public int ComponentCount;
+            public float LastRefreshTime;
             public LightSprite[] NativeLightSprites = [];
             public FlashlightAttachmentBehaviour[] FlashlightAttachments = [];
             public SpriteRenderer[] GroupLightSprites = [];
@@ -1353,7 +1392,7 @@ namespace Mod.Adapters
             ReadNearbyHazards(ref frame, hit, distance);
             var physical = hit.GetComponentInParent<PhysicalBehaviour>();
             if (physical == null) return;
-            var discovery = GetComponentDiscovery(physical, state.RefreshDiscovery);
+            var discovery = GetComponentDiscovery(physical, state);
             ReadFoodCue(ref frame, hit, physical, distance, state.HeadCollider, discovery);
             if (lightOwners.Add(physical))
             {

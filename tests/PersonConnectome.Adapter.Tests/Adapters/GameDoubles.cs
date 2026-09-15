@@ -179,7 +179,7 @@ namespace UnityEngine
     }
     public class Collision2D { public Collider2D collider; public Vector2 relativeVelocity; }
     public class RangeAttribute : Attribute { public RangeAttribute(float min, float max) { } }
-    public static class Time { public static float fixedDeltaTime = .02f, deltaTime = .02f, unscaledDeltaTime = .02f, realtimeSinceStartup; }
+    public static class Time { public static float fixedDeltaTime = .02f, deltaTime = .02f, unscaledDeltaTime = .02f, realtimeSinceStartup, time; }
     public static class Debug { public static void Log(string message) { } }
 }
 public class PersonBehaviour : UnityEngine.Component

@@ -32,6 +32,17 @@ const string TypeDNg60 = "type:DNg60";
 const string DescendingNeuron = "descending_neuron";
 const string CallbackSensory = "cb_sensory";
 
+internal static int Main(string[] args)
+{
+    if (args.Contains("--benchmark") || args.Contains("--mapping-report"))
+        return RunLegacy(args).GetAwaiter().GetResult();
+
+    if (args.Contains("--server") || args.Contains("--internal-msbuild-node"))
+        return Xunit.MicrosoftTestingPlatform.TestPlatformTestFramework.RunAsync(args, PersonConnectome.Runtime.Tests.SelfRegisteredExtensions.AddSelfRegisteredExtensions).GetAwaiter().GetResult();
+
+    return Xunit.Runner.InProc.SystemConsole.ConsoleRunner.Run(args).GetAwaiter().GetResult();
+}
+
 internal static async Task<int> RunLegacy(string[] args)
 {
     if (args.Contains("--benchmark"))

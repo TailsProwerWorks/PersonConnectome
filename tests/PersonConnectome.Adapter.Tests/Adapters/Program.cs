@@ -15,6 +15,7 @@ internal static class Program
             ("explicit limb loss emits one measured injury event", LimbLossEvents),
             ("jukebox and child playback feed current directional audio", JukeboxAudio),
             ("audio source scans stay bounded and exclude self sources", BoundedAudioSources),
+            ("component discovery refreshes child components after bounded expiry", ComponentDiscoveryRefresh),
             ("terminal motors and grips clear immediately", TerminalStop),
             ("native pose context actions are suppressed", ContextMenuPoseActions),
             ("unconscious and locally damaged limbs clear old commands", IncapableStop),
@@ -367,6 +368,29 @@ internal static class Program
         foreach (var source in sources) source.isPlaying = false;
         Equal(0f, f.Adapter.Read().Sound);
         Physics2D.Hits = []; frame = f.Adapter.Read(); Equal(0f, frame.Sound); True(!frame.SoundLimited);
+    }
+
+    private static void ComponentDiscoveryRefresh()
+    {
+        var f = new Fixture();
+        var item = new GameObject("External speaker"); item.AddComponent<PhysicalBehaviour>();
+        var collider = item.AddComponent<Collider2D>(); collider.Surface = new Vector2(2f, 0f);
+        var child = new GameObject("Child source"); child.transform.SetParent(item.transform); child.transform.position = new Vector3(2f, 0f, 0f);
+        Physics2D.Hits = [collider];
+        Time.realtimeSinceStartup = 0f; Time.time = 0f;
+        Equal(0f, f.Adapter.Read().Sound);
+
+        var source = child.AddComponent<AudioSource>(); source.isPlaying = true; source.volume = 1f;
+        Time.realtimeSinceStartup = 1f; Time.time = 1f;
+        Equal(0f, f.Adapter.Read().Sound); // Hints alone do not force a burst refresh.
+        Time.realtimeSinceStartup = 4f; Time.time = 4f;
+        True(f.Adapter.Read().Sound > 0f); // Maximum age discovers a component on an existing child.
+
+        source.isPlaying = false;
+        var replacement = child.AddComponent<AudioSource>(); replacement.isPlaying = true; replacement.volume = 1f;
+        Time.realtimeSinceStartup = 8f; Time.time = 8f;
+        True(f.Adapter.Read().Sound > 0f); // Refresh also sees a replacement without owner count changes.
+        Physics2D.Hits = []; Time.realtimeSinceStartup = 0f; Time.time = 0f;
     }
 
     private static void BloodAndVitality()

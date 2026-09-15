@@ -13,7 +13,47 @@ permissions:
   contents: read
 
 jobs:
+  validate:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore test projects
+        run: dotnet restore PersonConnectome.slnx
+
+      - name: Verify formatting
+        run: dotnet format PersonConnectome.slnx --verify-no-changes --no-restore
+
+      - name: Build runtime tests
+        run: dotnet build tests/PersonConnectome.Runtime.Tests/PersonConnectome.Runtime.Tests.csproj -c Release --no-restore
+
+      - name: Run runtime tests
+        run: dotnet test tests/PersonConnectome.Runtime.Tests/PersonConnectome.Runtime.Tests.csproj -c Release --no-build --no-restore
+
+      - name: Verify benchmark and mapping commands
+        run: |
+          dotnet run --project tests/PersonConnectome.Runtime.Tests -c Release --no-build --no-restore -- --benchmark
+          dotnet run --project tests/PersonConnectome.Runtime.Tests -c Release --no-build --no-restore -- --mapping-report
+
+      - name: Run adapter tests
+        run: dotnet test tests/PersonConnectome.Adapter.Tests/PersonConnectome.Adapter.Tests.csproj -c Release --no-restore
+
+      - name: Check mod source safety
+        shell: pwsh
+        run: ./scripts/ai/Test-ModSourceSafety.ps1
+
+      - name: Check deployment discovery logic
+        shell: pwsh
+        run: ./scripts/ai/Test-DeployDiscovery.ps1
+
   package:
+    needs: validate
     runs-on: windows-latest
     steps:
       - name: Check out source

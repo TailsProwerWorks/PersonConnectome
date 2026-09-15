@@ -10,6 +10,7 @@
     <NoWarn>$(NoWarn);CS0649;CS7022;CS8632</NoWarn>
     <IsTestProject>true</IsTestProject>
     <IsPackable>false</IsPackable>
+    <StartupObject>Program</StartupObject>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.0" />

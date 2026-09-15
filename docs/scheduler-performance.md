@@ -85,13 +85,16 @@ The next pass keeps the full graph and configured neural cadence. `LifBrain` now
 uses dense per-neuron value/presence arrays with reusable sparse ID lists for
 pending input, active cells, priority input and scheduled firing candidates.
 This removes per-tick dictionary/hash-set work without changing integration,
-threshold, refractory or propagation rules. The People Playground adapter caches
-component discovery (with topology and newly-added-component invalidation),
-refreshes limb discovery periodically, and continues reading live component
-state each sample. Telemetry no longer hides every row before rebuilding the
-same page; UI refresh cost is measured separately. `VisionRadius` is pushed to
-the live adapter before every sensor read, so inspector changes take effect
-without respawning.
+threshold, refractory or propagation rules. The People Playground adapter
+caches component discovery per nearby owner. Direct component and child counts
+act as cheap invalidation hints, while a maximum age of three game-seconds catches
+additions or replacements on existing children. At most four stale owners are
+rebuilt and four destroyed entries are pruned per sensor sample; discovery
+arrays are reused when their size is unchanged. Limb discovery still refreshes
+periodically, and live component state is read each sample. Telemetry no longer
+hides every row before rebuilding the same page; UI refresh cost is measured
+separately. `VisionRadius` is pushed to the live adapter before every sensor
+read, so inspector changes take effect without respawning.
 
 The controller now reports sensor, brain, actuator and UI milliseconds in the
 telemetry header. The offline six-person benchmark warms six real-graph brains
