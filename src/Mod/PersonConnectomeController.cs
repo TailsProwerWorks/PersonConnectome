@@ -20,6 +20,9 @@ namespace Mod
         // Experimental adapter-local posture feedback; disabled until native
         // standing validation is complete.
         public bool JointAwareStandingControllerEnabled;
+        // Frozen by default. Teach mode switches only the connectome to plastic
+        // mode; the optional adapter-local posture controller stays disabled.
+        public ConnectomeLearningMode LearningMode = ConnectomeLearningMode.FrozenBaseline;
 
         private LifBrain? brain;
         private PeoplePlaygroundPersonAdapter? adapter;
@@ -29,6 +32,7 @@ namespace Mod
         private readonly ManualInputState manualInput = new();
         private float accumulator;
         private float sampleElapsed;
+        private bool hasStandingReward;
         private bool acceptingEvents;
         private bool pendingPoseSweep;
         private bool directFlyControl = true;
@@ -41,6 +45,8 @@ namespace Mod
         private readonly Dictionary<LimbBehaviour, NativeAssistSnapshot> directControlSnapshots = [];
         private readonly List<NativePoseSnapshot> directControlPoseSnapshotValues = [];
         private readonly Dictionary<RagdollPose, NativePoseSnapshot> directControlPoseSnapshots = [];
+        private readonly List<string> plasticityUndoHistory = [];
+        private string? bestPlasticityMemory;
         private const float DirectControlTopologyCheckSeconds = .25f;
         // The fingerprint catches the common root-level changes cheaply.  It
         // cannot see components added below an existing child, so periodically
@@ -54,6 +60,7 @@ namespace Mod
         private static readonly List<PersonConnectomeController> activeControllers = [];
         private static PersonConnectomeController? activeTrainingController;
         private const string TrainingProfileKey = "PersonConnectome.Training.Profile";
+        private const string BestPlasticityProfileSuffix = ".best-plasticity";
 
         public bool DirectFlyControlEnabled => directFlyControl;
 
@@ -69,8 +76,9 @@ namespace Mod
                 {
                     IsDirectFlyControlEnabled = () => directFlyControl,
                     SetDirectFlyControl = SetDirectFlyControl,
-                    TrainingStatus = () => adapter == null ? "TEACH: unavailable" : adapter.TrainingSession.StatusText + "\n" + adapter.StandingControlSummary,
+                    TrainingStatus = GetTrainingStatus,
                     StartTraining = StartTrainingTrial,
+                    EndTraining = EndTrainingTrial,
                     ToggleTrainingPause = ToggleTrainingPause,
                     GivePositiveTrainingFeedback = GivePositiveTrainingFeedback,
                     GiveNegativeTrainingFeedback = GiveNegativeTrainingFeedback,
@@ -120,7 +128,9 @@ namespace Mod
 
             // Mirror inspector changes without recreating the adapter. The
             // standing controller remains opt-in and resets when disabled.
+            if (adapter.TrainingSession.IsActive) JointAwareStandingControllerEnabled = false;
             adapter.SetJointAwareStandingControllerEnabled(JointAwareStandingControllerEnabled);
+            brain.SetLearningMode(LearningMode);
 
             var rate = float.IsNaN(TickRateHz) || float.IsInfinity(TickRateHz) ? 20f : Mathf.Clamp(TickRateHz, 1f, 60f);
             var interval = 1f / rate;
@@ -137,6 +147,11 @@ namespace Mod
                 var sensory = sensor.Read();
                 var sensorMs = (Time.realtimeSinceStartup - sensorStarted) * 1000f;
                 var brainStarted = Time.realtimeSinceStartup;
+                if (adapter.TrainingSession.IsActive && !adapter.TrainingSession.LearningPaused && hasStandingReward)
+                {
+                    brain.AdvanceLearningTime(sampleElapsed);
+                    brain.ApplyReinforcement(adapter.TrainingSession.StandingScore, sampleElapsed);
+                }
                 var command = brain.Step(sensory, sampleElapsed, manualInput);
                 var brainMs = (Time.realtimeSinceStartup - brainStarted) * 1000f;
                 var actuatorStarted = Time.realtimeSinceStartup;
@@ -149,6 +164,11 @@ namespace Mod
             }
 
             adapter.RefreshStandingControl(Time.fixedDeltaTime);
+            if (adapter.TrainingSession.IsActive)
+            {
+                hasStandingReward = true;
+                if (adapter.TrainingSession.ConsumeBestScoreImproved()) bestPlasticityMemory = brain.SerializeLearnedMemory();
+            }
         }
 
         private static void RebalanceTickPhases()
@@ -201,6 +221,7 @@ namespace Mod
             activeControllers.Remove(this);
             RebalanceTickPhases();
             sampleElapsed = 0f;
+            hasStandingReward = false;
             pendingDirectControlMs = 0f;
             statusDisplay?.SetActive(false);
             manualInput.Deactivate();
@@ -271,6 +292,9 @@ namespace Mod
 
         private void SetDirectFlyControl(bool enabled)
         {
+            // Teach mode is defined as connectome-only control. Do not allow a
+            // UI toggle to restore native balance/pose helpers mid-trial.
+            if (!enabled && adapter?.TrainingSession.IsActive == true) return;
             if (directFlyControl == enabled)
             {
                 if (enabled) ApplyDirectFlyControl();
@@ -286,8 +310,30 @@ namespace Mod
         {
             if (adapter == null || !adapter.IsUsable) return;
             if (!TryClaimTrainingController(this)) return;
-            JointAwareStandingControllerEnabled = true;
+            SetDirectFlyControl(true);
+            LearningMode = ConnectomeLearningMode.PlasticConnectome;
+            JointAwareStandingControllerEnabled = false;
+            brain?.SetLearningMode(LearningMode);
+            hasStandingReward = false;
+            plasticityUndoHistory.Clear();
             adapter.StartTrainingTrial();
+        }
+
+        private void EndTrainingTrial()
+        {
+            adapter?.TrainingSession.Stop();
+            adapter?.SetJointAwareStandingControllerEnabled(false);
+            if (brain != null)
+            {
+                brain.ResetTransientLearningState();
+                LearningMode = brain.LearnedSynapseCount > 0 ?
+                    ConnectomeLearningMode.FrozenLearnedConnectome : ConnectomeLearningMode.FrozenBaseline;
+                brain.SetLearningMode(LearningMode);
+            }
+            JointAwareStandingControllerEnabled = false;
+            hasStandingReward = false;
+            plasticityUndoHistory.Clear();
+            ClearActiveTrainingController(this);
         }
 
         private static bool TryClaimTrainingController(PersonConnectomeController controller)
@@ -303,16 +349,78 @@ namespace Mod
         }
 
         private void ToggleTrainingPause() => adapter?.ToggleTrainingPause();
-        private void GivePositiveTrainingFeedback() => adapter?.GiveTrainingFeedback(true);
-        private void GiveNegativeTrainingFeedback() => adapter?.GiveTrainingFeedback(false);
-        private void UndoTrainingFeedback() => adapter?.UndoTrainingFeedback();
-        private void RestoreBestTrainingVersion() => adapter?.RestoreBestTrainingVersion();
-        private void ResetTrainingSkill() => adapter?.ResetTrainingSkill();
+        private string GetTrainingStatus()
+        {
+            if (adapter == null) return "TEACH: unavailable";
+            var plasticity = brain == null ? "PLASTICITY: unavailable" : brain.LearningStatusText;
+            return adapter.TrainingSession.StatusText + "\n" + adapter.StandingControlSummary + "\n" + plasticity;
+        }
+
+        private void GivePositiveTrainingFeedback()
+        {
+            CapturePlasticityUndoPoint();
+            adapter?.GiveTrainingFeedback(true);
+            if (adapter?.TrainingSession.IsActive == true && !adapter.TrainingSession.LearningPaused)
+                ApplyManualReinforcement(1f);
+        }
+
+        private void GiveNegativeTrainingFeedback()
+        {
+            CapturePlasticityUndoPoint();
+            adapter?.GiveTrainingFeedback(false);
+            if (adapter?.TrainingSession.IsActive == true && !adapter.TrainingSession.LearningPaused)
+                ApplyManualReinforcement(-1f);
+        }
+        private void UndoTrainingFeedback()
+        {
+            adapter?.UndoTrainingFeedback();
+            if (plasticityUndoHistory.Count == 0 || brain == null) return;
+            var index = plasticityUndoHistory.Count - 1;
+            brain.TryLoadLearnedMemory(plasticityUndoHistory[index]);
+            plasticityUndoHistory.RemoveAt(index);
+        }
+        private void RestoreBestTrainingVersion()
+        {
+            var serialized = bestPlasticityMemory;
+            if (brain == null || serialized == null || serialized.Length == 0) return;
+            brain.TryLoadLearnedMemory(serialized);
+        }
+        private void ResetTrainingSkill()
+        {
+            adapter?.ResetTrainingSkill();
+            brain?.ResetLearnedMemory();
+            if (adapter?.TrainingSession.IsActive != true)
+            {
+                LearningMode = ConnectomeLearningMode.FrozenBaseline;
+                brain?.SetLearningMode(LearningMode);
+                JointAwareStandingControllerEnabled = false;
+                adapter?.SetJointAwareStandingControllerEnabled(false);
+            }
+            hasStandingReward = false;
+            plasticityUndoHistory.Clear();
+            bestPlasticityMemory = null;
+        }
+
+        private void CapturePlasticityUndoPoint()
+        {
+            if (brain == null || adapter?.TrainingSession.IsActive != true || adapter.TrainingSession.LearningPaused) return;
+            if (plasticityUndoHistory.Count >= 64) plasticityUndoHistory.RemoveAt(0);
+            plasticityUndoHistory.Add(brain.SerializeLearnedMemory());
+        }
+
+        private void ApplyManualReinforcement(float reward)
+        {
+            if (brain == null) return;
+            brain.ApplyFeedbackReinforcement(reward);
+        }
 
         private void SaveTrainingProfile()
         {
             if (adapter == null) return;
             PlayerPrefs.SetString(TrainingProfileKey, adapter.TrainingSession.Serialize());
+            if (brain != null) PlayerPrefs.SetString(TrainingProfileKey + ".plasticity", brain.SerializeLearnedMemory());
+            if (!String.IsNullOrEmpty(bestPlasticityMemory)) PlayerPrefs.SetString(TrainingProfileKey + BestPlasticityProfileSuffix, bestPlasticityMemory);
+            else PlayerPrefs.DeleteKey(TrainingProfileKey + BestPlasticityProfileSuffix);
             PlayerPrefs.Save();
         }
 
@@ -320,6 +428,16 @@ namespace Mod
         {
             if (adapter == null || !PlayerPrefs.HasKey(TrainingProfileKey)) return;
             adapter.TrainingSession.TryLoad(PlayerPrefs.GetString(TrainingProfileKey, String.Empty));
+            var loadedPlasticity = false;
+            if (brain != null && PlayerPrefs.HasKey(TrainingProfileKey + ".plasticity"))
+                loadedPlasticity = brain.TryLoadLearnedMemory(PlayerPrefs.GetString(TrainingProfileKey + ".plasticity", String.Empty));
+            bestPlasticityMemory = PlayerPrefs.HasKey(TrainingProfileKey + BestPlasticityProfileSuffix) ?
+                PlayerPrefs.GetString(TrainingProfileKey + BestPlasticityProfileSuffix, String.Empty) : null;
+            if (brain != null && loadedPlasticity && !adapter.TrainingSession.IsActive)
+            {
+                LearningMode = ConnectomeLearningMode.FrozenLearnedConnectome;
+                brain.SetLearningMode(LearningMode);
+            }
         }
 
         private void ApplyDirectFlyControl()

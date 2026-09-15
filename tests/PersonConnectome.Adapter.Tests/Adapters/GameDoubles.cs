@@ -188,6 +188,7 @@ namespace UnityEngine
         public static bool HasKey(string key) => Values.ContainsKey(key);
         public static string GetString(string key, string fallback = "") => Values.TryGetValue(key, out var value) ? value : fallback;
         public static void SetString(string key, string value) => Values[key] = value;
+        public static void DeleteKey(string key) => Values.Remove(key);
         public static void Save() { }
     }
 }
@@ -318,7 +319,7 @@ namespace Mod
         public Func<bool> IsDirectFlyControlEnabled;
         public Action<bool> SetDirectFlyControl;
         public Func<string> TrainingStatus;
-        public Action StartTraining, ToggleTrainingPause, GivePositiveTrainingFeedback, GiveNegativeTrainingFeedback, UndoTrainingFeedback, RestoreBestTrainingVersion, ResetTrainingSkill, SaveTrainingProfile, LoadTrainingProfile;
+        public Action StartTraining, EndTraining, ToggleTrainingPause, GivePositiveTrainingFeedback, GiveNegativeTrainingFeedback, UndoTrainingFeedback, RestoreBestTrainingVersion, ResetTrainingSkill, SaveTrainingProfile, LoadTrainingProfile;
     }
 
     // Lifecycle tests only need a neutral brain; neural-source tests use their own harness.
@@ -327,10 +328,20 @@ namespace Mod
         public int StepCount;
         public float LastElapsed;
         public string Status => "test";
+        public string LearningStatusText => "PLASTICITY: test";
+        public int LearnedSynapseCount => 0;
         public static LifBrain TryCreate(out string status) { status = "test"; return new(); }
         public FlyMotorCommand Step(SensoryFrame frame) => default;
         public FlyMotorCommand Step(SensoryFrame frame, float elapsed) { StepCount++; LastElapsed = elapsed; return default; }
         public FlyMotorCommand Step(SensoryFrame frame, float elapsed, ManualInputState manualInput) { StepCount++; LastElapsed = elapsed; return default; }
+        public void SetLearningMode(Mod.Core.ConnectomeLearningMode mode) { }
+        public void AdvanceLearningTime(float elapsedSeconds) { }
+        public int ApplyReinforcement(float reward, float elapsedSeconds = .05f) => 0;
+        public int ApplyFeedbackReinforcement(float reward) => 0;
+        public void ResetTransientLearningState() { }
+        public void ResetLearnedMemory() { }
+        public string SerializeLearnedMemory() => String.Empty;
+        public bool TryLoadLearnedMemory(string serialized) => false;
         public void Stop() { }
     }
     internal class PersonConnectomeStatusDisplay

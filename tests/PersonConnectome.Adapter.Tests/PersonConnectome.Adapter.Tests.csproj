@@ -36,6 +36,7 @@
     <Compile Include="../../src/Core/IBodyActuator.cs" Link="src/Core/IBodyActuator.cs" />
     <Compile Include="../../src/Core/IBodySensor.cs" Link="src/Core/IBodySensor.cs" />
     <Compile Include="../../src/Core/FlyMotorCommand.cs" Link="src/Core/FlyMotorCommand.cs" />
+    <Compile Include="../../src/Core/ConnectomeLearningMode.cs" Link="src/Core/ConnectomeLearningMode.cs" />
     <Compile Include="../../src/Core/SensoryFrame.cs" Link="src/Core/SensoryFrame.cs" />
     <Compile Include="../../src/UI/ManualInputState.cs" Link="src/UI/ManualInputState.cs" />
   </ItemGroup>

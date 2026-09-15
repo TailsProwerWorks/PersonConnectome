@@ -101,7 +101,8 @@ public sealed class AdapterScenarioTests
             yield return Case("standing controller is deterministic and rate bounded", "StandingControllerDeterministic");
             yield return Case("standing controller gives individual joints distinct targets", "StandingControllerDifferentiatesJoints");
             yield return Case("standing controller is opt-in and leaves the neural tick path alone", "StandingControllerOptIn");
-            yield return Case("teach feedback updates and restores a validated standing profile", "TrainingSessionFeedback");
+            yield return Case("teach mode observes posture without driving standing joints", "TrainingObservesWithoutStandingAssist");
+            yield return Case("teach feedback records passive scoring without owning an actuator", "TrainingSessionFeedback");
         }
     }
 

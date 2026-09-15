@@ -85,6 +85,11 @@ var tests = new (string Name, Action Run)[]
     ("lost movement authority clears motor requests", LostMovementAuthorityClearsMotorRequests),
     ("published fly command matches telemetry and resets", PublishedCommandMatchesTelemetryAndResets),
     ("fractional halt activity is published without changing its contract", FractionalHaltContract),
+    ("reward plasticity is selective, bounded and persistent", RewardPlasticityIsSelectiveAndPersistent),
+    ("plasticity requires both eligibility and reinforcement", PlasticityRequiresEligibilityAndReward),
+    ("pair order produces the documented eligibility sign", PlasticityPairOrder),
+    ("feedback is an impulse rather than a tick-scaled reward", FeedbackRewardIsAnImpulse),
+    ("learned playback applies deltas without further plasticity", FrozenLearnedPlayback),
     ("manual looming overrides qualify and suppress neural escape evidence", ManualVisualEscapeQualification),
     ("escape evidence expires across long neural tick gaps", EscapeEvidenceExpiresAcrossLongTickGap),
     ("motor reversals are rate limited", MotorReversalsAreRateLimited),
@@ -1458,6 +1463,8 @@ static void BundledPayloadIdentity()
     Equal(176422, brain.BrainMap.NeuronCount);
     Equal(141781, brain.BrainMap.Points.Length);
     True(brain.BrainMap.Classes.Length > 0, "real asset superclass list unavailable");
+    True(brain.Plasticity.SelectedEdgeCount > 0, "real graph plasticity catalog is empty");
+    Console.WriteLine("PLASTIC catalog selected=" + brain.Plasticity.SelectedEdgeCount + " rule=" + brain.Plasticity.RuleName);
     Console.WriteLine("SOMA located=" + brain.BrainMap.LocatedCount + " displayed=" + brain.BrainMap.Points.Length);
 
     var corrupted = Carrier(bytes);
@@ -1582,6 +1589,97 @@ static void SensoryRefractoryRecovery()
 }
 
 static LifBrain OneNeuronBrain() => LifBrain.CreateForTest(1, [0, 0], [], []);
+
+static void RewardPlasticityIsSelectiveAndPersistent()
+{
+    var brain = LifBrain.CreateForTest(3, [0, 2, 2, 2], [1, 2], [1f, 1f]);
+    brain.SetLearningMode(ConnectomeLearningMode.PlasticConnectome);
+    var baseline = brain.Plasticity.EffectiveWeight(0, 1f, 1);
+    brain.Plasticity.RecordPresynaptic(0);
+    brain.Plasticity.RecordPostsynaptic(1);
+    True(brain.ApplyReinforcement(1f, .05f) > 0);
+    var learned = brain.Plasticity.EffectiveWeight(0, 1f, 1);
+    True(learned > baseline && learned <= 2f, "reward must increase only the bounded selected efficacy");
+    Equal(1f, brain.Plasticity.EffectiveWeight(1, 1f, 1));
+    True(brain.SerializeLearnedMemory().Length < 4096, "bounded fixture profile must stay compact");
+
+    var restored = LifBrain.CreateForTest(3, [0, 2, 2, 2], [1, 2], [1f, 1f]);
+    restored.SetLearningMode(ConnectomeLearningMode.PlasticConnectome);
+    True(restored.TryLoadLearnedMemory(brain.SerializeLearnedMemory()));
+    Equal(learned, restored.Plasticity.EffectiveWeight(0, 1f, 1));
+}
+
+static void PlasticityRequiresEligibilityAndReward()
+{
+    var noReward = LifBrain.CreateForTest(2, [0, 1, 1], [1], [1f]);
+    noReward.SetLearningMode(ConnectomeLearningMode.PlasticConnectome);
+    noReward.Plasticity.RecordPresynaptic(0);
+    noReward.Plasticity.RecordPostsynaptic(1);
+    Equal(0, noReward.ApplyReinforcement(0f, .05f));
+    Equal(1f, noReward.Plasticity.EffectiveWeight(0, 1f, 1));
+
+    var noEligibility = LifBrain.CreateForTest(2, [0, 1, 1], [1], [1f]);
+    noEligibility.SetLearningMode(ConnectomeLearningMode.PlasticConnectome);
+    Equal(0, noEligibility.ApplyReinforcement(1f, .05f));
+    Equal(1f, noEligibility.Plasticity.EffectiveWeight(0, 1f, 1));
+}
+
+static void PlasticityPairOrder()
+{
+    var preThenPost = LifBrain.CreateForTest(2, [0, 1, 1], [1], [1f]);
+    preThenPost.SetLearningMode(ConnectomeLearningMode.PlasticConnectome);
+    preThenPost.Plasticity.RecordPresynaptic(0);
+    preThenPost.Plasticity.RecordPostsynaptic(1);
+    preThenPost.ApplyReinforcement(1f, .05f);
+
+    var postThenPre = LifBrain.CreateForTest(2, [0, 1, 1], [1], [1f]);
+    postThenPre.SetLearningMode(ConnectomeLearningMode.PlasticConnectome);
+    postThenPre.Plasticity.RecordPostsynaptic(1);
+    postThenPre.Plasticity.RecordPresynaptic(0);
+    postThenPre.ApplyReinforcement(1f, .05f);
+    True(preThenPost.Plasticity.EffectiveWeight(0, 1f, 1) > 1f);
+    True(postThenPre.Plasticity.EffectiveWeight(0, 1f, 1) < 1f);
+}
+
+static void FeedbackRewardIsAnImpulse()
+{
+    var continuous = LifBrain.CreateForTest(2, [0, 1, 1], [1], [1f]);
+    continuous.SetLearningMode(ConnectomeLearningMode.PlasticConnectome);
+    continuous.Plasticity.RecordPresynaptic(0);
+    continuous.Plasticity.RecordPostsynaptic(1);
+    continuous.ApplyReinforcement(1f, .05f);
+    var continuousDelta = continuous.Plasticity.EffectiveWeight(0, 1f, 1) - 1f;
+
+    var feedback = LifBrain.CreateForTest(2, [0, 1, 1], [1], [1f]);
+    feedback.SetLearningMode(ConnectomeLearningMode.PlasticConnectome);
+    feedback.Plasticity.RecordPresynaptic(0);
+    feedback.Plasticity.RecordPostsynaptic(1);
+    feedback.ApplyFeedbackReinforcement(1f);
+    var feedbackDelta = feedback.Plasticity.EffectiveWeight(0, 1f, 1) - 1f;
+    True(feedbackDelta > continuousDelta * 10f, "discrete Good/Bad must not be attenuated by a 50 ms tick");
+    True(feedback.LearningStatusText.Contains("feedback +1.000"));
+}
+
+static void FrozenLearnedPlayback()
+{
+    var brain = LifBrain.CreateForTest(2, [0, 1, 1], [1], [1f]);
+    brain.SetLearningMode(ConnectomeLearningMode.PlasticConnectome);
+    brain.Plasticity.RecordPresynaptic(0);
+    brain.Plasticity.RecordPostsynaptic(1);
+    brain.ApplyFeedbackReinforcement(1f);
+    var learned = brain.Plasticity.EffectiveWeight(0, 1f, 1);
+    True(learned > 1f);
+
+    brain.SetLearningMode(ConnectomeLearningMode.FrozenLearnedConnectome);
+    Equal(learned, brain.Plasticity.EffectiveWeight(0, 1f, 1));
+    brain.Plasticity.RecordPresynaptic(0);
+    brain.Plasticity.RecordPostsynaptic(1);
+    Equal(0, brain.ApplyFeedbackReinforcement(-1f));
+    Equal(learned, brain.Plasticity.EffectiveWeight(0, 1f, 1));
+
+    brain.SetLearningMode(ConnectomeLearningMode.FrozenBaseline);
+    Equal(1f, brain.Plasticity.EffectiveWeight(0, 1f, 1));
+}
 
 static SensoryFrame Healthy(float velocity = 0f, float light = 0f, float sound = 0f, float touch = 0f, float physicalContact = 0f, float heartbeat = 0f) => new()
 {

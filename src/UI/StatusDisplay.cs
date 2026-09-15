@@ -16,6 +16,7 @@ namespace Mod.UI
         public Action<bool>? SetDirectFlyControl;
         public Func<string>? TrainingStatus;
         public Action? StartTraining;
+        public Action? EndTraining;
         public Action? ToggleTrainingPause;
         public Action? GivePositiveTrainingFeedback;
         public Action? GiveNegativeTrainingFeedback;
@@ -79,6 +80,7 @@ namespace Mod.UI
         private readonly Action<bool>? setDirectFlyControl;
         private readonly Func<string>? trainingStatus;
         private readonly Action? startTraining;
+        private readonly Action? endTraining;
         private readonly Action? toggleTrainingPause;
         private readonly Action? givePositiveTrainingFeedback;
         private readonly Action? giveNegativeTrainingFeedback;
@@ -147,7 +149,7 @@ namespace Mod.UI
         private TextMeshProUGUI trainingHeading = null!, trainingStatusLabel = null!, trainingExplanation = null!;
         private Button stimulationMaster = null!, directControlToggle = null!;
         private Button mixedMode = null!, manualOnlyMode = null!, zeroManual = null!, returnToLive = null!;
-        private Button trainingStart = null!, trainingPause = null!, trainingGood = null!, trainingBad = null!, trainingUndo = null!, trainingBest = null!, trainingReset = null!, trainingSave = null!, trainingLoad = null!;
+        private Button trainingStart = null!, trainingEnd = null!, trainingPause = null!, trainingGood = null!, trainingBad = null!, trainingUndo = null!, trainingBest = null!, trainingReset = null!, trainingSave = null!, trainingLoad = null!;
 
         public PersonConnectomeStatusDisplay(Transform anchor, ManualInputState inputState, StatusDisplayBindings? bindings = null)
         {
@@ -156,6 +158,7 @@ namespace Mod.UI
             this.setDirectFlyControl = bindings?.SetDirectFlyControl;
             this.trainingStatus = bindings?.TrainingStatus;
             this.startTraining = bindings?.StartTraining;
+            this.endTraining = bindings?.EndTraining;
             this.toggleTrainingPause = bindings?.ToggleTrainingPause;
             this.givePositiveTrainingFeedback = bindings?.GivePositiveTrainingFeedback;
             this.giveNegativeTrainingFeedback = bindings?.GiveNegativeTrainingFeedback;
@@ -393,8 +396,9 @@ namespace Mod.UI
             stimulationElements.Add(directControlToggle.gameObject);
             trainingHeading = AddText(stimulationElements, "TEACH MODE", Accent);
             trainingStatusLabel = AddText(stimulationElements, "", Foreground);
-            trainingExplanation = AddText(stimulationElements, "One person at a time. Good/Bad updates the bounded standing controller; it does not stimulate the fly brain.", Foreground);
+            trainingExplanation = AddText(stimulationElements, "One person at a time. Posture is observed without applying a standing or pose helper. Good/Bad reinforces recently eligible connectome edges; no Human action is injected. Movement must come through the ordinary brain-to-Human motor mapping.", Foreground);
             trainingStart = CreateButton(content, "Start / retry trial", () => { startTraining?.Invoke(); refreshTimer = 0f; }, out _);
+            trainingEnd = CreateButton(content, "End training", () => { endTraining?.Invoke(); refreshTimer = 0f; }, out _);
             trainingPause = CreateButton(content, "Pause learning", () => { toggleTrainingPause?.Invoke(); refreshTimer = 0f; }, out _);
             trainingGood = CreateButton(content, "Good", () => { givePositiveTrainingFeedback?.Invoke(); refreshTimer = 0f; }, out _);
             trainingBad = CreateButton(content, "Bad", () => { giveNegativeTrainingFeedback?.Invoke(); refreshTimer = 0f; }, out _);
@@ -403,7 +407,7 @@ namespace Mod.UI
             trainingReset = CreateButton(content, "Reset skill", () => { resetTrainingSkill?.Invoke(); refreshTimer = 0f; }, out _);
             trainingSave = CreateButton(content, "Save profile", () => { saveTrainingProfile?.Invoke(); refreshTimer = 0f; }, out _);
             trainingLoad = CreateButton(content, "Load profile", () => { loadTrainingProfile?.Invoke(); refreshTimer = 0f; }, out _);
-            foreach (var button in new[] { trainingStart, trainingPause, trainingGood, trainingBad, trainingUndo, trainingBest, trainingReset, trainingSave, trainingLoad })
+            foreach (var button in new[] { trainingStart, trainingEnd, trainingPause, trainingGood, trainingBad, trainingUndo, trainingBest, trainingReset, trainingSave, trainingLoad })
             {
                 stimulationElements.Add(button.gameObject);
             }
@@ -568,16 +572,19 @@ namespace Mod.UI
             PlaceText(trainingStatusLabel, 0f, ref y, width, trainingStatus?.Invoke() ?? "TEACH: unavailable");
             PlaceText(trainingExplanation, 0f, ref y, width, trainingExplanation.text);
             SetRect((RectTransform)trainingStart.transform, 0f, y, width * .32f, 26f);
-            SetRect((RectTransform)trainingPause.transform, width * .34f, y, width * .32f, 26f);
-            SetRect((RectTransform)trainingGood.transform, width * .68f, y, width * .32f, 26f);
+            SetRect((RectTransform)trainingEnd.transform, width * .34f, y, width * .32f, 26f);
+            SetRect((RectTransform)trainingPause.transform, width * .68f, y, width * .32f, 26f);
             y += 30f;
-            SetRect((RectTransform)trainingBad.transform, 0f, y, width * .32f, 26f);
-            SetRect((RectTransform)trainingUndo.transform, width * .34f, y, width * .32f, 26f);
-            SetRect((RectTransform)trainingBest.transform, width * .68f, y, width * .32f, 26f);
+            SetRect((RectTransform)trainingGood.transform, 0f, y, width * .32f, 26f);
+            SetRect((RectTransform)trainingBad.transform, width * .34f, y, width * .32f, 26f);
+            SetRect((RectTransform)trainingUndo.transform, width * .68f, y, width * .32f, 26f);
             y += 30f;
-            SetRect((RectTransform)trainingReset.transform, 0f, y, width * .32f, 26f);
-            SetRect((RectTransform)trainingSave.transform, width * .34f, y, width * .32f, 26f);
-            SetRect((RectTransform)trainingLoad.transform, width * .68f, y, width * .32f, 26f);
+            SetRect((RectTransform)trainingBest.transform, 0f, y, width * .32f, 26f);
+            SetRect((RectTransform)trainingReset.transform, width * .34f, y, width * .32f, 26f);
+            SetRect((RectTransform)trainingSave.transform, width * .68f, y, width * .32f, 26f);
+            y += 30f;
+            SetRect((RectTransform)trainingLoad.transform, 0f, y, width * .32f, 26f);
+            y += 34f;
             var teachAvailable = trainingStatus != null;
             SetTrainingButtonsEnabled(teachAvailable);
             SetButtonColor(trainingStart, teachAvailable ? ActiveControl : Track);
@@ -588,6 +595,7 @@ namespace Mod.UI
         private void SetTrainingButtonsEnabled(bool enabled)
         {
             trainingStart.interactable = enabled;
+            trainingEnd.interactable = enabled;
             trainingPause.interactable = enabled;
             trainingGood.interactable = enabled;
             trainingBad.interactable = enabled;
@@ -1497,7 +1505,7 @@ namespace Mod.UI
             stimulationHeading = stimulationPerson = stimulationStatus = stimulationExplanation = stimulationResponse = stimulationModeHeading = directControlHeading = directControlExplanation = directControlLabel = null!;
             trainingHeading = trainingStatusLabel = trainingExplanation = null!;
             stimulationMaster = directControlToggle = mixedMode = manualOnlyMode = zeroManual = returnToLive = null!;
-            trainingStart = trainingPause = trainingGood = trainingBad = trainingUndo = trainingBest = trainingReset = trainingSave = trainingLoad = null!;
+            trainingStart = trainingEnd = trainingPause = trainingGood = trainingBad = trainingUndo = trainingBest = trainingReset = trainingSave = trainingLoad = null!;
             ReleaseMap();
         }
 

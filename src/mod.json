@@ -10,6 +10,8 @@
   "Scripts": [
     "Mod/ModRegistration.cs",
     "Core/LifBrainFactory.cs",
+    "Core/ConnectomeLearningMode.cs",
+    "Core/RewardModulatedPlasticity.cs",
     "Core/IBodyActuator.cs",
     "Core/IBodySensor.cs",
     "Core/LifBrain.cs",

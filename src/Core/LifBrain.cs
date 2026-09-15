@@ -29,6 +29,7 @@ namespace Mod.Core
         public BrainMapSample? BrainMap => (asset as ModAsset)?.BrainMap;
 
         private readonly IConnectomeAsset asset;
+        private readonly RewardModulatedPlasticity plasticity;
         private readonly float[] potential;
         private readonly long[] refractoryUntil;
         private float[] pending;
@@ -60,6 +61,7 @@ namespace Mod.Core
         private float flyEscapeCooldown, flyEscapeQuiet, flyEscapeEvidenceSeconds;
         private bool flyEscapeArmed = true;
         private int sensoryQueued;
+        private float preAdvancedLearningSeconds;
         private bool hasPreviousLight;
         private float previousLight, lightOnDrive, lightOffDrive;
         private float forwardFilter, backwardFilter, yawFilter;
@@ -71,6 +73,7 @@ namespace Mod.Core
         private LifBrain(IConnectomeAsset asset)
         {
             this.asset = asset ?? throw new ArgumentNullException(nameof(asset));
+            plasticity = new RewardModulatedPlasticity(this.asset);
             potential = new float[asset.NeuronCount];
             refractoryUntil = new long[asset.NeuronCount];
             var sparseCapacity = Math.Min(asset.NeuronCount, MaxSpikesPerStep * 3);
@@ -97,7 +100,7 @@ namespace Mod.Core
         public string Status => "MaleCNS v1.0 " + asset.NeuronCount + " neurons / " + asset.EdgeCount +
             (stopped ? " STOPPED" : " queued=" + pendingIds.Count + " input-integrated=" + processedThisStep +
             " dropped-spikes=" + droppedThisStep + " fired=" + fired.Count + " input=" + Format(LastSensoryDrive) +
-            " request-forward=" + Format(lastCommand.FlyForward));
+            " request-forward=" + Format(lastCommand.FlyForward) + " | " + plasticity.StatusText);
 
         public string DisplaySummary
         {
@@ -112,6 +115,7 @@ namespace Mod.Core
                 return "NEURAL:\n  input=" + Format(LastSensoryDrive) + "  queued=" + pendingIds.Count + "  active=" + active.Count +
                     "\n  integrated=" + processedThisStep + "  decay-only=" + decayedThisStep + "  dropped-spikes=" + droppedThisStep +
                     "\n  fired=" + fired.Count + "/" + MaxSpikesPerStep + "  scheduler=" + scheduler +
+                    "\n  " + plasticity.StatusText +
                     (droppedThisStep > 0 ? "\nFiring-event limit reached; dropped spikes are not deferred. This is not a CPU-time measurement." : "");
             }
         }
@@ -147,6 +151,29 @@ namespace Mod.Core
         public int ActiveCount => active.Count;
         public bool IsStopped => stopped;
         public FlyMotorCommand LastCommand => lastCommand;
+        public RewardModulatedPlasticity Plasticity => plasticity;
+        public ConnectomeLearningMode LearningMode => plasticity.Mode;
+        public string LearningStatusText => plasticity.StatusText;
+        public int LearnedSynapseCount => plasticity.ModifiedEdgeCount;
+
+        public void SetLearningMode(ConnectomeLearningMode mode) => plasticity.SetMode(mode);
+        /// <summary>Advances plasticity time before a reward for the completed interval.</summary>
+        public void AdvanceLearningTime(float elapsedSeconds)
+        {
+            var seconds = GameElapsedSeconds(elapsedSeconds);
+            plasticity.BeginStep(seconds);
+            preAdvancedLearningSeconds += seconds;
+        }
+        public int ApplyReinforcement(float reward, float elapsedSeconds = DefaultStepSeconds) => plasticity.ApplyReward(reward, elapsedSeconds);
+        public int ApplyFeedbackReinforcement(float reward) => plasticity.ApplyRewardImpulse(reward);
+        public void ResetTransientLearningState()
+        {
+            plasticity.ResetTransientState();
+            preAdvancedLearningSeconds = 0f;
+        }
+        public void ResetLearnedMemory() => plasticity.ResetLearning();
+        public string SerializeLearnedMemory() => plasticity.Serialize();
+        public bool TryLoadLearnedMemory(string serialized) => plasticity.TryLoad(serialized);
 
         public bool DidFire(int neuronId) => neuronId >= 0 && neuronId < potential.Length && firedPresent[neuronId];
 
@@ -185,6 +212,14 @@ namespace Mod.Core
             }
 
             simulationTick++;
+            var learningSeconds = GameElapsedSeconds(elapsedSeconds);
+            if (preAdvancedLearningSeconds > 0f)
+            {
+                var alreadyAdvanced = Math.Min(preAdvancedLearningSeconds, learningSeconds);
+                preAdvancedLearningSeconds -= alreadyAdvanced;
+                learningSeconds -= alreadyAdvanced;
+            }
+            if (learningSeconds > 0f) plasticity.BeginStep(learningSeconds);
             processedThisStep = 0;
             droppedThisStep = 0;
             decayedThisStep = 0;
@@ -236,6 +271,8 @@ namespace Mod.Core
                 orderedActive.Clear();
                 simulationTick = 0;
                 backlogCursor = 0;
+                plasticity.ResetTransientState();
+                preAdvancedLearningSeconds = 0f;
                 stopped = true;
             }
 
@@ -360,6 +397,8 @@ namespace Mod.Core
             refractoryUntil[id] = simulationTick + RefractoryTicks + 1;
             fired.Add(id);
             firedPresent[id] = true;
+            plasticity.RecordPresynaptic(id);
+            plasticity.RecordPostsynaptic(id);
             QueueOutgoing(id, next, nextActiveState);
         }
 
@@ -462,7 +501,7 @@ namespace Mod.Core
                 // the exact recovery tick; earlier input cannot be integrated.
                 if (simulationTick + 1 < refractoryUntil[target]) continue;
                 var exists = nextPendingPresent[target];
-                next[target] += asset.WeightAt(edge) * sign;
+                next[target] += plasticity.EffectiveWeight(edge, asset.WeightAt(edge), sign);
                 // Existing pending entries already have an active target.
                 if (!exists)
                 {

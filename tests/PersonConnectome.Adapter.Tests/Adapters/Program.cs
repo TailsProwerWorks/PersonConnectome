@@ -98,7 +98,8 @@ internal static class Program
             ("standing controller is deterministic and rate bounded", StandingControllerDeterministic),
             ("standing controller gives individual joints distinct targets", StandingControllerDifferentiatesJoints),
             ("standing controller is opt-in and leaves the neural tick path alone", StandingControllerOptIn),
-            ("teach feedback updates and restores a validated standing profile", TrainingSessionFeedback)
+            ("teach mode observes posture without driving standing joints", TrainingObservesWithoutStandingAssist),
+            ("teach feedback records passive scoring without owning an actuator", TrainingSessionFeedback)
         ];
         var failures = 0;
         foreach (var (name, test) in tests)
@@ -235,15 +236,32 @@ internal static class Program
         True(!f.Adapter.JointAwareStandingControllerEnabled);
     }
 
+    private static void TrainingObservesWithoutStandingAssist()
+    {
+        var f = new Fixture();
+        f.Limb.HasBrain = true;
+        var body = f.Limb.gameObject.AddComponent<Rigidbody2D>();
+        body.velocity = new Vector2(0f, 0f);
+        var joint = f.Limb.gameObject.AddComponent<HingeJoint2D>();
+        joint.jointAngle = 20f;
+        joint.jointSpeed = 0f;
+        f.Limb.Joint = joint;
+        f.Adapter.Read();
+        f.Adapter.StartTrainingTrial();
+        f.Adapter.Apply(new PersonMotorCommand { MotionStopRequested = true }, false);
+        var callsBefore = f.Limb.MotorCalls;
+        f.Adapter.RefreshStandingControl(.05f);
+        Equal(callsBefore, f.Limb.MotorCalls);
+        True(f.Adapter.StandingControlSummary.Contains("observing only"));
+    }
+
     private static void TrainingSessionFeedback()
     {
-        var session = new PersonTrainingSession(new PersonStandingController());
-        var initialTiltGain = session.Parameters.TiltProportional;
-        var emptyProfile = new PersonTrainingSession(new PersonStandingController());
-        var emptyRestored = new PersonTrainingSession(new PersonStandingController());
+        var session = new PersonTrainingSession();
+        var emptyProfile = new PersonTrainingSession();
+        var emptyRestored = new PersonTrainingSession();
         True(emptyRestored.TryLoad(emptyProfile.Serialize()));
         session.GiveFeedback(true);
-        Equal(initialTiltGain, session.Parameters.TiltProportional);
         session.StartTrial();
         var standingObservation = new PersonObservation
         {
@@ -264,26 +282,27 @@ internal static class Program
         });
         session.Observe(standingObservation);
         True(session.StandingScore > .8f);
+        True(session.ConsumeBestScoreImproved());
+        True(!session.ConsumeBestScoreImproved());
         session.GiveFeedback(true);
-        True(session.FeedbackCount == 1 && session.Parameters.TiltProportional > initialTiltGain);
-        var learnedTiltGain = session.Parameters.TiltProportional;
+        True(session.FeedbackCount == 1);
         session.GiveFeedback(false);
         True(session.TrialScore == 0f);
         session.UndoLastFeedback();
-        Equal(learnedTiltGain, session.Parameters.TiltProportional);
         session.ToggleLearningPause();
         session.GiveFeedback(true);
         True(session.FeedbackCount == 1);
         session.ToggleLearningPause();
 
         var serialized = session.Serialize();
-        var restored = new PersonTrainingSession(new PersonStandingController());
+        var restored = new PersonTrainingSession();
         True(restored.TryLoad(serialized));
-        Equal(session.Parameters.TiltProportional, restored.Parameters.TiltProportional);
+        Equal(session.BestScore, restored.BestScore);
         True(!restored.TryLoad("not-a-profile"));
         session.ResetSkill();
-        Equal(initialTiltGain, session.Parameters.TiltProportional);
+        True(float.IsNegativeInfinity(session.BestScore));
     }
+
     private static void TerminalStop()
     {
         var f = new Fixture(); f.Adapter.Read(); f.Adapter.Apply(Moving, true);
@@ -466,6 +485,14 @@ internal static class Program
         type.GetMethod("LateUpdate", flags).Invoke(controller, null);
         Equal(0f, added.FakeUprightForce);
         Equal(0f, added.BalanceMuscleMovement);
+        controller.JointAwareStandingControllerEnabled = true;
+        type.GetMethod("StartTrainingTrial", flags).Invoke(controller, null);
+        True(!controller.JointAwareStandingControllerEnabled);
+        type.GetMethod("SetDirectFlyControl", flags).Invoke(controller, [false]);
+        True(controller.DirectFlyControlEnabled);
+        Equal(0f, f.Limb.FakeUprightForce);
+        Equal(0f, pose.UprightForceMultiplier);
+        type.GetMethod("EndTrainingTrial", flags).Invoke(controller, null);
         type.GetMethod("SetDirectFlyControl", flags).Invoke(controller, [false]);
         Equal(12f, f.Limb.FakeUprightForce);
         Equal(2f, f.Limb.BalanceMuscleMovement);

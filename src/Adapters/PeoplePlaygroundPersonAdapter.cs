@@ -209,8 +209,8 @@ namespace Mod.Adapters
         {
             get
             {
-                if (!standingControlEnabled) return "STAND: off";
-                if (lastMotorCommand.MotionStopRequested) return "STAND: paused by neural halt/brake";
+                if (!standingControlEnabled && !trainingSession.IsActive) return "STAND: off";
+                if (lastMotorCommand.MotionStopRequested && !trainingSession.IsActive) return "STAND: paused by neural halt/brake";
                 if (!hasReadFrame) return "STAND: waiting for native sample";
                 if (!IsUsable || !lastFrame.Alive || lastFrame.BrainDead ||
                     !lastFrame.ConsciousnessValid || lastFrame.Consciousness <= .8f)
@@ -218,6 +218,9 @@ namespace Mod.Adapters
                     return "STAND: paused by safety state";
                 }
                 if (!standingObservation.Torso.Valid) return "STAND: blocked (torso observation unavailable)";
+                if (!standingControlEnabled)
+                    return "STAND: observing only | limbs " + standingObservation.LimbCount + " | score " +
+                        trainingSession.StandingScore.ToString("0.00");
                 return "STAND: active | limbs " + standingObservation.LimbCount + " | targets " + standingTargets.Count + " | correction " +
                     standingController.LastPostureCorrection.ToString("0.0") + " deg/s | score " +
                     trainingSession.StandingScore.ToString("0.00");
@@ -227,13 +230,12 @@ namespace Mod.Adapters
         internal void StartTrainingTrial()
         {
             trainingSession.StartTrial();
-            SetJointAwareStandingControllerEnabled(true);
+            SetJointAwareStandingControllerEnabled(false);
         }
 
         internal void ToggleTrainingPause() => trainingSession.ToggleLearningPause();
         internal void GiveTrainingFeedback(bool positive) => trainingSession.GiveFeedback(positive);
         internal void UndoTrainingFeedback() => trainingSession.UndoLastFeedback();
-        internal void RestoreBestTrainingVersion() => trainingSession.RestoreBest();
         internal void ResetTrainingSkill() => trainingSession.ResetSkill();
 
         internal void SetJointAwareStandingControllerEnabled(bool enabled)
@@ -246,15 +248,16 @@ namespace Mod.Adapters
         }
 
         /// <summary>
-        /// Runs the optional adapter-local posture controller at physics cadence.
+        /// Samples the training objective and, only when separately enabled,
+        /// runs the optional adapter-local posture controller at physics cadence.
         /// It never steps the connectome or repeats walking/chemistry updates.
         /// </summary>
         internal void RefreshStandingControl(float elapsedSeconds)
         {
-            if (!standingControlEnabled) return;
+            if (!standingControlEnabled && !trainingSession.IsActive) return;
             if (!IsUsable || !hasReadFrame || !lastFrame.Alive || lastFrame.BrainDead ||
                 !lastFrame.ConsciousnessValid || lastFrame.Consciousness <= .8f ||
-                lastMotorCommand.MotionStopRequested)
+                (lastMotorCommand.MotionStopRequested && !trainingSession.IsActive))
             {
                 standingController.Reset();
                 standingTargets.Clear();
@@ -264,6 +267,12 @@ namespace Mod.Adapters
 
             ReadStandingObservation();
             trainingSession.Observe(standingObservation);
+            if (!standingControlEnabled)
+            {
+                standingController.Reset();
+                standingTargets.Clear();
+                return;
+            }
             standingController.Evaluate(standingObservation, lastMotorCommand, elapsedSeconds, standingTargets);
             for (var targetIndex = 0; targetIndex < standingTargets.Count; targetIndex++)
             {
@@ -344,7 +353,7 @@ namespace Mod.Adapters
             this.reportCollision = reportCollision;
             this.reportProjectile = reportProjectile;
             person = root.GetComponent<PersonBehaviour>();
-            trainingSession = new PersonTrainingSession(standingController);
+            trainingSession = new PersonTrainingSession();
             // Catalog identity is stable for this controller's lifetime; avoid
             // repeated Resources fallback scans when a custom install lacks it.
             pumpkinAsset = ModAPI.FindSpawnable("Pumpkin");

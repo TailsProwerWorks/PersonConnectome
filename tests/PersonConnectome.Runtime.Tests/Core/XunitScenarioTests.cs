@@ -38,6 +38,11 @@ public sealed class RuntimeScenarioTests
             yield return Case("lost movement authority clears motor requests", "LostMovementAuthorityClearsMotorRequests");
             yield return Case("published fly command matches telemetry and resets", "PublishedCommandMatchesTelemetryAndResets");
             yield return Case("fractional halt activity is published without changing its contract", "FractionalHaltContract");
+            yield return Case("reward plasticity is selective, bounded and persistent", "RewardPlasticityIsSelectiveAndPersistent");
+            yield return Case("plasticity requires both eligibility and reinforcement", "PlasticityRequiresEligibilityAndReward");
+            yield return Case("pair order produces the documented eligibility sign", "PlasticityPairOrder");
+            yield return Case("feedback is an impulse rather than a tick-scaled reward", "FeedbackRewardIsAnImpulse");
+            yield return Case("learned playback applies deltas without further plasticity", "FrozenLearnedPlayback");
             yield return Case("manual looming overrides qualify and suppress neural escape evidence", "ManualVisualEscapeQualification");
             yield return Case("escape evidence expires across long neural tick gaps", "EscapeEvidenceExpiresAcrossLongTickGap");
             yield return Case("motor reversals are rate limited", "MotorReversalsAreRateLimited");
