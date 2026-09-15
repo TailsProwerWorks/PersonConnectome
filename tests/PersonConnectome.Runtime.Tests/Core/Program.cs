@@ -1345,10 +1345,14 @@ static void NamedMotorReadout()
         for (var i = 0; i < 4; i++) brain.SetTestNeuronMetadata(i, i == 3 ? "cb_motor" : DescendingNeuron, "R");
         return brain;
     }
-    var brain = Create(); brain.SetTestPending(0, 1f); True(brain.Step(Healthy()).Walk > 0f, "walking DN must drive forward");
-    brain = Create(); brain.SetTestPending(0, 1f); brain.SetTestPending(1, 1f); True(brain.Step(Healthy()).Walk < 0f, "MDN must take priority over forward");
-    brain = Create(); brain.SetTestPending(0, 1f); brain.SetTestPending(2, 1f); Equal(0f, brain.Step(Healthy()).Walk);
-    brain = Create(); brain.SetTestPending(3, 1f); var command = brain.Step(Healthy() with { Nearby = 1f });
+    var brain = Create(); brain.SetTestPending(0, 1f); var command = brain.Step(Healthy());
+    True(command.Walk > 0f, "walking DN must drive forward"); True(command.FlyForward > 0f, "fly forward request must remain explicit");
+    brain = Create(); brain.SetTestPending(0, 1f); brain.SetTestPending(1, 1f); command = brain.Step(Healthy());
+    True(command.Walk < 0f, "MDN must take priority over forward"); True(command.FlyBackward > 0f, "fly backward request must remain explicit");
+    brain = Create(); brain.SetTestPending(0, 1f); brain.SetTestPending(2, 1f); command = brain.Step(Healthy());
+    Equal(0f, command.Walk); True(command.FlyHalt > 0f, "fly halt request must not be relabeled as a human joint");
+    brain = Create(); brain.SetTestPending(3, 1f); command = brain.Step(Healthy() with { Nearby = 1f });
+    True(command.FlyFeed > 0f, "MN9 must be reported as fly feed, not human grip");
     Equal(0f, command.Walk); Equal(0f, command.ReachGrab); Equal(0f, command.LeftGrip); Equal(0f, command.RightGrip);
     foreach (var stopPopulation in new[] { TypeDNg60, "type:AN19A018" })
     {
@@ -1363,6 +1367,7 @@ static void NamedMotorReadout()
     }
     brain = Create(); brain.SetTestPopulation("subclass:wm", 3); brain.SetTestPending(3, 1f);
     command = brain.Step(Healthy()); Equal(0f, command.Walk); Equal(0f, command.LeftArm); Equal(0f, command.RightArm);
+    True(command.FlyWingMotor > 0f, "wing motor activity must remain a fly channel");
 }
 
 static void PayloadChecksumVectors()

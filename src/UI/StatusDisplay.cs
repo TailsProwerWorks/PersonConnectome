@@ -45,14 +45,14 @@ namespace Mod.UI
         private Button mapZoomOut = null!, mapReset = null!, mapZoomIn = null!;
         private float mapZoom = 1f;
         private Vector2 mapPan;
-        private readonly TextMeshProUGUI[] motorLabels = new TextMeshProUGUI[7];
-        private readonly Image[] motorTracks = new Image[7], motorFills = new Image[7], motorCenters = new Image[7];
+        private readonly TextMeshProUGUI[] motorLabels = new TextMeshProUGUI[21];
+        private readonly Image[] motorTracks = new Image[21], motorFills = new Image[21], motorCenters = new Image[21];
         private readonly TextMeshProUGUI[] populationLabels = new TextMeshProUGUI[8];
         private readonly Image[] populationTracks = new Image[8], populationFills = new Image[8];
         private readonly Image[] spikeBars = new Image[120];
         private readonly List<TextMeshProUGUI> legendLabels = [];
         private readonly List<Image> legendColors = [];
-        private readonly float[] motorValues = new float[7];
+        private readonly float[] motorValues = new float[21];
         private readonly List<GameObject> motorElements = [];
         private readonly List<GameObject> brainElements = [];
         private readonly List<GameObject> stimulationElements = [];
@@ -78,7 +78,12 @@ namespace Mod.UI
         private const byte MapFlashLifetime = 4;
         private const float NeuralEscapeFlashSeconds = .35f;
         private static readonly string[] Pages = ["Overview", "Senses", "Brain", "Stimulation"];
-        private static readonly string[] MotorNames = ["Walk", "Left arm", "Right arm", "Left leg", "Right leg", "Core", "Head"];
+        private static readonly string[] MotorNames =
+        [
+            "Forward", "Yaw", "Backward", "Halt", "Brake", "Jump", "Takeoff", "Landing",
+            "Flight power", "Flight yaw", "Wing motor", "Groom antenna", "Groom head", "Groom leg",
+            "Groom abdomen", "Feed", "Courtship", "Song", "Song pulse", "Leg motor", "Leg asymmetry"
+        ];
         private static readonly string[] PopulationNames = ["type:DNp09", "type:MDN", "type:DNp01", "type:MN9", "type:LC4", "type:LPLC2", "type:R1-R6", "motor"];
         private static readonly Color Background = new(.035f, .055f, .075f, 1f);
         private static readonly Color Track = new(.1f, .15f, .19f, 1f);
@@ -247,7 +252,7 @@ namespace Mod.UI
                 telemetryHeadings.Add(heading);
                 telemetryElements.Add(heading.gameObject);
             }
-            motorHeading = AddText(motorElements, "REQUESTED MOTOR OUTPUT | -1 TO +1", Accent);
+            motorHeading = AddText(motorElements, "FLY REQUESTED OUTPUT | -1 TO +1", Accent);
             for (var i = 0; i < motorLabels.Length; i++)
             {
                 motorLabels[i] = AddText(motorElements, "", Foreground);
@@ -565,8 +570,10 @@ namespace Mod.UI
             return "LATEST NEURAL TICK\n" +
                 "tick " + brain.SimulationTick + " | fired " + brain.FiredCount + " | integrated " + brain.ProcessedCount + " | decay-only " + brain.DecayedCount +
                 " | queued " + brain.PendingCount + " | dropped-spikes " + brain.DroppedCount +
-                "\nREQUEST | walk " + FormatSigned(command.Walk) + " | arms " + FormatSigned(command.LeftArm) + "/" + FormatSigned(command.RightArm) +
-                " | legs " + FormatSigned(command.LeftLeg) + "/" + FormatSigned(command.RightLeg);
+                "\nFLY REQUEST | forward " + FormatSigned(command.FlyForward) + " | yaw " + FormatSigned(command.FlyYaw) +
+                " | backward " + FormatSigned(command.FlyBackward) + " | halt " + FormatSigned(command.FlyHalt) +
+                " | brake " + FormatSigned(command.FlyBrake) + " | flight-power " + FormatSigned(command.FlyFlightPower) +
+                " | feed " + FormatSigned(command.FlyFeed);
         }
 
         private void RefreshUi()
@@ -990,8 +997,13 @@ namespace Mod.UI
         {
             PlaceText(motorHeading, 0f, ref y, width, motorHeading.text);
             var command = brain.LastCommand;
-            motorValues[0] = command.Walk; motorValues[1] = command.LeftArm; motorValues[2] = command.RightArm;
-            motorValues[3] = command.LeftLeg; motorValues[4] = command.RightLeg; motorValues[5] = command.Core; motorValues[6] = command.Head;
+            motorValues[0] = command.FlyForward; motorValues[1] = command.FlyYaw; motorValues[2] = command.FlyBackward;
+            motorValues[3] = command.FlyHalt; motorValues[4] = command.FlyBrake; motorValues[5] = command.FlyJump;
+            motorValues[6] = command.FlyTakeoff; motorValues[7] = command.FlyLanding; motorValues[8] = command.FlyFlightPower;
+            motorValues[9] = command.FlyFlightYaw; motorValues[10] = command.FlyWingMotor; motorValues[11] = command.FlyGroomAntenna;
+            motorValues[12] = command.FlyGroomHead; motorValues[13] = command.FlyGroomLeg; motorValues[14] = command.FlyGroomAbdomen;
+            motorValues[15] = command.FlyFeed; motorValues[16] = command.FlyCourtship; motorValues[17] = command.FlySong;
+            motorValues[18] = command.FlySongPulse; motorValues[19] = command.FlyLegMotor; motorValues[20] = command.FlyLegMotorAsym;
             for (var i = 0; i < motorValues.Length; i++)
             {
                 var rowY = y;

@@ -54,13 +54,17 @@ namespace Mod.Adapters
         private readonly HashSet<PhysicalBehaviour> sampledOwners = [];
         private readonly List<Component> componentBuffer = [];
         private int componentCacheSweepIndex;
+        private int componentDiscoveryExpiryCursor;
+        private int currentDiscoveryRefreshBudget;
         private int limbDiscoverySamples;
         private int lastRootChildCount = -1;
         private const int MaxLightSpritesPerSample = 64;
         // Keep discovery work bounded even when many nearby objects expire together.
         private const int MaxComponentDiscoveryRefreshesPerSample = 4;
         private const int MaxComponentDiscoveryRemovalsPerSample = 4;
+        private const int MaxComponentDiscoveryExpiryChecksPerSample = 16;
         private const float ComponentDiscoveryMaxAgeSeconds = 3f;
+        private const float ComponentDiscoveryEvictionAgeSeconds = 10f;
         private const int LimbDiscoveryRefreshSamples = 20;
         private readonly RaycastHit2D[] visionLinecastHits = new RaycastHit2D[32];
         private const int MaxVisualCandidates = 16;
@@ -1195,6 +1199,7 @@ namespace Mod.Adapters
 
         private ComponentDiscovery GetComponentDiscovery(PhysicalBehaviour owner)
         {
+            if (componentCache.TryGetValue(owner, out var observed)) observed.LastObservedTime = Time.time;
             var firstOwnerThisSample = sampledOwners.Add(owner);
             if (!firstOwnerThisSample && componentCache.TryGetValue(owner, out var repeatedCached)) return repeatedCached;
             componentCache.TryGetValue(owner, out var cached);
@@ -1204,8 +1209,20 @@ namespace Mod.Adapters
             var expired = directHintsChanged || !IsFinite(age) || age < 0f || age >= ComponentDiscoveryMaxAgeSeconds;
             if (cached != null)
             {
-                if (directHintsChanged) return BuildComponentDiscovery(owner, cached);
-                if (expired) QueueDiscoveryRefresh(owner);
+                if (directHintsChanged)
+                {
+                    cached.TopologyDirty = true;
+                    if (currentDiscoveryRefreshBudget > 0)
+                    {
+                        currentDiscoveryRefreshBudget--;
+                        return BuildComponentDiscovery(owner, cached);
+                    }
+                    QueueDiscoveryRefresh(owner);
+                }
+                else if (expired)
+                {
+                    QueueDiscoveryRefresh(owner);
+                }
                 return cached;
             }
 
@@ -1219,6 +1236,8 @@ namespace Mod.Adapters
                 ChildCount = owner.transform.childCount,
                 ComponentCount = componentBuffer.Count,
                 LastRefreshTime = Time.time,
+                LastObservedTime = cached?.LastObservedTime ?? Time.time,
+                TopologyDirty = false,
                 Glowtube = owner.GetComponent<GlowtubeBehaviour>(),
                 Bulb = owner.GetComponent<BulbBehaviour>(),
                 Led = owner.GetComponent<LEDBulbBehaviour>(),
@@ -1266,10 +1285,14 @@ namespace Mod.Adapters
         private void EnqueueExpiredComponentDiscoveries()
         {
             var now = Time.time;
-            for (var i = 0; i < componentCacheOwners.Count; i++)
+            var checks = Math.Min(MaxComponentDiscoveryExpiryChecksPerSample, componentCacheOwners.Count);
+            for (var i = 0; i < checks; i++)
             {
-                var owner = componentCacheOwners[i];
+                if (componentDiscoveryExpiryCursor >= componentCacheOwners.Count) componentDiscoveryExpiryCursor = 0;
+                var owner = componentCacheOwners[componentDiscoveryExpiryCursor++];
                 if (owner == null || !componentCache.TryGetValue(owner, out var cached)) continue;
+                var observedAge = now - cached.LastObservedTime;
+                if (!IsFinite(observedAge) || observedAge >= ComponentDiscoveryEvictionAgeSeconds) continue;
                 var age = now - cached.LastRefreshTime;
                 if (!IsFinite(age) || age < 0f || age >= ComponentDiscoveryMaxAgeSeconds) QueueDiscoveryRefresh(owner);
             }
@@ -1277,19 +1300,23 @@ namespace Mod.Adapters
 
         private void RefreshQueuedComponentDiscoveries(int budget)
         {
-            var refreshed = 0;
-            while (refreshed < budget && discoveryRefreshQueue.Count > 0)
+            var inspected = 0;
+            currentDiscoveryRefreshBudget = budget;
+            while (inspected < budget && discoveryRefreshQueue.Count > 0)
             {
+                inspected++;
                 var owner = discoveryRefreshQueue.Dequeue();
                 queuedDiscoveryOwners.Remove(owner);
                 if (owner == null || !componentCache.TryGetValue(owner, out var cached)) continue;
 
                 var age = Time.time - cached.LastRefreshTime;
-                if (IsFinite(age) && age >= 0f && age < ComponentDiscoveryMaxAgeSeconds) continue;
+                var relevant = Time.time - cached.LastObservedTime;
+                if (!IsFinite(relevant) || relevant >= ComponentDiscoveryEvictionAgeSeconds) continue;
+                if (!cached.TopologyDirty && IsFinite(age) && age >= 0f && age < ComponentDiscoveryMaxAgeSeconds) continue;
                 owner.GetComponents(componentBuffer);
                 BuildComponentDiscovery(owner, cached);
-                refreshed++;
             }
+            currentDiscoveryRefreshBudget = Math.Max(0, budget - inspected);
         }
 
         private void PruneComponentDiscoveryCache(int budget)
@@ -1309,6 +1336,15 @@ namespace Mod.Adapters
                 }
                 if (!componentCache.ContainsKey(owner))
                 {
+                    RemoveCachedOwnerAt(componentCacheSweepIndex);
+                    continue;
+                }
+
+                var observedAge = Time.time - componentCache[owner].LastObservedTime;
+                if (!IsFinite(observedAge) || observedAge >= ComponentDiscoveryEvictionAgeSeconds)
+                {
+                    RemoveCachedOwner(owner);
+                    RemoveQueuedOwner(owner);
                     RemoveCachedOwnerAt(componentCacheSweepIndex);
                     continue;
                 }
@@ -1345,6 +1381,8 @@ namespace Mod.Adapters
             componentBuffer.Clear();
             groupSpriteBuffer.Clear();
             componentCacheSweepIndex = 0;
+            componentDiscoveryExpiryCursor = 0;
+            currentDiscoveryRefreshBudget = 0;
         }
 
         private sealed class NearbyScanState
@@ -1372,6 +1410,8 @@ namespace Mod.Adapters
             public int ChildCount;
             public int ComponentCount;
             public float LastRefreshTime;
+            public float LastObservedTime;
+            public bool TopologyDirty;
             public LightSprite[] NativeLightSprites = [];
             public FlashlightAttachmentBehaviour[] FlashlightAttachments = [];
             public SpriteRenderer[] GroupLightSprites = [];

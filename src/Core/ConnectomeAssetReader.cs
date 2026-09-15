@@ -149,6 +149,7 @@ namespace Mod.Core
                 asset.Superclasses[index] = superclass;
                 asset.Sides[index] = GetTableValue(tables[5], columns.Indexes.Side[index]);
                 Add(buckets, "type:" + type, index);
+                if (type.StartsWith("pC1_", StringComparison.Ordinal)) Add(buckets, "prefix:pC1_", index);
                 Add(buckets, "class:" + neuronClass, index);
                 Add(buckets, "subclass:" + subclass, index);
                 AddSensoryMetadata(buckets, index, superclass, neuronClass, subclass, type, nerve);

@@ -412,7 +412,13 @@ internal static class Program
         var ownersField = typeof(PeoplePlaygroundPersonAdapter).GetField("componentCacheOwners", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
         var owners = (List<PhysicalBehaviour>)ownersField.GetValue(f.Adapter)!;
         Equal(8, owners.Count);
+        var enqueue = typeof(PeoplePlaygroundPersonAdapter).GetMethod("EnqueueExpiredComponentDiscoveries", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var refresh = typeof(PeoplePlaygroundPersonAdapter).GetMethod("RefreshQueuedComponentDiscoveries", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var queueField = typeof(PeoplePlaygroundPersonAdapter).GetField("discoveryRefreshQueue", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        Time.time = 4f; enqueue.Invoke(f.Adapter, null);
         foreach (var physical in physicals) physical.Destroyed = true;
+        refresh.Invoke(f.Adapter, [4]);
+        Equal(4, ((Queue<PhysicalBehaviour>)queueField.GetValue(f.Adapter)!).Count); // Skipped queue entries still consume the inspection budget.
         var prune = typeof(PeoplePlaygroundPersonAdapter).GetMethod("PruneComponentDiscoveryCache", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
         prune.Invoke(f.Adapter, [4]);
         Equal(4, owners.Count); // Four destroyed entries, not the whole cache, are removed in one pass.
@@ -433,8 +439,47 @@ internal static class Program
         }
         Time.time = 1f; Equal(0f, f.Adapter.Read().Sound);
         Time.time = 3f; True(f.Adapter.Read().Sound > 0f); // First four refresh.
+        foreach (var child in children.Take(4)) child.GetComponent<AudioSource>().isPlaying = false;
         Time.time = 4f; True(f.Adapter.Read().Sound > 0f); // Remaining four are not starved.
+        var cacheField = typeof(PeoplePlaygroundPersonAdapter).GetField("componentCache", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var cache = (System.Collections.IDictionary)cacheField.GetValue(f.Adapter)!;
+        var refreshTimes = cache.Values.Cast<object>().Select(value => (float)value.GetType().GetField("LastRefreshTime")!.GetValue(value)!).ToList();
+        Equal(4, refreshTimes.Count(time => time >= 4f));
+        Time.time = 7f; f.Adapter.Read();
+        Time.time = 8f; f.Adapter.Read();
+        refreshTimes = cache.Values.Cast<object>().Select(value => (float)value.GetType().GetField("LastRefreshTime")!.GetValue(value)!).ToList();
+        Equal(8, refreshTimes.Count(time => time >= 7f)); // Multiple expiry cycles remain fair.
         Physics2D.Hits = []; Time.time = 0f;
+        Physics2D.Hits = []; Time.time = 0f;
+
+        // Topology changes on many existing owners use the same four-work budget.
+        f = new Fixture(); colliders.Clear(); var topologyItems = new List<GameObject>();
+        for (var i = 0; i < 8; i++)
+        {
+            var item = new GameObject("Topology " + i); item.AddComponent<PhysicalBehaviour>(); topologyItems.Add(item);
+            var collider = item.AddComponent<Collider2D>(); collider.Surface = new Vector2(2f, 0f); colliders.Add(collider);
+        }
+        Physics2D.Hits = colliders.ToArray(); Time.time = 0f; f.Adapter.Read();
+        foreach (var item in topologyItems) item.AddComponent<JukeboxBehaviour>();
+        Time.time = 1f; f.Adapter.Read();
+        cacheField = typeof(PeoplePlaygroundPersonAdapter).GetField("componentCache", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        cache = (System.Collections.IDictionary)cacheField.GetValue(f.Adapter)!;
+        refreshTimes = cache.Values.Cast<object>().Select(value => (float)value.GetType().GetField("LastRefreshTime")!.GetValue(value)!).ToList();
+        Equal(4, refreshTimes.Count(time => time == 1f));
+        Time.time = 2f; f.Adapter.Read();
+        refreshTimes = cache.Values.Cast<object>().Select(value => (float)value.GetType().GetField("LastRefreshTime")!.GetValue(value)!).ToList();
+        Equal(8, refreshTimes.Count(time => time >= 1f));
+        Physics2D.Hits = []; Time.time = 0f;
+
+        // Owners that are no longer in overlap results age out instead of being
+        // refreshed forever from the person's encounter history.
+        f = new Fixture();
+        var distant = new GameObject("Distant"); distant.AddComponent<PhysicalBehaviour>();
+        var distantCollider = distant.AddComponent<Collider2D>(); distantCollider.Surface = new Vector2(2f, 0f);
+        Physics2D.Hits = [distantCollider]; Time.time = 0f; f.Adapter.Read();
+        Physics2D.Hits = []; Time.time = 20f; f.Adapter.Read();
+        owners = (List<PhysicalBehaviour>)ownersField.GetValue(f.Adapter)!;
+        Equal(0, owners.Count);
     }
 
     private static void BloodAndVitality()

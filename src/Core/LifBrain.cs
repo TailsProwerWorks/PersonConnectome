@@ -134,8 +134,15 @@ namespace Mod.Core
             "\nFood cues are explicit catalog-based gameplay mappings, not measured smell/taste. Health/chemistry remain telemetry and control constraints.\nVisual directions use head-relative 2D bearing (positive CCW to R); audio/tilt use world horizontal. These are engineering projections.";
 
         public string DisplayMotorSummary => stopped ?
-            "REQUEST: STOPPED\n  arms=0.00/0.00  legs=0.00/0.00\n  head=0.00  core=0.00  grips=0.00/0.00\nTHREAT SOURCES\n  body=0.00  injury-event=0.0000  looming=0.00  DNp01-fired=0.00  escape-request=0.00  response=stopped" :
-            "REQUEST (" + RequestLabel() + "):\n  arms=" + Format(lastCommand.LeftArm) + "/" + Format(lastCommand.RightArm) +
+            "FLY REQUESTS: STOPPED\n  forward=0.00  yaw=0.00  backward=0.00  halt=0.00  brake=0.00\nHUMAN ADAPTATION REQUEST: STOPPED\n  arms=0.00/0.00  legs=0.00/0.00\n  head=0.00  core=0.00  grips=0.00/0.00\nTHREAT SOURCES\n  body=0.00  injury-event=0.0000  looming=0.00  DNp01-fired=0.00  escape-request=0.00  response=stopped" :
+            "FLY REQUESTS (normalized decoder channels):\n  forward=" + Format(lastCommand.FlyForward) + "  yaw=" + Format(lastCommand.FlyYaw) + "  backward=" + Format(lastCommand.FlyBackward) +
+            "  halt=" + Format(lastCommand.FlyHalt) + "  brake=" + Format(lastCommand.FlyBrake) +
+            "\n  jump=" + Format(lastCommand.FlyJump) + "  takeoff=" + Format(lastCommand.FlyTakeoff) + "  landing=" + Format(lastCommand.FlyLanding) +
+            "  flight-power=" + Format(lastCommand.FlyFlightPower) + "  flight-yaw=" + Format(lastCommand.FlyFlightYaw) + "  wing-motor=" + Format(lastCommand.FlyWingMotor) +
+            "\n  groom(antenna/head/leg/abdomen)=" + Format(lastCommand.FlyGroomAntenna) + "/" + Format(lastCommand.FlyGroomHead) + "/" + Format(lastCommand.FlyGroomLeg) + "/" + Format(lastCommand.FlyGroomAbdomen) +
+            "\n  feed=" + Format(lastCommand.FlyFeed) + "  courtship=" + Format(lastCommand.FlyCourtship) + "  song=" + Format(lastCommand.FlySong) + "  song-pulse=" + Format(lastCommand.FlySongPulse) +
+            "\n  leg-motor=" + Format(lastCommand.FlyLegMotor) + "  leg-asymmetry=" + Format(lastCommand.FlyLegMotorAsym) +
+            "\nHUMAN ADAPTATION REQUEST (" + RequestLabel() + "):\n  arms=" + Format(lastCommand.LeftArm) + "/" + Format(lastCommand.RightArm) +
             "  legs=" + Format(lastCommand.LeftLeg) + "/" + Format(lastCommand.RightLeg) +
             "\n  head=" + Format(lastCommand.Head) + "  core=" + Format(lastCommand.Core) +
             "  grips=" + Format(lastCommand.LeftGrip) + "/" + Format(lastCommand.RightGrip) +
@@ -546,7 +553,7 @@ namespace Mod.Core
             var stopRequested = halt >= .2f || brake >= .2f;
             UpdateLocomotion(rawForward, rawBackward, rawYaw, neuralEscapeValue, stopRequested, movementPermitted, elapsedSeconds);
             var requested = CreateMotorCommand(sensory, elapsedSeconds, movementPermitted, stopRequested,
-                new MotorCommandContext(bodyThreatValue, neuralEscapeValue, dnp01Activity, freeze));
+                new MotorCommandContext(bodyThreatValue, neuralEscapeValue, dnp01Activity, freeze, brake));
             if (!movementPermitted || stopRequested)
             {
                 ClearMotorRequests(ref requested);
@@ -609,8 +616,8 @@ namespace Mod.Core
         {
             var locomotionGate = stopRequested ? 0f : 1f;
             var neuralWalk = ResolveNeuralWalk();
-            // Fly leg activity is a human joint-control proxy. Wing, song and
-            // proboscis populations are not reinterpreted as human arm/grip intent.
+            // The People Playground body uses fly leg activity only as a
+            // locomotor proxy; fly-native channels are populated separately below.
             var left = Ema(leftLegFilter, MotorActivity("motor:leg", "L"), elapsedSeconds, .15f) * locomotionGate;
             var right = Ema(rightLegFilter, MotorActivity("motor:leg", "R"), elapsedSeconds, .15f) * locomotionGate;
             leftLegFilter = left;
@@ -621,7 +628,7 @@ namespace Mod.Core
             var motorSideBias = movementPermitted ? sideBias : 0f;
             var motorCenter = movementPermitted ? center : 0f;
             var armSwing = Signed((left - right) * .75f * (movementPermitted ? 1f : 0f) + walk * .35f + motorCenter * .15f);
-            return new MotorCommand
+            var command = new MotorCommand
             {
                 Walk = walk,
                 EscapeLocomotionSeconds = escapeWalkSeconds,
@@ -643,7 +650,63 @@ namespace Mod.Core
                 Calm = Unit(sensory.LiquidSedation),
                 Extinguish = Unit(sensory.Fire)
             };
+            PopulateFlyRequests(ref command, context);
+            return command;
         }
+
+        private void PopulateFlyRequests(ref MotorCommand command, MotorCommandContext context)
+        {
+            var leftLeg = MotorActivity("motor:leg", "L");
+            var rightLeg = MotorActivity("motor:leg", "R");
+            command.FlyForward = Signed(forwardFilter);
+            command.FlyYaw = Signed(yawFilter);
+            command.FlyBackward = Unit(backwardFilter);
+            var flyHalt = MotorActivity("type:DNg60") * .6f +
+                Math.Max(MotorActivity("type:DNg74_a"), MotorActivity("type:DNg74_b")) * .4f;
+            command.FlyHalt = Unit(flyHalt);
+            command.FlyBrake = Unit(context.Brake);
+            command.FlyJump = context.DNp01Activity ? 1f : 0f;
+            command.FlyTakeoff = WeightedMotorActivity("type:DNp11", .5f, "type:DNp02", .25f, "type:DNp04", .25f);
+            command.FlyLanding = WeightedMotorActivity("type:DNp07", .5f, "type:DNp10", .5f);
+            command.FlyFlightPower = MotorActivity("type:DNg02");
+            command.FlyFlightYaw = Signed((MotorActivity("type:DNg02", "L") - MotorActivity("type:DNg02", "R") +
+                MotorActivity("type:DNp03", "R") - MotorActivity("type:DNp03", "L")) * .5f);
+            command.FlyWingMotor = MotorActivity("subclass:wm");
+            command.FlyGroomAntenna = AverageMotorActivity("type:DNg62", "type:DNge078");
+            command.FlyGroomHead = AverageMotorActivity("type:DNg12", "type:DNg07", "type:DNg08");
+            command.FlyGroomLeg = MotorActivity("type:DNg11");
+            command.FlyGroomAbdomen = MotorActivity("type:DNp29");
+            command.FlyFeed = WeightedMotorActivity("type:MN9", .6f, "type:DNg67", .1f, "type:DNge080", .1f, "type:DNge173", .1f, "type:DNge174", .1f);
+            command.FlyCourtship = PopulationActivity("prefix:pC1_", null, true);
+            command.FlySong = MotorActivity("type:pIP10");
+            command.FlySongPulse = MotorActivity("type:pMP2");
+            command.FlyLegMotor = Unit((leftLeg + rightLeg) * .5f);
+            command.FlyLegMotorAsym = Signed(rightLeg - leftLeg);
+        }
+
+        private float WeightedMotorActivity(string first, float firstWeight, string second, float secondWeight)
+        {
+            return Unit(MotorActivity(first) * firstWeight + MotorActivity(second) * secondWeight);
+        }
+
+        private float WeightedMotorActivity(string first, float firstWeight, string second, float secondWeight,
+            string third, float thirdWeight)
+        {
+            return Unit(MotorActivity(first) * firstWeight + MotorActivity(second) * secondWeight + MotorActivity(third) * thirdWeight);
+        }
+
+        private float WeightedMotorActivity(string first, float firstWeight, string second, float secondWeight,
+            string third, float thirdWeight, string fourth, float fourthWeight, string fifth, float fifthWeight)
+        {
+            return Unit(MotorActivity(first) * firstWeight + MotorActivity(second) * secondWeight + MotorActivity(third) * thirdWeight +
+                MotorActivity(fourth) * fourthWeight + MotorActivity(fifth) * fifthWeight);
+        }
+
+        private float AverageMotorActivity(string first, string second) =>
+            (MotorActivity(first) + MotorActivity(second)) * .5f;
+
+        private float AverageMotorActivity(string first, string second, string third) =>
+            (MotorActivity(first) + MotorActivity(second) + MotorActivity(third)) / 3f;
 
         private float ResolveNeuralWalk()
         {
@@ -659,13 +722,16 @@ namespace Mod.Core
             public readonly float NeuralEscape;
             public readonly bool DNp01Activity;
             public readonly float Freeze;
+            public readonly float Brake;
 
-            public MotorCommandContext(float bodyThreat, float neuralEscape, bool dnp01Activity, float freeze)
+            public MotorCommandContext(float bodyThreat, float neuralEscape, bool dnp01Activity, float freeze,
+                float brake)
             {
                 BodyThreat = bodyThreat;
                 NeuralEscape = neuralEscape;
                 DNp01Activity = dnp01Activity;
                 Freeze = freeze;
+                Brake = brake;
             }
         }
 
