@@ -1357,7 +1357,7 @@ namespace Mod.Adapters
             ReadFoodCue(ref frame, hit, physical, distance, state.HeadCollider, discovery);
             if (lightOwners.Add(physical))
             {
-                ReadLocalLights(ref frame, physical, state.Origin, discovery);
+                ReadLocalLights(ref frame, state.Origin, discovery);
                 ReadExternalSound(ref frame, physical, state.Origin, ref state.AudioSourceSummary, discovery);
             }
             ReadExternalTemperature(ref frame, physical, distance);
@@ -1414,34 +1414,59 @@ namespace Mod.Adapters
             visualDistances[slot] = distance;
         }
 
-        private void ReadLocalLights(ref SensoryFrame frame, PhysicalBehaviour owner, Vector2 origin, ComponentDiscovery discovery)
+        private void ReadLocalLights(ref SensoryFrame frame, Vector2 origin, ComponentDiscovery discovery)
         {
             // Only native light owners qualify. Arbitrary bright body sprites,
             // UI labels and particles are not guessed to be light sources.
-            for (var i = 0; i < discovery.NativeLightSprites.Length; i++)
+            ReadNativeLightSprites(ref frame, origin, discovery.NativeLightSprites);
+            ReadKnownLight(ref frame, origin, discovery.Glowtube?.LightSprite, 1f);
+            ReadKnownLight(ref frame, origin, discovery.Bulb?.LightSprite, 1f);
+            ReadKnownLight(ref frame, origin, discovery.Led?.LightSprite, 1f);
+            ReadGroupedLights(ref frame, origin, discovery);
+            ReadFlashlightAttachments(ref frame, origin, discovery.FlashlightAttachments);
+        }
+
+        private void ReadNativeLightSprites(ref SensoryFrame frame, Vector2 origin, LightSprite[] lights)
+        {
+            for (var i = 0; i < lights.Length; i++)
             {
-                var light = discovery.NativeLightSprites[i];
+                var light = lights[i];
                 if (light != null) ReadLightSprite(ref frame, light.SpriteRenderer, origin, light.Brightness);
             }
-            var tube = discovery.Glowtube;
-            if (tube != null) ReadLightSprite(ref frame, tube.LightSprite, origin, 1f);
-            var bulb = discovery.Bulb;
-            if (bulb != null) ReadLightSprite(ref frame, bulb.LightSprite, origin, 1f);
-            var led = discovery.Led;
-            if (led != null) ReadLightSprite(ref frame, led.LightSprite, origin, 1f);
+        }
+
+        private void ReadKnownLight(ref SensoryFrame frame, Vector2 origin, SpriteRenderer? renderer, float brightness)
+        {
+            if (renderer != null) ReadLightSprite(ref frame, renderer, origin, brightness);
+        }
+
+        private void ReadGroupedLights(ref SensoryFrame frame, Vector2 origin, ComponentDiscovery discovery)
+        {
             var toggle = discovery.Toggle;
             if (toggle != null && toggle.LightObject != null)
             {
-                for (var i = 0; i < discovery.GroupLightSprites.Length; i++) ReadLightSprite(ref frame, discovery.GroupLightSprites[i], origin, 1f);
+                ReadGroupedLightSprites(ref frame, origin, discovery.GroupLightSprites);
             }
             var floodlight = discovery.Floodlight;
             if (floodlight != null && floodlight.ToToggle != null && toggle?.LightObject == null)
             {
-                for (var i = 0; i < discovery.GroupLightSprites.Length; i++) ReadLightSprite(ref frame, discovery.GroupLightSprites[i], origin, 1f);
+                ReadGroupedLightSprites(ref frame, origin, discovery.GroupLightSprites);
             }
-            for (var i = 0; i < discovery.FlashlightAttachments.Length; i++)
+        }
+
+        private void ReadGroupedLightSprites(ref SensoryFrame frame, Vector2 origin, SpriteRenderer[] sprites)
+        {
+            for (var i = 0; i < sprites.Length; i++)
             {
-                var attachment = discovery.FlashlightAttachments[i];
+                ReadLightSprite(ref frame, sprites[i], origin, 1f);
+            }
+        }
+
+        private void ReadFlashlightAttachments(ref SensoryFrame frame, Vector2 origin, FlashlightAttachmentBehaviour[] attachments)
+        {
+            for (var i = 0; i < attachments.Length; i++)
+            {
+                var attachment = attachments[i];
                 if (attachment == null || attachment.Lights == null) continue;
                 foreach (var sprite in attachment.Lights) ReadLightSprite(ref frame, sprite, origin, 1f);
             }

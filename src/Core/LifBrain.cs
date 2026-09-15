@@ -209,8 +209,8 @@ namespace Mod.Core
             // Clear only those fired IDs, rather than scanning the whole queue.
             foreach (var id in fired)
             {
-                RemovePending(id, nextPending, nextPendingPresent, nextPendingIds);
-                RemoveActive(id, nextActivePresent, nextActive);
+                RemovePending(id, nextPending, nextPendingPresent);
+                RemoveActive(id, nextActivePresent);
             }
             SwapPendingState();
             ClearPriority();
@@ -315,17 +315,31 @@ namespace Mod.Core
             var start = (int)(backlogCursor % orderedActive.Count);
             ClearScheduled();
             foreach (var id in orderedActive) AddScheduled(id);
-            var budget = MaxSpikesPerStep;
-            for (var priorityIndex = 0; priorityIndex < priority.Count; priorityIndex++)
+            var budget = PropagatePrioritySpikes(next, nextActiveState, MaxSpikesPerStep);
+            var examined = 0;
+            PropagateRoundRobinSpikes(next, nextActiveState, start, budget, out examined);
+            DropScheduledNeurons();
+            ClearScheduled();
+
+            backlogCursor = (start + examined) % orderedActive.Count;
+        }
+
+        private int PropagatePrioritySpikes(float[] next, bool[] nextActiveState, int budget)
+        {
+            for (var priorityIndex = 0; priorityIndex < priority.Count && budget > 0; priorityIndex++)
             {
-                if (budget == 0) break;
                 var id = priority[priorityIndex];
                 if (!RemoveScheduled(id)) continue;
                 PropagateSpike(id, next, nextActiveState);
                 budget--;
             }
 
-            var examined = 0;
+            return budget;
+        }
+
+        private void PropagateRoundRobinSpikes(float[] next, bool[] nextActiveState, int start, int budget, out int examined)
+        {
+            examined = 0;
             for (var index = 0; index < orderedActive.Count && budget > 0; index++)
             {
                 var id = orderedActive[(start + index) % orderedActive.Count];
@@ -334,7 +348,10 @@ namespace Mod.Core
                 PropagateSpike(id, next, nextActiveState);
                 budget--;
             }
+        }
 
+        private void DropScheduledNeurons()
+        {
             for (var scheduledIndex = 0; scheduledIndex < scheduled.Count; scheduledIndex++)
             {
                 var id = scheduled[scheduledIndex];
@@ -342,9 +359,6 @@ namespace Mod.Core
                 if (simulationTick < refractoryUntil[id]) potential[id] = 0f;
                 else DropNeuron(id);
             }
-            ClearScheduled();
-
-            backlogCursor = (start + examined) % orderedActive.Count;
         }
 
         private void PropagateSpike(int id, float[] next, bool[] nextActiveState)
@@ -390,7 +404,7 @@ namespace Mod.Core
             ids.Clear();
         }
 
-        private static void RemovePending(int id, float[] values, bool[] membership, List<int> ids)
+        private static void RemovePending(int id, float[] values, bool[] membership)
         {
             if (!membership[id]) return;
             membership[id] = false;
@@ -403,7 +417,7 @@ namespace Mod.Core
             ids.Clear();
         }
 
-        private static void RemoveActive(int id, bool[] membership, List<int> ids)
+        private static void RemoveActive(int id, bool[] membership)
         {
             if (!membership[id]) return;
             membership[id] = false;
