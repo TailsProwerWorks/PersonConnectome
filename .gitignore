@@ -4,6 +4,7 @@ obj/
 *.user
 *.suo
 state/*.json
+TestResults/
 
 # Keep only the canonical connectome build input and game carrier. Other files
 # under this directory are generated scratch artifacts and should not be staged.
