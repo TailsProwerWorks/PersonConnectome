@@ -25,6 +25,9 @@
     </PackageReference>
     <Compile Include="../../src/Adapters/PeoplePlaygroundPersonAdapter.cs" Link="src/Adapters/PeoplePlaygroundPersonAdapter.cs" />
     <Compile Include="../../src/Adapters/PersonMotorCommand.cs" Link="src/Adapters/PersonMotorCommand.cs" />
+    <Compile Include="../../src/Adapters/PersonObservation.cs" Link="src/Adapters/PersonObservation.cs" />
+    <Compile Include="../../src/Adapters/PersonStandingController.cs" Link="src/Adapters/PersonStandingController.cs" />
+    <Compile Include="../../src/Adapters/PersonTrainingSession.cs" Link="src/Adapters/PersonTrainingSession.cs" />
     <Compile Include="../../src/Adapters/PersonConnectomeLimbController.cs" Link="src/Adapters/PersonConnectomeLimbController.cs" />
     <Compile Include="../../src/Adapters/PersonConnectomeLimbProbe.cs" Link="src/Adapters/PersonConnectomeLimbProbe.cs" />
     <Compile Include="../../src/Adapters/LiquidAndStatusReader.cs" Link="src/Adapters/LiquidAndStatusReader.cs" />

@@ -20,6 +20,7 @@ namespace Mod.Adapters
         private const string Unknown = "unknown";
         private static readonly string[] HeadNames = ["head", "neck", "brain", "skull"];
         private static readonly string[] ArmNames = ["hand", "finger", "thumb", "palm", "wrist", "arm", "elbow"];
+        private static readonly string[] FootNames = ["foot", "toe", "ankle"];
         private static readonly string[] LegNames = ["foot", "toe", "ankle", "leg", "knee", "thigh"];
         private static readonly string[] CoreNames = ["body", "chest", "torso", "pelvis", "hip", "stomach", "waist"];
         private readonly GameObject root;
@@ -77,7 +78,12 @@ namespace Mod.Adapters
         private float walkingIntent;
         private bool walkingIntentActive;
         private readonly PeoplePlaygroundPersonMotorMapper motorMapper = new();
+        private readonly PersonObservation standingObservation = new();
+        private readonly PersonJointTargetBuffer standingTargets = new();
+        private readonly PersonStandingController standingController = new();
+        private readonly PersonTrainingSession trainingSession;
         private PersonMotorCommand lastMotorCommand;
+        private bool standingControlEnabled;
         private SensoryFrame lastFrame;
         private float nativeAdrenaline;
         private bool hasReadFrame;
@@ -196,6 +202,80 @@ namespace Mod.Adapters
                     lastMotorCommand.Stimulate.ToString("0.00") + "/" + lastMotorCommand.Calm.ToString("0.00") + "/" + lastMotorCommand.Extinguish.ToString("0.00");
             }
         }
+
+        internal bool JointAwareStandingControllerEnabled => standingControlEnabled;
+        internal PersonTrainingSession TrainingSession => trainingSession;
+        internal string StandingControlSummary
+        {
+            get
+            {
+                if (!standingControlEnabled) return "STAND: off";
+                if (lastMotorCommand.MotionStopRequested) return "STAND: paused by neural halt/brake";
+                if (!hasReadFrame) return "STAND: waiting for native sample";
+                if (!IsUsable || !lastFrame.Alive || lastFrame.BrainDead ||
+                    !lastFrame.ConsciousnessValid || lastFrame.Consciousness <= .8f)
+                {
+                    return "STAND: paused by safety state";
+                }
+                if (!standingObservation.Torso.Valid) return "STAND: blocked (torso observation unavailable)";
+                return "STAND: active | limbs " + standingObservation.LimbCount + " | targets " + standingTargets.Count + " | correction " +
+                    standingController.LastPostureCorrection.ToString("0.0") + " deg/s | score " +
+                    trainingSession.StandingScore.ToString("0.00");
+            }
+        }
+
+        internal void StartTrainingTrial()
+        {
+            trainingSession.StartTrial();
+            SetJointAwareStandingControllerEnabled(true);
+        }
+
+        internal void ToggleTrainingPause() => trainingSession.ToggleLearningPause();
+        internal void GiveTrainingFeedback(bool positive) => trainingSession.GiveFeedback(positive);
+        internal void UndoTrainingFeedback() => trainingSession.UndoLastFeedback();
+        internal void RestoreBestTrainingVersion() => trainingSession.RestoreBest();
+        internal void ResetTrainingSkill() => trainingSession.ResetSkill();
+
+        internal void SetJointAwareStandingControllerEnabled(bool enabled)
+        {
+            if (standingControlEnabled == enabled) return;
+            standingControlEnabled = enabled;
+            standingTargets.Clear();
+            standingObservation.Clear();
+            if (!enabled) standingController.Reset();
+        }
+
+        /// <summary>
+        /// Runs the optional adapter-local posture controller at physics cadence.
+        /// It never steps the connectome or repeats walking/chemistry updates.
+        /// </summary>
+        internal void RefreshStandingControl(float elapsedSeconds)
+        {
+            if (!standingControlEnabled) return;
+            if (!IsUsable || !hasReadFrame || !lastFrame.Alive || lastFrame.BrainDead ||
+                !lastFrame.ConsciousnessValid || lastFrame.Consciousness <= .8f ||
+                lastMotorCommand.MotionStopRequested)
+            {
+                standingController.Reset();
+                standingTargets.Clear();
+                trainingSession.Observe(null);
+                return;
+            }
+
+            ReadStandingObservation();
+            trainingSession.Observe(standingObservation);
+            standingController.Evaluate(standingObservation, lastMotorCommand, elapsedSeconds, standingTargets);
+            for (var targetIndex = 0; targetIndex < standingTargets.Count; targetIndex++)
+            {
+                var target = standingTargets[targetIndex];
+                for (var limbIndex = 0; limbIndex < limbControllers.Count; limbIndex++)
+                {
+                    if (limbs[limbIndex] != target.Limb) continue;
+                    limbControllers[limbIndex].ApplyTargetSpeed(target.MotorSpeedDegreesPerSecond, target.Influence);
+                    break;
+                }
+            }
+        }
         private string ExcludedLimbSummary
         {
             get
@@ -264,6 +344,7 @@ namespace Mod.Adapters
             this.reportCollision = reportCollision;
             this.reportProjectile = reportProjectile;
             person = root.GetComponent<PersonBehaviour>();
+            trainingSession = new PersonTrainingSession(standingController);
             // Catalog identity is stable for this controller's lifetime; avoid
             // repeated Resources fallback scans when a custom install lacks it.
             pumpkinAsset = ModAPI.FindSpawnable("Pumpkin");
@@ -637,8 +718,7 @@ namespace Mod.Adapters
             appliedLimbCount = 0;
             jointSpeedValid = IsFinite(jointSpeedDegreesPerSecond);
             jointSpeedLimit = jointSpeedValid ? Mathf.Clamp(jointSpeedDegreesPerSecond, 0f, 120f) : 0f;
-            if (!IsUsable || !hasReadFrame || !lastFrame.Alive || !lastFrame.ConsciousnessValid || lastFrame.Consciousness <= .8f ||
-                !IsFinite(command.Freeze) || command.Freeze >= .5f)
+            if (ShouldStopActuation(command))
             {
                 StopActuators();
                 return;
@@ -652,33 +732,52 @@ namespace Mod.Adapters
             walkingIntentActive = Mathf.Abs(walk) > .001f;
             ApplyWalking(walk);
             var chemistryElapsed = ElapsedSeconds(elapsedSeconds);
+            ApplyLimbCommands(command, chemistry, jointSpeedDegreesPerSecond, chemistryElapsed);
+            ApplyAdrenaline(command, chemistry, chemistryElapsed);
+        }
+
+        private bool ShouldStopActuation(PersonMotorCommand command)
+        {
+            return !IsUsable || !hasReadFrame || !lastFrame.Alive || !lastFrame.ConsciousnessValid ||
+                lastFrame.Consciousness <= .8f || !IsFinite(command.Freeze) || command.Freeze >= .5f;
+        }
+
+        private void ApplyLimbCommands(PersonMotorCommand command, bool chemistry, float degreesPerSecond, float chemistryElapsed)
+        {
             foreach (var controller in limbControllers)
             {
-                if (command.MotionStopRequested)
-                {
-                    // A neural halt preserves a healthy limb's grip and
-                    // chemistry, but it must not bypass the usual cleanup for
-                    // a locally failed limb (broken, detached, paralysed, or
-                    // otherwise unable to drive).
-                    if (controller.CanDrive)
-                    {
-                        if (controller.ClearMotorTarget()) appliedLimbCount++;
-                    }
-                    else
-                    {
-                        controller.Stop();
-                    }
-                }
-                else if (controller.Apply(command, jointSpeedDegreesPerSecond)) appliedLimbCount++;
+                ApplyLimbCommand(controller, command, degreesPerSecond);
                 controller.ApplyChemistry(command, chemistry, chemistryElapsed);
             }
+        }
 
-            if (chemistry)
+        private void ApplyLimbCommand(PersonConnectomeLimbController controller, PersonMotorCommand command, float degreesPerSecond)
+        {
+            if (command.MotionStopRequested)
             {
-                var adrenalineChange = (Unit(command.Stimulate) - Unit(command.Calm)) * ChemistryChangePerSecond * chemistryElapsed;
-                if (adrenalineChange != 0f && IsFinite(person.AdrenalineLevel))
-                    // Native Update clamps adrenaline to 0..20; only its neural input is unit-clamped.
-                    person.AdrenalineLevel = Mathf.Clamp(person.AdrenalineLevel + adrenalineChange, 0f, 20f);
+                if (controller.CanDrive)
+                {
+                    if (controller.ClearMotorTarget()) appliedLimbCount++;
+                }
+                else
+                {
+                    controller.Stop();
+                }
+
+                return;
+            }
+
+            if (controller.Apply(command, degreesPerSecond)) appliedLimbCount++;
+        }
+
+        private void ApplyAdrenaline(PersonMotorCommand command, bool chemistry, float chemistryElapsed)
+        {
+            if (!chemistry) return;
+            var adrenalineChange = (Unit(command.Stimulate) - Unit(command.Calm)) * ChemistryChangePerSecond * chemistryElapsed;
+            if (adrenalineChange != 0f && IsFinite(person.AdrenalineLevel))
+            {
+                // Native Update clamps adrenaline to 0..20; only its neural input is unit-clamped.
+                person.AdrenalineLevel = Mathf.Clamp(person.AdrenalineLevel + adrenalineChange, 0f, 20f);
             }
         }
 
@@ -713,6 +812,10 @@ namespace Mod.Adapters
         {
             healthSamples.Clear();
             motorMapper.Reset();
+            standingController.Reset();
+            standingTargets.Clear();
+            standingObservation.Clear();
+            trainingSession.Stop();
             StopActuators();
         }
 
@@ -808,6 +911,122 @@ namespace Mod.Adapters
 
             frame.Unconscious = frame.ConsciousnessValid ? 1f - frame.Consciousness : 0f;
             return frame;
+        }
+
+        private void ReadStandingObservation()
+        {
+            standingObservation.Clear();
+            standingObservation.Torso = ReadStandingTorsoObservation();
+
+            for (var index = 0; index < limbs.Count; index++)
+            {
+                var observation = ReadStandingLimbObservation(index);
+                if (observation.Limb != null) standingObservation.AddLimb(observation);
+            }
+        }
+
+        private PersonTorsoObservation ReadStandingTorsoObservation()
+        {
+            var anchor = FindStatusAnchor();
+            var physical = anchor?.GetComponent<PhysicalBehaviour>();
+            var body = anchor?.GetComponent<Rigidbody2D>() ?? physical?.rigidbody;
+            var position = anchor == null ? root.transform.position : anchor.position;
+            var supportHeight = FindSupportedFloorHeight(out var hasSupportHeight);
+            var relativeHeight = hasSupportHeight && IsFinite(position.y) ? Mathf.Max(0f, position.y - supportHeight) : 0f;
+            var valid = IsFinite(person.AngleOffset) &&
+                (body == null || (IsFinite(body.angularVelocity) && IsFinite(body.velocity.x) && IsFinite(body.velocity.y)));
+            var angularVelocity = 0f;
+            var velocity = default(Vector2);
+            if (valid && body != null)
+            {
+                angularVelocity = body.angularVelocity;
+                velocity = body.velocity;
+            }
+            return new PersonTorsoObservation
+            {
+                Valid = valid,
+                TiltDegrees = valid ? person.AngleOffset : 0f,
+                AngularVelocityDegreesPerSecond = angularVelocity,
+                Velocity = velocity,
+                Height = relativeHeight
+            };
+        }
+
+        private float FindSupportedFloorHeight(out bool found)
+        {
+            var lowest = 0f;
+            found = false;
+            foreach (var limb in limbs)
+            {
+                if (limb == null || !limb.IsOnFloor || !IsFinite(limb.transform.position.y)) continue;
+                if (!found || limb.transform.position.y < lowest) lowest = limb.transform.position.y;
+                found = true;
+            }
+
+            return lowest;
+        }
+
+        private PersonLimbObservation ReadStandingLimbObservation(int index)
+        {
+            var limb = limbs[index];
+            if (limb == null) return default;
+            var joint = limb.Joint;
+            // People Playground's normal motor path only requires a usable
+            // joint. Some valid stock/custom joints leave connectedBody null
+            // while still exposing a finite angle/speed and accepting motor
+            // influence, so do not discard them from standing control.
+            var jointValid = IsConnectedLimb(limb) && limb.HasJoint && joint != null && joint.transform == limb.transform &&
+                IsFinite(joint.jointAngle) && IsFinite(joint.jointSpeed);
+            var physical = limb.PhysicalBehaviour;
+            var jointAngle = 0f;
+            var jointSpeed = 0f;
+            if (jointValid && joint != null)
+            {
+                jointAngle = joint.jointAngle;
+                jointSpeed = joint.jointSpeed;
+            }
+            return new PersonLimbObservation
+            {
+                Limb = limb,
+                Role = ClassifyStandingRole(limb),
+                Side = ClassifyStandingSide(limb),
+                JointAngleDegrees = jointAngle,
+                JointSpeedDegreesPerSecond = jointSpeed,
+                Usable = jointValid && limbControllers[index].CanDrive,
+                SupportsBody = limb.IsOnFloor,
+                HasContact = limb.IsOnFloor || (physical != null && (physical.IsTouchingSomething || physical.beingHeldByGripper))
+            };
+        }
+
+        private static PersonLimbRole ClassifyStandingRole(LimbBehaviour limb)
+        {
+            if (limb == null) return PersonLimbRole.Other;
+            var name = limb.name ?? String.Empty;
+            if (limb.HasBrain || ContainsAny(name, HeadNames)) return PersonLimbRole.Head;
+            if (ContainsAny(name, CoreNames)) return PersonLimbRole.Core;
+            if (ContainsAny(name, FootNames)) return PersonLimbRole.Foot;
+            if (ContainsAny(name, ArmNames)) return PersonLimbRole.Arm;
+            if (ContainsAny(name, LegNames)) return PersonLimbRole.Leg;
+            return PersonLimbRole.Other;
+        }
+
+        private PersonLimbSide ClassifyStandingSide(LimbBehaviour limb)
+        {
+            for (var node = limb?.transform; node != null && node != root.transform; node = node.parent)
+            {
+                var name = node.name ?? String.Empty;
+                if (name.IndexOf("left", StringComparison.OrdinalIgnoreCase) >= 0) return PersonLimbSide.Left;
+                if (name.IndexOf("right", StringComparison.OrdinalIgnoreCase) >= 0) return PersonLimbSide.Right;
+            }
+
+            for (var node = limb?.transform; node != null && node != root.transform; node = node.parent)
+            {
+                var name = node.name ?? String.Empty;
+                if (name.IndexOf("front", StringComparison.OrdinalIgnoreCase) >= 0) return PersonLimbSide.Right;
+                if (name.IndexOf("back", StringComparison.OrdinalIgnoreCase) >= 0) return PersonLimbSide.Left;
+            }
+
+            return PersonLimbSide.Center;
         }
 
         private static bool HasZeroHealth(float averageHealth)

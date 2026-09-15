@@ -94,7 +94,11 @@ internal static class Program
             ("hazard walking keeps the native pose gate", HazardWalkingKeepsNativeGate),
             ("chemistry interventions scale with elapsed time", ChemistryScalesWithElapsedTime),
             ("future fly adapter reports unsupported capabilities safely", FlyAdapterIsDisabled),
-            ("vision radius updates the live adapter without recreation", VisionRadiusUpdates)
+            ("vision radius updates the live adapter without recreation", VisionRadiusUpdates),
+            ("standing controller is deterministic and rate bounded", StandingControllerDeterministic),
+            ("standing controller gives individual joints distinct targets", StandingControllerDifferentiatesJoints),
+            ("standing controller is opt-in and leaves the neural tick path alone", StandingControllerOptIn),
+            ("teach feedback updates and restores a validated standing profile", TrainingSessionFeedback)
         ];
         var failures = 0;
         foreach (var (name, test) in tests)
@@ -122,6 +126,163 @@ internal static class Program
         True(!adapter.Read().HealthValid);
         adapter.Apply(default, true, 30f, 2f, .05f);
         adapter.RefreshWalkingRequest(); adapter.Suspend(); adapter.Stop();
+    }
+
+    private static void StandingControllerDeterministic()
+    {
+        var leftLeg = Fixture.AddLimb(new GameObject("Standing test"), "UpperLegBack");
+        var observation = new PersonObservation();
+        observation.Torso = new PersonTorsoObservation
+        {
+            Valid = true,
+            TiltDegrees = 12f,
+            AngularVelocityDegreesPerSecond = -4f,
+            Velocity = new Vector2(.2f, 0f),
+            Height = 1f
+        };
+        observation.AddLimb(new PersonLimbObservation
+        {
+            Limb = leftLeg,
+            Role = PersonLimbRole.Leg,
+            Side = PersonLimbSide.Left,
+            JointSpeedDegreesPerSecond = 3f,
+            Usable = true,
+            SupportsBody = true,
+            HasContact = true
+        });
+
+        var controller = new PersonStandingController();
+        var first = new PersonJointTargetBuffer();
+        controller.Evaluate(observation, .2f, -.1f, .05f, first);
+        Equal(1, first.Count);
+        var firstSpeed = first[0].MotorSpeedDegreesPerSecond;
+        True(!float.IsNaN(firstSpeed) && !float.IsInfinity(firstSpeed));
+        True(MathF.Abs(firstSpeed) <= 28f);
+
+        observation.Torso = new PersonTorsoObservation
+        {
+            Valid = true,
+            TiltDegrees = -90f,
+            AngularVelocityDegreesPerSecond = 90f,
+            Velocity = new Vector2(-10f, 0f),
+            Height = 0f
+        };
+        controller.Evaluate(observation, 1f, 1f, .05f, first);
+        var secondSpeed = first[0].MotorSpeedDegreesPerSecond;
+        True(MathF.Abs(secondSpeed - firstSpeed) <= 4.5001f);
+        True(MathF.Abs(secondSpeed) <= 28f);
+    }
+
+    private static void StandingControllerDifferentiatesJoints()
+    {
+        var root = new GameObject("Standing test");
+        var leftLeg = Fixture.AddLimb(root, "UpperLegBack");
+        var rightArm = Fixture.AddLimb(root, "LowerArmFront");
+        var observation = new PersonObservation();
+        observation.Torso = new PersonTorsoObservation { Valid = true, TiltDegrees = 10f, Height = 1f };
+        observation.AddLimb(new PersonLimbObservation
+        {
+            Limb = leftLeg,
+            Role = PersonLimbRole.Leg,
+            Side = PersonLimbSide.Left,
+            JointAngleDegrees = 15f,
+            Usable = true,
+            SupportsBody = true,
+            HasContact = true
+        });
+        observation.AddLimb(new PersonLimbObservation
+        {
+            Limb = rightArm,
+            Role = PersonLimbRole.Arm,
+            Side = PersonLimbSide.Right,
+            Usable = true
+        });
+
+        var targets = new PersonJointTargetBuffer();
+        new PersonStandingController().Evaluate(observation, .6f, .8f, .05f, targets);
+        Equal(2, targets.Count);
+        True(MathF.Abs(targets[0].MotorSpeedDegreesPerSecond - targets[1].MotorSpeedDegreesPerSecond) > .001f);
+        True(targets[0].Influence > 0f && targets[1].Influence > 0f);
+    }
+
+    private static void StandingControllerOptIn()
+    {
+        var f = new Fixture();
+        f.Limb.HasBrain = true;
+        var torsoBody = f.Limb.gameObject.AddComponent<Rigidbody2D>();
+        torsoBody.velocity = new Vector2(.1f, 0f);
+        torsoBody.angularVelocity = 2f;
+        var joint = f.Limb.gameObject.AddComponent<HingeJoint2D>();
+        joint.connectedBody = new GameObject("Standing joint body").AddComponent<Rigidbody2D>();
+        joint.jointAngle = 8f;
+        joint.jointSpeed = 1f;
+        f.Limb.Joint = joint;
+        f.Adapter.Read();
+        f.Limb.MotorSpeed = 6f;
+        f.Adapter.RefreshStandingControl(.05f);
+        Equal(6f, f.Limb.MotorSpeed);
+        True(!f.Adapter.JointAwareStandingControllerEnabled);
+
+        f.Adapter.SetJointAwareStandingControllerEnabled(true);
+        True(f.Adapter.JointAwareStandingControllerEnabled);
+        f.Adapter.RefreshStandingControl(.05f);
+        True(f.Limb.MotorCalls > 0);
+        True(MathF.Abs(f.Limb.MotorSpeed - 6f) > .001f);
+        joint.connectedBody = null;
+        f.Adapter.RefreshStandingControl(.05f);
+        True(f.Adapter.StandingControlSummary.Contains("targets 1"));
+        f.Adapter.SetJointAwareStandingControllerEnabled(false);
+        True(!f.Adapter.JointAwareStandingControllerEnabled);
+    }
+
+    private static void TrainingSessionFeedback()
+    {
+        var session = new PersonTrainingSession(new PersonStandingController());
+        var initialTiltGain = session.Parameters.TiltProportional;
+        var emptyProfile = new PersonTrainingSession(new PersonStandingController());
+        var emptyRestored = new PersonTrainingSession(new PersonStandingController());
+        True(emptyRestored.TryLoad(emptyProfile.Serialize()));
+        session.GiveFeedback(true);
+        Equal(initialTiltGain, session.Parameters.TiltProportional);
+        session.StartTrial();
+        var standingObservation = new PersonObservation
+        {
+            Torso = new PersonTorsoObservation
+            {
+                Valid = true,
+                TiltDegrees = 2f,
+                Height = 1.1f,
+                AngularVelocityDegreesPerSecond = 0f,
+                Velocity = new Vector2(0f, 0f)
+            }
+        };
+        standingObservation.AddLimb(new PersonLimbObservation
+        {
+            Role = PersonLimbRole.Leg,
+            SupportsBody = true,
+            HasContact = true
+        });
+        session.Observe(standingObservation);
+        True(session.StandingScore > .8f);
+        session.GiveFeedback(true);
+        True(session.FeedbackCount == 1 && session.Parameters.TiltProportional > initialTiltGain);
+        var learnedTiltGain = session.Parameters.TiltProportional;
+        session.GiveFeedback(false);
+        True(session.TrialScore == 0f);
+        session.UndoLastFeedback();
+        Equal(learnedTiltGain, session.Parameters.TiltProportional);
+        session.ToggleLearningPause();
+        session.GiveFeedback(true);
+        True(session.FeedbackCount == 1);
+        session.ToggleLearningPause();
+
+        var serialized = session.Serialize();
+        var restored = new PersonTrainingSession(new PersonStandingController());
+        True(restored.TryLoad(serialized));
+        Equal(session.Parameters.TiltProportional, restored.Parameters.TiltProportional);
+        True(!restored.TryLoad("not-a-profile"));
+        session.ResetSkill();
+        Equal(initialTiltGain, session.Parameters.TiltProportional);
     }
     private static void TerminalStop()
     {

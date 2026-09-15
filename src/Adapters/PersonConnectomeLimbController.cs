@@ -80,6 +80,31 @@ namespace Mod.Adapters
             return limb.HasJoint;
         }
 
+        /// <summary>Applies an adapter-owned degree-per-second target.</summary>
+        public bool ApplyTargetSpeed(float degreesPerSecond, float influence = .16f)
+        {
+            if (limb == null || !CanDrive)
+            {
+                Stop();
+                return false;
+            }
+
+            if (!IsFinite(degreesPerSecond) || !IsFinite(influence))
+            {
+                Stop();
+                return false;
+            }
+
+            if (!limb.HasJoint)
+            {
+                Stop();
+                return false;
+            }
+
+            limb.InfluenceMotorSpeed(Mathf.Clamp(degreesPerSecond, -120f, 120f), Mathf.Clamp01(influence));
+            return true;
+        }
+
         public void Stop()
         {
             if (limb == null)

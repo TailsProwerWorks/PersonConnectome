@@ -98,6 +98,10 @@ public sealed class AdapterScenarioTests
             yield return Case("chemistry interventions scale with elapsed time", "ChemistryScalesWithElapsedTime");
             yield return Case("future fly adapter reports unsupported capabilities safely", "FlyAdapterIsDisabled");
             yield return Case("vision radius updates the live adapter without recreation", "VisionRadiusUpdates");
+            yield return Case("standing controller is deterministic and rate bounded", "StandingControllerDeterministic");
+            yield return Case("standing controller gives individual joints distinct targets", "StandingControllerDifferentiatesJoints");
+            yield return Case("standing controller is opt-in and leaves the neural tick path alone", "StandingControllerOptIn");
+            yield return Case("teach feedback updates and restores a validated standing profile", "TrainingSessionFeedback");
         }
     }
 

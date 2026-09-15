@@ -182,6 +182,14 @@ namespace UnityEngine
     public class RangeAttribute : Attribute { public RangeAttribute(float min, float max) { } }
     public static class Time { public static float fixedDeltaTime = .02f, deltaTime = .02f, unscaledDeltaTime = .02f, realtimeSinceStartup, time; }
     public static class Debug { public static void Log(string message) { } }
+    public static class PlayerPrefs
+    {
+        private static readonly Dictionary<string, string> Values = [];
+        public static bool HasKey(string key) => Values.ContainsKey(key);
+        public static string GetString(string key, string fallback = "") => Values.TryGetValue(key, out var value) ? value : fallback;
+        public static void SetString(string key, string value) => Values[key] = value;
+        public static void Save() { }
+    }
 }
 public class RagdollPose
 {
@@ -305,6 +313,14 @@ public class GripBehaviour
 }
 namespace Mod
 {
+    internal sealed class StatusDisplayBindings
+    {
+        public Func<bool> IsDirectFlyControlEnabled;
+        public Action<bool> SetDirectFlyControl;
+        public Func<string> TrainingStatus;
+        public Action StartTraining, ToggleTrainingPause, GivePositiveTrainingFeedback, GiveNegativeTrainingFeedback, UndoTrainingFeedback, RestoreBestTrainingVersion, ResetTrainingSkill, SaveTrainingProfile, LoadTrainingProfile;
+    }
+
     // Lifecycle tests only need a neutral brain; neural-source tests use their own harness.
     internal class LifBrain
     {
@@ -325,7 +341,9 @@ namespace Mod
         public static int ActiveCount => activeCount;
         public static int RenderedUpdates => renderedUpdates;
         public static void ResetForTest() { activeCount = 0; renderedUpdates = 0; }
-        public PersonConnectomeStatusDisplay(UnityEngine.Transform anchor, ManualInputState manualInput, Func<bool> isDirectFlyControlEnabled = null, Action<bool> setDirectFlyControl = null) { }
+        public PersonConnectomeStatusDisplay(UnityEngine.Transform anchor, ManualInputState manualInput, StatusDisplayBindings bindings = null)
+        {
+        }
         public void Update(float elapsed, LifBrain brain, PeoplePlaygroundPersonAdapter adapter) { if (active) renderedUpdates++; }
         public void SetActive(bool value)
         {

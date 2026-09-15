@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 using Mod.Adapters;
 using Mod.Core;
@@ -16,6 +17,9 @@ namespace Mod
         // Engineering conversion settings, not biological calibration.
         [Range(0f, 4f)] public float WalkingRequestGain = 2f;
         [Range(0f, 120f)] public float JointSpeedDegreesPerSecond = 30f;
+        // Experimental adapter-local posture feedback; disabled until native
+        // standing validation is complete.
+        public bool JointAwareStandingControllerEnabled;
 
         private LifBrain? brain;
         private PeoplePlaygroundPersonAdapter? adapter;
@@ -48,6 +52,8 @@ namespace Mod
         private float nextDirectControlHierarchyDiscovery;
         private float pendingDirectControlMs;
         private static readonly List<PersonConnectomeController> activeControllers = [];
+        private static PersonConnectomeController? activeTrainingController;
+        private const string TrainingProfileKey = "PersonConnectome.Training.Profile";
 
         public bool DirectFlyControlEnabled => directFlyControl;
 
@@ -59,8 +65,21 @@ namespace Mod
             sensor = adapter;
             actuator = adapter;
             statusDisplay = new PersonConnectomeStatusDisplay(adapter.StatusAnchor, manualInput,
-                () => directFlyControl,
-                SetDirectFlyControl);
+                new StatusDisplayBindings
+                {
+                    IsDirectFlyControlEnabled = () => directFlyControl,
+                    SetDirectFlyControl = SetDirectFlyControl,
+                    TrainingStatus = () => adapter == null ? "TEACH: unavailable" : adapter.TrainingSession.StatusText + "\n" + adapter.StandingControlSummary,
+                    StartTraining = StartTrainingTrial,
+                    ToggleTrainingPause = ToggleTrainingPause,
+                    GivePositiveTrainingFeedback = GivePositiveTrainingFeedback,
+                    GiveNegativeTrainingFeedback = GiveNegativeTrainingFeedback,
+                    UndoTrainingFeedback = UndoTrainingFeedback,
+                    RestoreBestTrainingVersion = RestoreBestTrainingVersion,
+                    ResetTrainingSkill = ResetTrainingSkill,
+                    SaveTrainingProfile = SaveTrainingProfile,
+                    LoadTrainingProfile = LoadTrainingProfile
+                });
             brain = LifBrain.TryCreate(out var loadStatus);
             if (!adapter.IsUsable)
             {
@@ -86,6 +105,7 @@ namespace Mod
             acceptingEvents = true;
             pendingPoseSweep = true;
             statusDisplay?.SetActive(true);
+            adapter?.SetJointAwareStandingControllerEnabled(JointAwareStandingControllerEnabled);
             ApplyDirectFlyControl();
             SuppressNativePoseOptions();
         }
@@ -97,6 +117,10 @@ namespace Mod
             {
                 return;
             }
+
+            // Mirror inspector changes without recreating the adapter. The
+            // standing controller remains opt-in and resets when disabled.
+            adapter.SetJointAwareStandingControllerEnabled(JointAwareStandingControllerEnabled);
 
             var rate = float.IsNaN(TickRateHz) || float.IsInfinity(TickRateHz) ? 20f : Mathf.Clamp(TickRateHz, 1f, 60f);
             var interval = 1f / rate;
@@ -123,6 +147,8 @@ namespace Mod
                 sampleElapsed = 0f;
                 statusDisplay?.RecordTick(sensorMs, brainMs, actuatorMs, skipped, brain);
             }
+
+            adapter.RefreshStandingControl(Time.fixedDeltaTime);
         }
 
         private static void RebalanceTickPhases()
@@ -180,6 +206,8 @@ namespace Mod
             manualInput.Deactivate();
             brain?.Stop();
             (actuator ?? adapter as IBodyActuator)?.Suspend();
+            adapter?.SetJointAwareStandingControllerEnabled(false);
+            ClearActiveTrainingController(this);
             RestoreDirectFlyControl();
             RestoreNativePoseOptions();
         }
@@ -188,6 +216,7 @@ namespace Mod
         {
             acceptingEvents = false;
             activeControllers.Remove(this);
+            ClearActiveTrainingController(this);
             manualInput.Deactivate();
             RestoreDirectFlyControl();
             RestoreNativePoseOptions();
@@ -251,6 +280,46 @@ namespace Mod
             directFlyControl = enabled;
             if (enabled) ApplyDirectFlyControl();
             else RestoreDirectFlyControl();
+        }
+
+        private void StartTrainingTrial()
+        {
+            if (adapter == null || !adapter.IsUsable) return;
+            if (!TryClaimTrainingController(this)) return;
+            JointAwareStandingControllerEnabled = true;
+            adapter.StartTrainingTrial();
+        }
+
+        private static bool TryClaimTrainingController(PersonConnectomeController controller)
+        {
+            if (activeTrainingController != null && !ReferenceEquals(activeTrainingController, controller)) return false;
+            activeTrainingController = controller;
+            return true;
+        }
+
+        private static void ClearActiveTrainingController(PersonConnectomeController controller)
+        {
+            if (ReferenceEquals(activeTrainingController, controller)) activeTrainingController = null;
+        }
+
+        private void ToggleTrainingPause() => adapter?.ToggleTrainingPause();
+        private void GivePositiveTrainingFeedback() => adapter?.GiveTrainingFeedback(true);
+        private void GiveNegativeTrainingFeedback() => adapter?.GiveTrainingFeedback(false);
+        private void UndoTrainingFeedback() => adapter?.UndoTrainingFeedback();
+        private void RestoreBestTrainingVersion() => adapter?.RestoreBestTrainingVersion();
+        private void ResetTrainingSkill() => adapter?.ResetTrainingSkill();
+
+        private void SaveTrainingProfile()
+        {
+            if (adapter == null) return;
+            PlayerPrefs.SetString(TrainingProfileKey, adapter.TrainingSession.Serialize());
+            PlayerPrefs.Save();
+        }
+
+        private void LoadTrainingProfile()
+        {
+            if (adapter == null || !PlayerPrefs.HasKey(TrainingProfileKey)) return;
+            adapter.TrainingSession.TryLoad(PlayerPrefs.GetString(TrainingProfileKey, String.Empty));
         }
 
         private void ApplyDirectFlyControl()
@@ -338,13 +407,7 @@ namespace Mod
             nextDirectControlHierarchyDiscovery = Time.time + DirectControlHierarchyDiscoverySeconds;
             gameObject.GetComponentsInChildren(true, directControlLimbBuffer);
             directControlLimbs.Clear();
-            foreach (var limb in directControlLimbBuffer)
-            {
-                if (limb != null)
-                {
-                    directControlLimbs.Add(limb);
-                }
-            }
+            directControlLimbs.AddRange(directControlLimbBuffer.Where(limb => limb != null));
         }
 
         private int GetDirectControlTopologyFingerprint()
