@@ -19,14 +19,14 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Build deployed mod archive
+      - name: Build deployed mod files
         shell: pwsh
         run: |
-          ./scripts/deploy/Package-Mod.ps1 -OutputPath artifacts/PersonConnectome-Mod.zip
+          ./scripts/deploy/Package-Mod.ps1 -OutputDirectory artifacts/PersonConnectome-Mod
 
-      - name: Upload mod archive
+      - name: Upload mod files
         uses: actions/upload-artifact@v4
         with:
           name: PersonConnectome-Mod
-          path: artifacts/PersonConnectome-Mod.zip
+          path: artifacts/PersonConnectome-Mod
           if-no-files-found: error

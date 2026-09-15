@@ -92,7 +92,7 @@ To create the same folder layout as a distributable ZIP without touching a game 
 .\scripts\deploy\Package-Mod.ps1
 ```
 
-The archive is written to `artifacts/PersonConnectome-Mod.zip` by default. GitHub Actions runs this packaging step on pushes, pull requests and version tags, and uploads the ZIP as the `PersonConnectome-Mod` workflow artifact.
+The archive is written to `artifacts/PersonConnectome-Mod.zip` by default. Pass `-OutputDirectory artifacts/PersonConnectome-Mod` when a folder is preferred; the directory must be empty. GitHub Actions uses that directory form and uploads the mod files as the `PersonConnectome-Mod` workflow artifact, avoiding a ZIP inside GitHub's ZIP wrapper for downloaded workflow artifacts.
 
 ## Code and attribution
 

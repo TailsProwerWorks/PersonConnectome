@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
-    [string] $OutputPath
+    [string] $OutputPath,
+    [string] $OutputDirectory
 )
 
 Set-StrictMode -Version Latest
@@ -95,13 +96,23 @@ if (-not [String]::IsNullOrWhiteSpace([string]$manifest.ThumbnailPath)) {
 }
 
 if ([String]::IsNullOrWhiteSpace($OutputPath)) {
-    $OutputPath = Join-Path $repositoryRoot 'artifacts\PersonConnectome-Mod.zip'
+    if ([String]::IsNullOrWhiteSpace($OutputDirectory)) {
+        $OutputPath = Join-Path $repositoryRoot 'artifacts\PersonConnectome-Mod.zip'
+    }
 }
-elseif (-not [IO.Path]::IsPathRooted($OutputPath)) {
-    $OutputPath = Join-Path $repositoryRoot $OutputPath
+elseif (-not [String]::IsNullOrWhiteSpace($OutputDirectory)) {
+    throw 'Specify either -OutputPath or -OutputDirectory, not both.'
 }
 
-$outputPath = [IO.Path]::GetFullPath($OutputPath)
+if (-not [String]::IsNullOrWhiteSpace($OutputPath) -and -not [IO.Path]::IsPathRooted($OutputPath)) {
+    $OutputPath = Join-Path $repositoryRoot $OutputPath
+}
+if (-not [String]::IsNullOrWhiteSpace($OutputDirectory) -and -not [IO.Path]::IsPathRooted($OutputDirectory)) {
+    $OutputDirectory = Join-Path $repositoryRoot $OutputDirectory
+}
+
+$outputPath = if (-not [String]::IsNullOrWhiteSpace($OutputPath)) { [IO.Path]::GetFullPath($OutputPath) } else { $null }
+$outputDirectoryPath = if (-not [String]::IsNullOrWhiteSpace($OutputDirectory)) { [IO.Path]::GetFullPath($OutputDirectory) } else { $null }
 $stagingParent = Join-Path ([IO.Path]::GetTempPath()) ('person-connectome-package-' + [guid]::NewGuid().ToString('N'))
 $packageDirectory = Join-Path $stagingParent 'PersonConnectome'
 
@@ -113,23 +124,47 @@ try {
         Copy-Item -LiteralPath $file.SourcePath -Destination $destination -Force
     }
 
-    New-Item -ItemType Directory -Path (Split-Path -Parent $outputPath) -Force | Out-Null
-    Compress-Archive -Path $packageDirectory -DestinationPath $outputPath -CompressionLevel Optimal -Force
-
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $archive = [IO.Compression.ZipFile]::OpenRead($outputPath)
-    try {
-        $expectedEntries = @($files | ForEach-Object { 'PersonConnectome/' + $_.RelativePath.Replace('\', '/') } | Sort-Object)
-        $actualEntries = @($archive.Entries | Where-Object { -not $_.FullName.EndsWith('/') } | ForEach-Object { $_.FullName } | Sort-Object)
-        if (($expectedEntries -join "`n") -ne ($actualEntries -join "`n")) {
-            throw "Package contents do not match the deployed mod file set. Expected $($expectedEntries.Count) files, found $($actualEntries.Count)."
+    if ($null -ne $outputDirectoryPath) {
+        if (Test-Path -LiteralPath $outputDirectoryPath -PathType Leaf) {
+            throw "Package output directory is a file: $outputDirectoryPath"
         }
-    }
-    finally {
-        $archive.Dispose()
-    }
 
-    Write-Host "Packaged $($files.Count) deployed files to: $outputPath"
+        if (Test-Path -LiteralPath $outputDirectoryPath -PathType Container) {
+            $existingEntries = @(Get-ChildItem -LiteralPath $outputDirectoryPath -Force)
+            if ($existingEntries.Count -gt 0) {
+                throw "Package output directory must be empty: $outputDirectoryPath"
+            }
+        }
+        New-Item -ItemType Directory -Path $outputDirectoryPath -Force | Out-Null
+        Copy-Item -Path (Join-Path $packageDirectory '*') -Destination $outputDirectoryPath -Recurse -Force
+
+        $expectedEntries = @($files | ForEach-Object { $_.RelativePath.Replace('\', '/') } | Sort-Object)
+        $actualEntries = @(Get-ChildItem -LiteralPath $outputDirectoryPath -Recurse -File | ForEach-Object { $_.FullName.Substring($outputDirectoryPath.Length + 1).Replace('\', '/') } | Sort-Object)
+        if (($expectedEntries -join "`n") -ne ($actualEntries -join "`n")) {
+            throw "Package directory contents do not match the deployed mod file set. Expected $($expectedEntries.Count) files, found $($actualEntries.Count)."
+        }
+
+        Write-Host "Packaged $($files.Count) deployed files to directory: $outputDirectoryPath"
+    }
+    else {
+        New-Item -ItemType Directory -Path (Split-Path -Parent $outputPath) -Force | Out-Null
+        Compress-Archive -Path $packageDirectory -DestinationPath $outputPath -CompressionLevel Optimal -Force
+
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $archive = [IO.Compression.ZipFile]::OpenRead($outputPath)
+        try {
+            $expectedEntries = @($files | ForEach-Object { 'PersonConnectome/' + $_.RelativePath.Replace('\', '/') } | Sort-Object)
+            $actualEntries = @($archive.Entries | Where-Object { -not $_.FullName.EndsWith('/') } | ForEach-Object { $_.FullName } | Sort-Object)
+            if (($expectedEntries -join "`n") -ne ($actualEntries -join "`n")) {
+                throw "Package contents do not match the deployed mod file set. Expected $($expectedEntries.Count) files, found $($actualEntries.Count)."
+            }
+        }
+        finally {
+            $archive.Dispose()
+        }
+
+        Write-Host "Packaged $($files.Count) deployed files to: $outputPath"
+    }
     Write-Host "Embedded Git commit: $gitCommit"
 }
 finally {
