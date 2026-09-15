@@ -13,7 +13,7 @@ Before changing code, read:
 - [Manual game checks](docs/manual-game-test.md) for native rendering, physics, UI and performance validation.
 - [Provenance](docs/PROVENANCE.md) and [third-party notices](THIRD_PARTY_NOTICES) before changing the connectome asset or attribution.
 
-`Mod/RuntimeBrain.cs` is the authoritative brain implementation. It is compiled into the game mod and linked by the runtime test harness; do not create a second decoder or silently change only one copy.
+`src/Core/LifBrain.cs` is the authoritative brain implementation. It is compiled into the game mod and linked by the runtime test harness; do not create a second decoder or silently change only one copy.
 
 ## Model assistance
 
@@ -29,15 +29,15 @@ These are recommendations for complex repository work, not a substitute for revi
 From the repository root, run the applicable checks:
 
 ```powershell
-dotnet format PersonConnectome.sln --verify-no-changes --no-restore
-dotnet build PersonConnectome.sln -c Release
+dotnet format PersonConnectome.slnx --verify-no-changes --no-restore
+dotnet build PersonConnectome.slnx -c Release
 dotnet run --project tests/PersonConnectome.Runtime.Tests -c Release
 dotnet run --project tests/PersonConnectome.Adapter.Tests -c Release
-pwsh -NoProfile -File scripts/Test-GameCompilation.ps1
+pwsh -NoProfile -File scripts/ai/Test-GameCompilation.ps1
 git diff --check
 ```
 
-For changes to deployment or source safety, also run the relevant scripts under `scripts/`, especially `Test-ModSourceSafety.ps1` and `Test-DeployDiscovery.ps1`. For UI, physics, loading, audio, vision, timing or performance changes, complete the applicable sections of [manual-game-test.md](docs/manual-game-test.md) and report native results separately from offline test results.
+For changes to deployment or source safety, also run the relevant scripts under `scripts/ai/`, especially `Test-ModSourceSafety.ps1` and `Test-DeployDiscovery.ps1`. For UI, physics, loading, audio, vision, timing or performance changes, complete the applicable sections of [manual-game-test.md](docs/manual-game-test.md) and report native results separately from offline test results.
 
 ## What to include in a change
 

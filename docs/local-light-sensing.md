@@ -33,7 +33,7 @@ The UI shows ambient-light separately from local-light-proxy and contributing-li
 
 Regression coverage includes seven native owner routes, off/inactive/transparent sources, duplicate routes/colliders, ordinary glowing-sprite exclusion, transformed/flipped footprints, invalid/missing data, zero scale, sliced/tiled sizes, native LightSprite brightness and 64-source truncation/reset. The first geometry fixture used the wrong test anchor and was corrected to use the adapter's root fallback.
 
-Runtime implementation changes: Mod/PeoplePlaygroundPersonAdapter.cs, RuntimeTypes.cs, RuntimeBrain.cs (label), ManualInput.cs (label), PersonConnectomeStatusDisplay.cs (explanation). Adapter tests change Program.cs and GameDoubles.cs. README.md, Mod/README.txt, architecture/API/provenance/sensory-mapping/Minecraft-adaptation/manual-game-test docs and this file describe the new behavior.
+Mod implementation changes: src/Adapters/PeoplePlaygroundPersonAdapter.cs, Core/SensoryFrame.cs and Core/MotorCommand.cs, Core/LifBrain.cs (label), UI/ManualInputState.cs (label), UI/StatusDisplay.cs (explanation). Adapter tests change Program.cs and GameDoubles.cs. README.md, assets/README.txt, architecture/API/provenance/sensory-mapping/Minecraft-adaptation/manual-game-test docs and this file describe the new behavior.
 
 Native rendering acceptance remains manual-game-test.md case 31. Compiling against installed assemblies and passing game doubles do not prove every stock prefab's beam footprint or native performance. Restart/reload the mod before checking the result; an old processed=24000/24000 panel also indicates the earlier scheduler is still loaded.
 
@@ -41,15 +41,15 @@ Checks completed on 2026-09-14:
 
 | Command/check | Result |
 | --- | --- |
-| `dotnet format PersonConnectome.sln --verify-no-changes --no-restore` | Passed, exit 0 |
-| `dotnet build PersonConnectome.sln -c Release` | Passed, 0 warnings and 0 errors |
+| `dotnet format PersonConnectome.slnx --verify-no-changes --no-restore` | Passed, exit 0 |
+| `dotnet build PersonConnectome.slnx -c Release` | Passed, 0 warnings and 0 errors |
 | `dotnet run --project tests/PersonConnectome.Runtime.Tests -c Release` | Passed, 53 scenarios |
 | `dotnet run --project tests/PersonConnectome.Adapter.Tests -c Release` | Passed, 61 scenarios |
-| `dotnet build Mod/PersonConnectome.Mod.csproj -c Release` | Passed, 0 warnings and 0 errors |
-| `scripts/Test-GameCompilation.ps1` | Passed: 12 scripts, 22 exact references, syntax checks and both installed semantic scanners |
-| PowerShell parser over `scripts/*.ps1` | Passed, 6 scripts |
-| `scripts/Test-DeployDiscovery.ps1` | Passed, including UTF-8/5000-byte README boundary coverage |
-| `scripts/Deploy-Mod.ps1 -WhatIf` | Passed, registered Steam discovery and game-install forwarding |
+| `dotnet build src/PersonConnectome.Mod.csproj -c Release` | Passed, 0 warnings and 0 errors |
+| `scripts/ai/Test-GameCompilation.ps1` | Passed: 12 scripts, 22 exact references, syntax checks and both installed semantic scanners |
+| PowerShell parser over `scripts/**/*.ps1` | Passed, 6 scripts |
+| `scripts/ai/Test-DeployDiscovery.ps1` | Passed, including UTF-8/5000-byte README boundary coverage |
+| `scripts/deploy/Deploy-Mod.ps1 -WhatIf` | Passed, registered Steam discovery and game-install forwarding |
 | `git diff --check` | Passed |
 
-Local deployment used `scripts/Deploy-Mod.ps1 -GameInstall <discovered install> -NoBuild` after validation. Source and installed Workshop creator identities matched before deployment. All 16 deployed files matched source hashes, including the unchanged connectome carrier; the raw build input was not deployed. This did not upload a Workshop update. The embedded marker is the existing HEAD `4dfaaef7312b`; these working-tree changes are not a new commit. No native gameplay or rendering acceptance run was performed.
+Local deployment used `scripts/deploy/Deploy-Mod.ps1 -GameInstall <discovered install> -NoBuild` after validation. Source and installed Workshop creator identities matched before deployment. All 16 deployed files matched source hashes, including the unchanged connectome carrier; the raw build input was not deployed. This did not upload a Workshop update. The embedded marker is the existing HEAD `4dfaaef7312b`; these working-tree changes are not a new commit. No native gameplay or rendering acceptance run was performed.

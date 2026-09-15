@@ -1,0 +1,8 @@
+<Project>
+  <!-- The deployable project is housed under src/, but its NuGet restore and
+       intermediate files belong beside the solution like a normal C# project. -->
+  <PropertyGroup Condition="'$(MSBuildProjectName)' == 'PersonConnectome.Mod'">
+    <BaseIntermediateOutputPath>$(MSBuildThisFileDirectory)obj\</BaseIntermediateOutputPath>
+    <MSBuildProjectExtensionsPath>$(MSBuildThisFileDirectory)obj\</MSBuildProjectExtensionsPath>
+  </PropertyGroup>
+</Project>

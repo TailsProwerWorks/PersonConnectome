@@ -6,7 +6,7 @@ The transferable sensory and motor choices are adapted within the existing C# ru
 
 | Reference feature | PersonConnectome implementation or limit |
 |---|---|
-| Real connectome and neural visualizer | Existing pinned MaleCNS derivative and authoritative RuntimeBrain retained. All finite soma coordinates and captured spikes remain in the Canvas UI. No generated/demo replacement. |
+| Real connectome and neural visualizer | Existing pinned MaleCNS derivative and authoritative LifBrain retained. All finite soma coordinates and captured spikes remain in the Canvas UI. No generated/demo replacement. |
 | Damage response | Added an edge sample from valid connected-limb health loss and a one-shot previously tracked limb-loss event. Hill-derived amplitude reaches tactile/bristle populations. Native pain and adrenaline remain separate game readings, not a simulated feeling. |
 | Regional touch | Head, arm, leg and core contacts use native flags and disjoint existing nerve/type annotations. Human-to-fly regions are engineering analogies. Broad impact/vibration and injury merge by maximum. |
 | Audio bands and direction | One accepted external source supplies world-X bearing plus coarse source-spectrum energy below/above 100 Hz when Unity supplies it. Empty/invalid spectra fall back to broad playback. No song, word or sound-identity recognition, head-relative ears or 3D localization. |

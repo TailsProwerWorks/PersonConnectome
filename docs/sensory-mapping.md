@@ -1,6 +1,6 @@
 # Sensory and movement mapping
 
-This is an independently implemented C# adaptation of population choices in the Minecraft project's [SensoryEncoders](https://github.com/blendi-remade/fly-brain-minecraft/blob/main/src/main/java/com/fruitfly/brain/SensoryEncoders.java), [MotorMap](https://github.com/blendi-remade/fly-brain-minecraft/blob/main/src/main/java/com/fruitfly/brain/MotorMap.java) and [MotorDecoder](https://github.com/blendi-remade/fly-brain-minecraft/blob/main/src/main/java/com/fruitfly/brain/MotorDecoder.java). It uses our existing authoritative RuntimeBrain and unchanged pinned MaleCNS asset. The reference's [research notes](https://github.com/blendi-remade/fly-brain-minecraft/blob/main/docs/REFERENCE.md) explain its choices. No Minecraft dependency is required.
+This is an independently implemented C# adaptation of population choices in the Minecraft project's [SensoryEncoders](https://github.com/blendi-remade/fly-brain-minecraft/blob/main/src/main/java/com/fruitfly/brain/SensoryEncoders.java), [MotorMap](https://github.com/blendi-remade/fly-brain-minecraft/blob/main/src/main/java/com/fruitfly/brain/MotorMap.java) and [MotorDecoder](https://github.com/blendi-remade/fly-brain-minecraft/blob/main/src/main/java/com/fruitfly/brain/MotorDecoder.java). It uses our existing authoritative LifBrain and unchanged pinned MaleCNS asset. The reference's [research notes](https://github.com/blendi-remade/fly-brain-minecraft/blob/main/docs/REFERENCE.md) explain its choices. No Minecraft dependency is required.
 
 ## What actually enters the graph
 

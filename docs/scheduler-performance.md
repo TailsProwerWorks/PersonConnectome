@@ -32,6 +32,30 @@ Same machine, .NET 10 Release, same real graph and synthetic combined-input fram
 
 The improvement is retained neural information and lower allocation, not lower CPU time. Mean/p95 cost increased. The tested graph workload stayed below the new firing cap; deliberate synthetic cap-overflow tests exercise its fallback. Native Unity/Mono, cold loading, several people and unusual stimulation can cost more. The residual-only prototype was also measured, but retained fewer inputs and still dropped work; it was not kept.
 
+## Rendering and membership follow-up
+
+The post-freeze performance pass keeps graph and scheduler semantics unchanged.
+The Brain page now indexes each displayed soma by neuron ID and walks only the
+current fired-neuron list (at most 24,000 entries) when painting flashes, instead
+of probing all 141,781 displayed points through a hash set on every map refresh.
+The runtime also uses a dense per-neuron fired marker for repeated population and
+map membership checks. On the matched .NET 10 benchmark, neural ticks improved
+from roughly 5.8-6.4 ms mean with small per-run allocations to 4.9-5.2 ms mean
+with zero measured tick allocations; this is still not a Unity Mono frame-time
+guarantee. The map optimization is most visible when the Brain page is selected.
+Native sensing, physics and UI layout remain CPU/main-thread work.
+
+## Multi-person cadence follow-up
+
+Each enabled controller keeps its configured neural tick rate, but the active
+controllers are assigned evenly distributed fixed-step phases. Phases are
+rebalanced when the enabled population changes, so this does not assume a fixed
+number of people. This prevents people spawned together from running their
+sensor scan, neural step and motor application in the same physics callback. It
+smooths frame-time bursts; it does not reduce the total CPU work or change the
+per-person tick rate. The installed game must be restarted after deployment
+before measuring multi-person behavior.
+
 All 25 sensory mapping scenarios were rerun with the new scheduler and completed with zero dropped crossings. The refreshed input/whole-graph spike counts are in [sensory-mapping.md](sensory-mapping.md). Quiet input remained silent. No biological understanding or reliable human gait follows from these results.
 
 ## Regression coverage
@@ -42,10 +66,10 @@ Older overload tests now use threshold-crossing inputs, so they continue exercis
 
 ## Files changed in this follow-up
 
-- Mod/RuntimeBrain.cs: two-phase integration/firing scheduler, counters and outgoing-loop work.
-- Mod/PersonConnectomeStatusDisplay.cs: explicit integration/decay/dropped-spike labels.
-- tests/PersonConnectome.Runtime.Tests/Program.cs and ConnectomeBrainTestHooks.cs: regressions and benchmark instrumentation.
-- README.md and Mod/README.txt: player explanation of the new limit.
+- src/Core/LifBrain.cs: two-phase integration/firing scheduler, counters and outgoing-loop work.
+- src/UI/StatusDisplay.cs: explicit integration/decay/dropped-spike labels.
+- tests/PersonConnectome.Runtime.Tests/Core/Program.cs and LifBrainTestHooks.cs: regressions and benchmark instrumentation.
+- README.md and assets/README.txt: player explanation of the new limit.
 - docs/architecture.md, api-compatibility.md, PROVENANCE.md, minecraft-adaptation.md, sensory-mapping.md, manual-game-test.md and this file: current semantics, measurements and native checks.
 - docs/AUDIT-2026-09-14.md: marks the earlier sweep's scheduler results as historical.
 
@@ -61,15 +85,15 @@ All listed checks exited 0:
 
 | Command/check | Result |
 |---|---|
-| dotnet format PersonConnectome.sln --verify-no-changes --no-restore | Pass |
-| dotnet build PersonConnectome.sln -c Release | 0 warnings, 0 errors |
+| dotnet format PersonConnectome.slnx --verify-no-changes --no-restore | Pass |
+| dotnet build PersonConnectome.slnx -c Release | 0 warnings, 0 errors |
 | dotnet run --project tests/PersonConnectome.Runtime.Tests -c Release | 53 scenarios passed |
 | dotnet run --project tests/PersonConnectome.Adapter.Tests -c Release | 58 scenarios passed |
-| dotnet build Mod/PersonConnectome.Mod.csproj -c Release | 0 warnings, 0 errors |
-| pwsh -NoProfile -File scripts/Test-GameCompilation.ps1 | 12 scripts / 22 installed compiler references; documented-rule guard and both installed semantic scanners passed |
+| dotnet build src/PersonConnectome.Mod.csproj -c Release | 0 warnings, 0 errors |
+| pwsh -NoProfile -File scripts/ai/Test-GameCompilation.ps1 | 12 scripts / 22 installed compiler references; documented-rule guard and both installed semantic scanners passed |
 | PowerShell Language.Parser | All 6 scripts parsed |
-| pwsh -NoProfile -File scripts/Test-DeployDiscovery.ps1 | Discovery and README byte-limit tests passed |
-| pwsh -NoProfile -File scripts/Deploy-Mod.ps1 -WhatIf | Registered Steam discovery and MSBuild install forwarding passed |
+| pwsh -NoProfile -File scripts/ai/Test-DeployDiscovery.ps1 | Discovery and README byte-limit tests passed |
+| pwsh -NoProfile -File scripts/deploy/Deploy-Mod.ps1 -WhatIf | Registered Steam discovery and MSBuild install forwarding passed |
 | git diff --check | Pass |
 
 Local deployment with explicit discovered GameInstall and -NoBuild verified all 16 deployed files against expected hashes. The PNG carrier stayed byte-identical and CreatorUGCIdentity 3800353718 was preserved. The embedded Git marker remains 4dfaaef7312b, the existing HEAD rather than a new commit of these working-tree changes. No Workshop upload was performed. Native gameplay was not run.

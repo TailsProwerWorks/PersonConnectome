@@ -1,0 +1,78 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <!-- PPGModCompiler 1.0.0 parses mod sources with Roslyn CSharp14. -->
+    <LangVersion>14.0</LangVersion>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AssemblyName>PersonConnectome</AssemblyName>
+    <RootNamespace>Mod</RootNamespace>
+    <OutputPath>bin\$(Configuration)\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <PeoplePlaygroundInstall Condition="'$(PeoplePlaygroundInstall)' == ''">C:\Program Files (x86)\Steam\steamapps\common\People Playground</PeoplePlaygroundInstall>
+    <GameManagedDirectory>$(PeoplePlaygroundInstall)\People Playground_Data\Managed</GameManagedDirectory>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Keep the source tree modular: Core, Adapters, UI, and Mod
+         are compiled into the same game assembly without changing runtime behavior. -->
+    <Compile Include="Core\**\*.cs;Adapters\**\*.cs;UI\**\*.cs;Mod\**\*.cs" />
+    <None Include="mod.json" />
+    <None Include="..\assets\connectome\malecns-v1.0.flyb.gz" Link="connectome\malecns-v1.0.flyb.gz" />
+    <None Include="..\assets\connectome\malecns-v1.0.png" Link="connectome\malecns-v1.0.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>$(GameManagedDirectory)\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UIModule">
+      <HintPath>$(GameManagedDirectory)\UnityEngine.UIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Assembly-CSharp">
+      <HintPath>$(GameManagedDirectory)\Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>$(GameManagedDirectory)\UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>$(GameManagedDirectory)\UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.Physics2DModule">
+      <HintPath>$(GameManagedDirectory)\UnityEngine.Physics2DModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>$(GameManagedDirectory)\UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.AudioModule">
+      <HintPath>$(GameManagedDirectory)\UnityEngine.AudioModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Unity.TextMeshPro">
+      <HintPath>$(GameManagedDirectory)\Unity.TextMeshPro.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.UI">
+      <HintPath>$(GameManagedDirectory)\UnityEngine.UI.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <Target Name="ValidatePeoplePlaygroundReferences" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(GameManagedDirectory)\Assembly-CSharp.dll')" Text="People Playground references not found. Set PeoplePlaygroundInstall to the game install directory." />
+    <Error Condition="!Exists('$(GameManagedDirectory)\UnityEngine.dll')" Text="UnityEngine.dll was not found under $(GameManagedDirectory)." />
+    <Error Condition="!Exists('$(GameManagedDirectory)\UnityEngine.CoreModule.dll')" Text="UnityEngine.CoreModule.dll was not found under $(GameManagedDirectory)." />
+    <Error Condition="!Exists('$(GameManagedDirectory)\UnityEngine.Physics2DModule.dll')" Text="UnityEngine.Physics2DModule.dll was not found under $(GameManagedDirectory)." />
+    <Error Condition="!Exists('$(GameManagedDirectory)\UnityEngine.InputLegacyModule.dll')" Text="UnityEngine.InputLegacyModule.dll was not found under $(GameManagedDirectory)." />
+    <Error Condition="!Exists('$(GameManagedDirectory)\Unity.TextMeshPro.dll')" Text="Unity.TextMeshPro.dll was not found under $(GameManagedDirectory)." />
+    <Error Condition="!Exists('$(GameManagedDirectory)\UnityEngine.UI.dll')" Text="UnityEngine.UI.dll was not found under $(GameManagedDirectory)." />
+  </Target>
+</Project>

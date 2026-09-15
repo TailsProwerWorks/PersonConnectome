@@ -10,13 +10,17 @@
     <NoWarn>$(NoWarn);CS0649;CS7022;CS8632</NoWarn>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../../Mod/script.cs" Link="Mod/script.cs" />
-    <Compile Include="../../Mod/ConnectomeRuntimeAsset.cs" Link="Mod/ConnectomeRuntimeAsset.cs" />
-    <Compile Include="../../Mod/ConnectomeRuntimeAssetReader.cs" Link="Mod/ConnectomeRuntimeAssetReader.cs" />
-    <Compile Include="../../Mod/RuntimeTypes.cs" Link="Mod/RuntimeTypes.cs" />
-    <Compile Include="../../Mod/ManualInput.cs" Link="Mod/ManualInput.cs" />
-    <Compile Include="../../Mod/RuntimeBrain.cs" Link="Mod/RuntimeBrain.cs" />
-    <Compile Include="../../Mod/BrainVisualization.cs" Link="Mod/BrainVisualization.cs" />
-    <Compile Include="../../Mod/TelemetryLayout.cs" Link="Mod/TelemetryLayout.cs" />
+    <Compile Include="../../src/Mod/ModRegistration.cs" Link="src/Mod/ModRegistration.cs" />
+    <Compile Include="../../src/Core/ConnectomeAsset.cs" Link="src/Core/ConnectomeAsset.cs" />
+    <Compile Include="../../src/Core/ConnectomeAssetReader.cs" Link="src/Core/ConnectomeAssetReader.cs" />
+    <Compile Include="../../src/Core/LifBrainFactory.cs" Link="src/Core/LifBrainFactory.cs" />
+    <Compile Include="../../src/Core/IBodyActuator.cs" Link="src/Core/IBodyActuator.cs" />
+    <Compile Include="../../src/Core/IBodySensor.cs" Link="src/Core/IBodySensor.cs" />
+    <Compile Include="../../src/Core/LifBrain.cs" Link="src/Core/LifBrain.cs" />
+    <Compile Include="../../src/Core/MotorCommand.cs" Link="src/Core/MotorCommand.cs" />
+    <Compile Include="../../src/Core/SensoryFrame.cs" Link="src/Core/SensoryFrame.cs" />
+    <Compile Include="../../src/UI/ManualInputState.cs" Link="src/UI/ManualInputState.cs" />
+    <Compile Include="../../src/UI/BrainMap.cs" Link="src/UI/BrainMap.cs" />
+    <Compile Include="../../src/UI/TelemetryLayout.cs" Link="src/UI/TelemetryLayout.cs" />
   </ItemGroup>
 </Project>

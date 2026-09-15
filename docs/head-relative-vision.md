@@ -14,18 +14,18 @@ Each band's signed head bearing, divided by 90 and clamped, supplies the existin
 
 Angular sweep subtracts the native head rigidbody angular velocity from target-relative orbital angular velocity. Pure head rotation can produce sweep but cannot produce looming expansion. Bounds/radial motion still supply the existing expansion/approach estimates. Deformation, object rotation, exact silhouettes, rendered optical flow and semantic recognition are not reconstructed. Closest collider surfaces define field eligibility, so objects crossing a field edge may be missed even when part of their silhouette would be visible.
 
-The single authoritative RuntimeBrain and MaleCNS-derived asset remain intact. DNa02/DNg13/DNa01 activity already supplies filtered head/core requests through native InfluenceMotorSpeed; the next sample observes the resulting head transform. No force, transform rotation, random scan, fake spike or direct sensor-to-head controller is added. These connections enable feedback but do not establish effective gaze tracking or guaranteed spontaneous exploration. Native joint torque/limits still determine motion.
+The single authoritative LifBrain and MaleCNS-derived asset remain intact. DNa02/DNg13/DNa01 activity already supplies filtered head/core requests through native InfluenceMotorSpeed; the next sample observes the resulting head transform. No force, transform rotation, random scan, fake spike or direct sensor-to-head controller is added. These connections enable feedback but do not establish effective gaze tracking or guaranteed spontaneous exploration. Native joint torque/limits still determine motion.
 
 REQUEST (WALK IDLE) now explicitly names walking mode: head requests may exist while walking is idle. Senses exposes head-facing-world-deg, target-bearing-head-deg, vision-scan and five view-band strengths (CW2/CW1/front/CCW1/CCW2). The original nearest-target geometry remains diagnostic; live visual encoders use the spatial frame. Zero-strength/dark bands do not count as observed. Observations are value snapshots so later reads cannot mutate earlier frames. Requests remain separate from observed pose.
 
 ## Files and verification
 
-- Mod/PeoplePlaygroundPersonAdapter.cs: head frame, bounded visible-target selection, sweep and telemetry.
-- Mod/RuntimeTypes.cs: head observation/validity fields.
-- Mod/RuntimeBrain.cs: visual side weighting and walking-mode label.
-- tests/PersonConnectome.Adapter.Tests/Program.cs and GameDoubles.cs: rotation/mirroring, invalid/missing head, target visibility, budgets and relative sweep.
-- tests/PersonConnectome.Runtime.Tests/Program.cs: head-relative input traverses a deliberately isolated test graph into a stationary turning request, with direction precedence and decay checks. The small graph is a test fixture only; shipped data are unchanged.
-- README.md, Mod/README.txt, architecture/API/sensory-mapping/Minecraft-adaptation/provenance/manual-game-test docs: current behavior and limits.
+- src/Adapters/PeoplePlaygroundPersonAdapter.cs: head frame, bounded visible-target selection, sweep and telemetry.
+- src/Core/SensoryFrame.cs + src/Core/MotorCommand.cs: head observation/validity fields.
+- src/Core/LifBrain.cs: visual side weighting and walking-mode label.
+- tests/PersonConnectome.Adapter.Tests/Adapters/Program.cs and GameDoubles.cs: rotation/mirroring, invalid/missing head, target visibility, budgets and relative sweep.
+- tests/PersonConnectome.Runtime.Tests/Core/Program.cs: head-relative input traverses a deliberately isolated test graph into a stationary turning request, with direction precedence and decay checks. The small graph is a test fixture only; shipped data are unchanged.
+- README.md, assets/README.txt, architecture/API/sensory-mapping/Minecraft-adaptation/provenance/manual-game-test docs: current behavior and limits.
 
 Native acceptance is manual-game-test.md case 32. Offline tests do not simulate Unity neck physics, validate custom prefab facing, demonstrate target tracking or measure in-game frame time.
 
@@ -33,16 +33,16 @@ Native acceptance is manual-game-test.md case 32. Offline tests do not simulate 
 
 | Command/check | Result |
 | --- | --- |
-| `dotnet format PersonConnectome.sln --verify-no-changes --no-restore` | Passed, exit 0 (initial test-initializer formatting corrected) |
-| `dotnet build PersonConnectome.sln -c Release` | Passed, 0 warnings, 0 errors |
+| `dotnet format PersonConnectome.slnx --verify-no-changes --no-restore` | Passed, exit 0 (initial test-initializer formatting corrected) |
+| `dotnet build PersonConnectome.slnx -c Release` | Passed, 0 warnings, 0 errors |
 | `dotnet run --project tests/PersonConnectome.Runtime.Tests -c Release` | Passed, 55 scenarios |
 | `dotnet run --project tests/PersonConnectome.Adapter.Tests -c Release` | Passed, 67 scenarios |
-| `dotnet build Mod/PersonConnectome.Mod.csproj -c Release` | Passed, 0 warnings, 0 errors |
-| `scripts/Test-GameCompilation.ps1` | Passed, 12 scripts against 22 exact game compiler references, syntax checks and both installed semantic scanners |
-| PowerShell parser over scripts/*.ps1 | Passed, 6 scripts |
-| `scripts/Test-DeployDiscovery.ps1` | Passed, discovery and UTF-8/5000-byte README boundary checks |
-| `scripts/Deploy-Mod.ps1 -WhatIf` | Passed, registered Steam discovery and game-install forwarding |
-| Runtime `--mapping-report` | Passed, 26 real-graph synthetic cases, zero dropped spikes; original cases match the existing report and the two-band case has 329 LC4 spikes / 141,902 whole-graph spikes |
+| `dotnet build src/PersonConnectome.Mod.csproj -c Release` | Passed, 0 warnings, 0 errors |
+| `scripts/ai/Test-GameCompilation.ps1` | Passed, 12 scripts against 22 exact game compiler references, syntax checks and both installed semantic scanners |
+| PowerShell parser over scripts/**/*.ps1 | Passed, 6 scripts |
+| `scripts/ai/Test-DeployDiscovery.ps1` | Passed, discovery and UTF-8/5000-byte README boundary checks |
+| `scripts/deploy/Deploy-Mod.ps1 -WhatIf` | Passed, registered Steam discovery and game-install forwarding |
+| Mod `--mapping-report` | Passed, 26 real-graph synthetic cases, zero dropped spikes; original cases match the existing report and the two-band case has 329 LC4 spikes / 141,902 whole-graph spikes |
 | `git diff --check` | Passed |
 
 Existing geometry tests were updated for head-relative sweep and explicit brain anchors. An initial stationary-head test expectation was corrected to account for native motor influence (0.18 of the requested target in the double); this is not proof of real neck displacement. No in-game screenshots, physics acceptance or native performance measurement were obtained.

@@ -1,0 +1,7 @@
+<Solution>
+  <Project Path="src/PersonConnectome.Mod.csproj" />
+  <Folder Name="/tests/">
+    <Project Path="tests/PersonConnectome.Adapter.Tests/PersonConnectome.Adapter.Tests.csproj" />
+    <Project Path="tests/PersonConnectome.Runtime.Tests/PersonConnectome.Runtime.Tests.csproj" />
+  </Folder>
+</Solution>
