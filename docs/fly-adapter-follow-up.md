@@ -10,4 +10,4 @@ Before enabling it, that follow-up must:
 4. Add narrow adapter doubles and integration coverage for sensing, actuation, terminal cleanup, invalid data, and capability failures.
 5. Add a native-game checklist with screenshots/logs for loading, physics, UI, performance, and lifecycle before enabling selection in composition.
 
-The fly adapter must reuse `Core/LifBrain.cs`, `Core/ConnectomeAsset.cs`, `SensoryFrame`, and `MotorCommand`; it must not introduce a second simulator or change the FLYB asset format.
+The fly adapter must reuse `Core/LifBrain.cs`, `Core/ConnectomeAsset.cs`, `SensoryFrame`, and the fly-only `FlyMotorCommand`; it must not introduce a second simulator or change the FLYB asset format.

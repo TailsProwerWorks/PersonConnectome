@@ -20,6 +20,8 @@ internal static class Program
             ("terminal motors and grips clear immediately", TerminalStop),
             ("native pose context actions are suppressed", ContextMenuPoseActions),
             ("direct fly control suppresses native balance assists and restores them", DirectFlyControl),
+            ("direct fly control maps fly channels to available human joints", DirectFlyMotorMapping),
+            ("fly-to-person projection retains locomotion filtering and escape bursts", StatefulFlyMotorProjection),
             ("unconscious and locally damaged limbs clear old commands", IncapableStop),
             ("brain injury remains alive with matching signal value", BrainInjury),
             ("invalid health stops control without inventing death", InvalidHealth),
@@ -99,7 +101,7 @@ internal static class Program
     private static void True(bool value) { if (!value) throw new Exception("assertion failed"); }
     private static void Equal(float expected, float actual) { if (float.IsNaN(actual) || MathF.Abs(expected - actual) > .00001f) throw new Exception($"expected {expected}, actual {actual}"); }
     private static void Equal(string expected, string actual) { if (expected != actual) throw new Exception($"expected {expected}, actual {actual}"); }
-    private static MotorCommand Moving => new() { Walk = 1, RightArm = 1, LeftArm = -1, RightLeg = 1, LeftLeg = -1, Head = .5f, Core = .5f, RightGrip = 1, LeftGrip = 1, ReachGrab = 1, Heal = .8f, Avoid = 0, Freeze = 0, Stimulate = 0, Calm = 0, Extinguish = 0 };
+    private static PersonMotorCommand Moving => new() { Walk = 1, RightArm = 1, LeftArm = -1, RightLeg = 1, LeftLeg = -1, Head = .5f, Core = .5f, RightGrip = 1, LeftGrip = 1, ReachGrab = 1, Heal = .8f, Avoid = 0, Freeze = 0, Stimulate = 0, Calm = 0, Extinguish = 0 };
     private static void FlyAdapterIsDisabled()
     {
         using var adapter = new PeoplePlaygroundFlyAdapter();
@@ -299,6 +301,40 @@ internal static class Program
         Equal(3f, added.BalanceMuscleMovement);
         type.GetMethod("OnDestroy", flags).Invoke(controller, null);
     }
+    private static void DirectFlyMotorMapping()
+    {
+        var input = new FlyMotorCommand
+        {
+            FlyWingMotor = 1f,
+            FlyLegMotor = 1f,
+            FlyLegMotorAsym = .5f,
+            FlyJump = 1f,
+            FlyTakeoff = 1f,
+            FlyFlightPower = 1f,
+            FlyFlightYaw = 1f
+        };
+        var output = PeoplePlaygroundPersonMotorMapper.Map(input);
+        True(output.LeftArm < 0f && output.RightArm > 0f);
+        True(output.LeftLeg > 0f && output.RightLeg > 0f);
+        True(output.Core > 0f && output.Head > 0f);
+    }
+
+    private static void StatefulFlyMotorProjection()
+    {
+        var mapper = new PeoplePlaygroundPersonMotorMapper();
+        var first = mapper.Map(new FlyMotorCommand { FlyForward = 1f }, default, .05f);
+        Equal(.3f, first.Walk); // Start hysteresis retains the native walking floor.
+
+        var escape = mapper.Map(new FlyMotorCommand { FlyEscape = 1f }, default, .05f);
+        Equal(.7f, escape.Walk); // A qualified fly escape retains the old .6 s burst magnitude.
+        var held = mapper.Map(default, default, .05f);
+        Equal(.7f, held.Walk);
+
+        var halted = mapper.Map(new FlyMotorCommand { FlyHalt = .2f }, default, .05f);
+        Equal(0f, halted.Walk);
+        mapper.Reset();
+        Equal(0f, mapper.Map(default, default, .05f).Walk);
+    }
     private static void FoodItemCues()
     {
         ModAPI.Pumpkin = new SpawnableAsset { name = "Pumpkin" };
@@ -361,7 +397,7 @@ internal static class Program
         f = new Fixture(); f.Adapter.Read(); f.Person.Consciousness = .2f;
         f.Adapter.Read(); f.Adapter.Apply(Moving, false); f.Limb.IsDismembered = true;
         Equal(1f, f.Adapter.Read().DamageEvent); Equal(0f, f.Limb.MotorSpeed);
-        f = new Fixture(); f.Adapter.Read(); f.Adapter.Apply(new MotorCommand { Freeze = 1f }, false);
+        f = new Fixture(); f.Adapter.Read(); f.Adapter.Apply(new PersonMotorCommand { Freeze = 1f }, false);
         f.Limb.PhysicalBehaviour.isDisintegrated = true; Equal(1f, f.Adapter.Read().DamageEvent);
         f = new Fixture(); f.Adapter.Read(); f.Adapter.Apply(Moving, false); f.Person.Consciousness = .2f;
         f.Adapter.RefreshWalkingRequest(); f.Limb.IsDismembered = true;
@@ -1072,14 +1108,14 @@ internal static class Program
         var head = Fixture.AddLimb(f.Root, "Head"); head.HasBrain = true;
         f.Person.Limbs = [f.Limb, head]; f.Adapter.Read();
         f.Limb.Broken = true;
-        f.Adapter.Apply(new MotorCommand { Head = .5f }, false);
+        f.Adapter.Apply(new PersonMotorCommand { Head = .5f }, false);
         // Native head influence is 0.18 of the 15 deg/s target.
         Equal(0f, f.Person.DesiredWalkingDirection); Equal(2.7f, head.MotorSpeed); Equal(0f, f.Limb.MotorSpeed);
         // The adapter requests native motor speed; it must not set head pose.
         Equal(0f, head.transform.RotationDegrees);
-        head.Broken = true; f.Adapter.Apply(new MotorCommand { Head = .5f }, false); Equal(0f, head.MotorSpeed);
+        head.Broken = true; f.Adapter.Apply(new PersonMotorCommand { Head = .5f }, false); Equal(0f, head.MotorSpeed);
         head.Broken = false; f.Person.Consciousness = .1f;
-        f.Adapter.Read(); f.Adapter.Apply(new MotorCommand { Head = .5f }, false); Equal(0f, head.MotorSpeed);
+        f.Adapter.Read(); f.Adapter.Apply(new PersonMotorCommand { Head = .5f }, false); Equal(0f, head.MotorSpeed);
     }
     private static void SpatialSurroundings()
     {
@@ -1297,7 +1333,7 @@ internal static class Program
     private static void Chemistry()
     {
         var f = new Fixture(); f.Limb.RegenerationSpeed = .4f; f.Limb.CirculationBehaviour.BloodRegenerationPerSecond = .6f;
-        f.Adapter.Read(); f.Adapter.Apply(new MotorCommand { Heal = .2f }, true); Equal(.4f, f.Limb.RegenerationSpeed); Equal(.6f, f.Limb.CirculationBehaviour.BloodRegenerationPerSecond);
+        f.Adapter.Read(); f.Adapter.Apply(new PersonMotorCommand { Heal = .2f }, true); Equal(.4f, f.Limb.RegenerationSpeed); Equal(.6f, f.Limb.CirculationBehaviour.BloodRegenerationPerSecond);
         f.Adapter.Apply(Moving, true); Equal(.8f, f.Limb.RegenerationSpeed); f.Adapter.Stop(); Equal(.4f, f.Limb.RegenerationSpeed); Equal(.6f, f.Limb.CirculationBehaviour.BloodRegenerationPerSecond);
         f.Adapter.Apply(Moving, true); f.Limb.RegenerationSpeed = .9f; f.Limb.CirculationBehaviour.BloodRegenerationPerSecond = .95f; f.Adapter.Dispose(); Equal(.9f, f.Limb.RegenerationSpeed); Equal(.95f, f.Limb.CirculationBehaviour.BloodRegenerationPerSecond);
     }
@@ -1342,7 +1378,7 @@ internal static class Program
         Equal(0f, frame.Velocity); Equal(.1f, frame.Rotation);
         Equal(1f, frame.Adrenaline);
         True(f.Adapter.LiveBodySummary.Contains("adrenaline(raw)=" + 2.5f.ToString("0.00")));
-        f.Adapter.Apply(new MotorCommand { Walk = .7f }, false);
+        f.Adapter.Apply(new PersonMotorCommand { Walk = .7f }, false);
         Equal(1f, f.Person.DesiredWalkingDirection);
         Equal(0f, f.Adapter.Read().Velocity);
         f.Person.AverageSpeed = 2f;
@@ -1352,20 +1388,20 @@ internal static class Program
     private static void NativeMotorUnits()
     {
         var f = new Fixture(); f.Adapter.Read();
-        f.Adapter.Apply(new MotorCommand { Walk = -.46f, RightArm = .5f }, false);
+        f.Adapter.Apply(new PersonMotorCommand { Walk = -.46f, RightArm = .5f }, false);
         Equal(-.92f, f.Person.DesiredWalkingDirection);
         Equal(3.3f, f.Limb.MotorSpeed); // 0.5 * 30 degrees/s, blended by native 0.22 influence.
         f.Limb.MotorSpeed = 0f;
-        f.Adapter.Apply(new MotorCommand { Walk = 10f, RightArm = 10f }, false, 10000f, 10000f);
+        f.Adapter.Apply(new PersonMotorCommand { Walk = 10f, RightArm = 10f }, false, 10000f, 10000f);
         Equal(1f, f.Person.DesiredWalkingDirection);
         Equal(26.4f, f.Limb.MotorSpeed); // Configured target is capped at 120 degrees/s.
         f.Limb.MotorSpeed = 0f;
-        f.Adapter.Apply(new MotorCommand { Walk = -.46f, RightArm = .5f }, false, 1f, 1f);
+        f.Adapter.Apply(new PersonMotorCommand { Walk = -.46f, RightArm = .5f }, false, 1f, 1f);
         Equal(-.55f, f.Person.DesiredWalkingDirection); Equal(.11f, f.Limb.MotorSpeed);
         foreach (var invalid in new[] { float.NaN, float.PositiveInfinity, float.NegativeInfinity })
         {
             f.Limb.MotorSpeed = 10f;
-            f.Adapter.Apply(new MotorCommand { Walk = 1f, RightArm = 1f }, false, invalid, invalid);
+            f.Adapter.Apply(new PersonMotorCommand { Walk = 1f, RightArm = 1f }, false, invalid, invalid);
             Equal(0f, f.Person.DesiredWalkingDirection); Equal(0f, f.Limb.MotorSpeed);
             True(f.Adapter.LiveLimbSummary.Contains("invalid (stopped)"));
         }
@@ -1375,22 +1411,22 @@ internal static class Program
     {
         var f = new Fixture(); f.Adapter.Read();
         f.Limb.MotorSpeed = 10f; f.Limb.GripBehaviour.isHolding = true;
-        f.Adapter.Apply(new MotorCommand { Freeze = .49f }, false);
+        f.Adapter.Apply(new PersonMotorCommand { Freeze = .49f }, false);
         Equal(7.8f, f.Limb.MotorSpeed); True(f.Limb.GripBehaviour.isHolding);
 
         f.Limb.MotorSpeed = 10f; f.Limb.GripBehaviour.isHolding = true;
-        f.Adapter.Apply(new MotorCommand { Freeze = .5f }, false);
+        f.Adapter.Apply(new PersonMotorCommand { Freeze = .5f }, false);
         Equal(0f, f.Limb.MotorSpeed); True(!f.Limb.GripBehaviour.isHolding);
 
         f.Limb.MotorSpeed = 10f; f.Limb.GripBehaviour.isHolding = true;
-        f.Adapter.Apply(new MotorCommand { Freeze = .51f }, false);
+        f.Adapter.Apply(new PersonMotorCommand { Freeze = .51f }, false);
         Equal(0f, f.Limb.MotorSpeed); True(!f.Limb.GripBehaviour.isHolding);
     }
 
     private static void WalkingRequestMaintenance()
     {
         var f = new Fixture(); f.Adapter.Read();
-        f.Adapter.Apply(new MotorCommand { Walk = .26f }, false);
+        f.Adapter.Apply(new PersonMotorCommand { Walk = .26f }, false);
         Equal(.55f, f.Person.DesiredWalkingDirection);
         var controller = f.Root.AddComponent<PersonConnectomeController>();
         var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
@@ -1411,7 +1447,7 @@ internal static class Program
     private static void WalkingMaintenanceChecksCurrentState()
     {
         var f = new Fixture(); f.Adapter.Read();
-        f.Adapter.Apply(new MotorCommand { Walk = .3f, Avoid = 1f }, false);
+        f.Adapter.Apply(new PersonMotorCommand { Walk = .3f, Avoid = 1f }, false);
         f.Person.Braindead = true;
         f.Person.DesiredWalkingDirection = 0f;
         f.Adapter.RefreshWalkingRequest();
@@ -1424,42 +1460,42 @@ internal static class Program
         f.Person.PainLevel = float.NaN; f.Person.AverageSpeed = float.PositiveInfinity; f.Person.BrainDamagedTime = float.NegativeInfinity;
         f.Limb.BodyTemperature = float.PositiveInfinity; f.Limb.InternalTemperature = float.NegativeInfinity; f.Limb.PhysicalBehaviour.Temperature = float.NaN;
         var frame = f.Adapter.Read(); Equal(0, frame.Impact); Equal(0, frame.Pain); Equal(0, frame.Velocity); Equal(0, frame.Heat); Equal(0, frame.Cold); Equal(0, frame.BrainDamage);
-        f.Adapter.Apply(new MotorCommand { Walk = float.NaN, RightArm = float.NaN, RightGrip = float.NaN }, true); Equal(0, f.Person.DesiredWalkingDirection); Equal(0, f.Limb.MotorSpeed); True(!f.Limb.GripBehaviour.isHolding);
+        f.Adapter.Apply(new PersonMotorCommand { Walk = float.NaN, RightArm = float.NaN, RightGrip = float.NaN }, true); Equal(0, f.Person.DesiredWalkingDirection); Equal(0, f.Limb.MotorSpeed); True(!f.Limb.GripBehaviour.isHolding);
     }
     private static void NeutralChemistry()
     {
         var f = new Fixture(); f.Person.AdrenalineLevel = 1.5f; f.Adapter.Read();
         f.Adapter.Apply(default, true); Equal(1.5f, f.Person.AdrenalineLevel);
-        f.Adapter.Apply(new MotorCommand { Stimulate = .5f, Calm = .5f }, true); Equal(1.5f, f.Person.AdrenalineLevel);
+        f.Adapter.Apply(new PersonMotorCommand { Stimulate = .5f, Calm = .5f }, true); Equal(1.5f, f.Person.AdrenalineLevel);
     }
     private static void NativeAdrenalineRange()
     {
         var f = new Fixture(); f.Adapter.Read();
         f.Person.AdrenalineLevel = 2.5f;
-        f.Adapter.Apply(new MotorCommand { Stimulate = 1f }, true); Equal(2.55f, f.Person.AdrenalineLevel);
-        f.Adapter.Apply(new MotorCommand { Calm = 1f }, true); Equal(2.5f, f.Person.AdrenalineLevel);
+        f.Adapter.Apply(new PersonMotorCommand { Stimulate = 1f }, true); Equal(2.55f, f.Person.AdrenalineLevel);
+        f.Adapter.Apply(new PersonMotorCommand { Calm = 1f }, true); Equal(2.5f, f.Person.AdrenalineLevel);
         f.Person.AdrenalineLevel = 19.99f;
-        f.Adapter.Apply(new MotorCommand { Stimulate = 1f }, true); Equal(20f, f.Person.AdrenalineLevel);
+        f.Adapter.Apply(new PersonMotorCommand { Stimulate = 1f }, true); Equal(20f, f.Person.AdrenalineLevel);
         f.Person.AdrenalineLevel = .01f;
-        f.Adapter.Apply(new MotorCommand { Calm = 1f }, true); Equal(0f, f.Person.AdrenalineLevel);
+        f.Adapter.Apply(new PersonMotorCommand { Calm = 1f }, true); Equal(0f, f.Person.AdrenalineLevel);
         f.Person.AdrenalineLevel = 2.5f;
-        f.Adapter.Apply(new MotorCommand { Calm = 1f }, false); Equal(2.5f, f.Person.AdrenalineLevel);
+        f.Adapter.Apply(new PersonMotorCommand { Calm = 1f }, false); Equal(2.5f, f.Person.AdrenalineLevel);
     }
 
     private static void HazardWalkingKeepsNativeGate()
     {
         var f = new Fixture(); f.Adapter.Read();
-        f.Adapter.Apply(new MotorCommand { Walk = .3f, Avoid = 1f }, false);
+        f.Adapter.Apply(new PersonMotorCommand { Walk = .3f, Avoid = 1f }, false);
         Equal(.55f, f.Person.DesiredWalkingDirection);
     }
 
     private static void ChemistryScalesWithElapsedTime()
     {
         var first = new Fixture(); first.Adapter.Read(); first.Person.AdrenalineLevel = 1f; first.Limb.PhysicalBehaviour.BurnIntensity = 1f;
-        for (var i = 0; i < 5; i++) first.Adapter.Apply(new MotorCommand { Stimulate = 1f, Extinguish = 1f }, true, 30f, 2f, .1f);
+        for (var i = 0; i < 5; i++) first.Adapter.Apply(new PersonMotorCommand { Stimulate = 1f, Extinguish = 1f }, true, 30f, 2f, .1f);
 
         var second = new Fixture(); second.Adapter.Read(); second.Person.AdrenalineLevel = 1f; second.Limb.PhysicalBehaviour.BurnIntensity = 1f;
-        for (var i = 0; i < 10; i++) second.Adapter.Apply(new MotorCommand { Stimulate = 1f, Extinguish = 1f }, true, 30f, 2f, .05f);
+        for (var i = 0; i < 10; i++) second.Adapter.Apply(new PersonMotorCommand { Stimulate = 1f, Extinguish = 1f }, true, 30f, 2f, .05f);
 
         Equal(first.Person.AdrenalineLevel, second.Person.AdrenalineLevel);
         Equal(first.Limb.PhysicalBehaviour.BurnIntensity, second.Limb.PhysicalBehaviour.BurnIntensity);

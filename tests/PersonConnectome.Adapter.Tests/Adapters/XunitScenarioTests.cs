@@ -23,6 +23,8 @@ public sealed class AdapterScenarioTests
             yield return Case("terminal motors and grips clear immediately", "TerminalStop");
             yield return Case("native pose context actions are suppressed", "ContextMenuPoseActions");
             yield return Case("direct fly control suppresses native balance assists and restores them", "DirectFlyControl");
+            yield return Case("direct fly control maps fly channels to available human joints", "DirectFlyMotorMapping");
+            yield return Case("fly-to-person projection retains locomotion filtering and escape bursts", "StatefulFlyMotorProjection");
             yield return Case("unconscious and locally damaged limbs clear old commands", "IncapableStop");
             yield return Case("brain injury remains alive with matching signal value", "BrainInjury");
             yield return Case("invalid health stops control without inventing death", "InvalidHealth");

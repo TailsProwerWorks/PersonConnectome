@@ -33,7 +33,7 @@ The UI shows ambient-light separately from local-light-proxy and contributing-li
 
 Regression coverage includes seven native owner routes, off/inactive/transparent sources, duplicate routes/colliders, ordinary glowing-sprite exclusion, transformed/flipped footprints, invalid/missing data, zero scale, sliced/tiled sizes, native LightSprite brightness and 64-source truncation/reset. The first geometry fixture used the wrong test anchor and was corrected to use the adapter's root fallback.
 
-Mod implementation changes: src/Adapters/PeoplePlaygroundPersonAdapter.cs, Core/SensoryFrame.cs and Core/MotorCommand.cs, Core/LifBrain.cs (label), UI/ManualInputState.cs (label), UI/StatusDisplay.cs (explanation). Adapter tests change Program.cs and GameDoubles.cs. README.md, assets/README.txt, architecture/API/provenance/sensory-mapping/Minecraft-adaptation/manual-game-test docs and this file describe the new behavior.
+Mod implementation changes: src/Adapters/PeoplePlaygroundPersonAdapter.cs, Core/SensoryFrame.cs and Core/FlyMotorCommand.cs, Core/LifBrain.cs (label), UI/ManualInputState.cs (label), UI/StatusDisplay.cs (explanation). Adapter tests change Program.cs and GameDoubles.cs. README.md, assets/README.txt, architecture/API/provenance/sensory-mapping/Minecraft-adaptation/manual-game-test docs and this file describe the new behavior.
 
 Native rendering acceptance remains manual-game-test.md case 31. Compiling against installed assemblies and passing game doubles do not prove every stock prefab's beam footprint or native performance. Restart/reload the mod before checking the result; an old processed=24000/24000 panel also indicates the earlier scheduler is still loaded.
 

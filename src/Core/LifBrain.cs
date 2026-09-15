@@ -48,7 +48,7 @@ namespace Mod.Core
         private List<int> nextActive;
         private bool[] nextActivePresent;
         private readonly List<int> orderedActive;
-        private MotorCommand lastCommand;
+        private FlyMotorCommand lastCommand;
         private bool stopped;
         private long simulationTick;
         private long backlogCursor;
@@ -56,25 +56,17 @@ namespace Mod.Core
         private int droppedThisStep;
         private int decayedThisStep;
         private float lightDrive, audioDrive, touchDrive, damageDrive, regionalTouchDrive, smallVisualDrive, opticRollDrive, gravityDrive, jointDrive, hotDrive, coldDrive, approachDrive;
-        private float visualThreat, neuralEscape;
-        private float neuralEscapeCooldown, neuralEscapeQuiet, escapeContextSeconds;
-        private float escapeWalkSeconds;
-        private int escapeWalkDirection;
         private float foodNearbyDrive, foodContactDrive;
-        private bool neuralEscapeArmed = true;
+        private float flyEscapeCooldown, flyEscapeQuiet, flyEscapeEvidenceSeconds;
+        private bool flyEscapeArmed = true;
         private int sensoryQueued;
         private bool hasPreviousLight;
         private float previousLight, lightOnDrive, lightOffDrive;
-        private float forwardFilter, backwardFilter, yawFilter, leftLegFilter, rightLegFilter, locomotionDwell;
-        private int locomotionMode;
+        private float forwardFilter, backwardFilter, yawFilter;
         private const int MaxSpikesPerStep = 24000;
         private const int RefractoryTicks = 5;
         private const float DefaultStepSeconds = .05f;
         private const string FlyLegPopulation = "motor:leg";
-        // Requests are consumed by the game's fixed-step motor adapter.  Keeping
-        // their change rate bounded avoids alternating full-strength joint input
-        // on consecutive neural ticks while retaining a responsive control loop.
-        private const float MotorChangePerSecond = 8f;
 
         private LifBrain(IConnectomeAsset asset)
         {
@@ -105,7 +97,7 @@ namespace Mod.Core
         public string Status => "MaleCNS v1.0 " + asset.NeuronCount + " neurons / " + asset.EdgeCount +
             (stopped ? " STOPPED" : " queued=" + pendingIds.Count + " input-integrated=" + processedThisStep +
             " dropped-spikes=" + droppedThisStep + " fired=" + fired.Count + " input=" + Format(LastSensoryDrive) +
-            " request-walk=" + Format(lastCommand.Walk));
+            " request-forward=" + Format(lastCommand.FlyForward));
 
         public string DisplaySummary
         {
@@ -135,21 +127,14 @@ namespace Mod.Core
             "\nFood cues are explicit catalog-based gameplay mappings, not measured smell/taste. Health/chemistry remain telemetry and control constraints.\nVisual directions use head-relative 2D bearing (positive CCW to R); audio/tilt use world horizontal. These are engineering projections.";
 
         public string DisplayMotorSummary => stopped ?
-            "FLY REQUESTS: STOPPED\n  forward=0.00  yaw=0.00  backward=0.00  halt=0.00  brake=0.00\nHUMAN ADAPTATION REQUEST: STOPPED\n  arms=0.00/0.00  legs=0.00/0.00\n  head=0.00  core=0.00  grips=0.00/0.00\nTHREAT SOURCES\n  body=0.00  injury-event=0.0000  looming=0.00  DNp01-fired=0.00  escape-request=0.00  response=stopped" :
+            "FLY REQUESTS: STOPPED\n  forward=0.00  yaw=0.00  backward=0.00  halt=0.00  brake=0.00  escape=0.00" :
             "FLY REQUESTS (normalized decoder channels):\n  forward=" + Format(lastCommand.FlyForward) + "  yaw=" + Format(lastCommand.FlyYaw) + "  backward=" + Format(lastCommand.FlyBackward) +
-            "  halt=" + Format(lastCommand.FlyHalt) + "  brake=" + Format(lastCommand.FlyBrake) +
+            "  halt=" + Format(lastCommand.FlyHalt) + "  brake=" + Format(lastCommand.FlyBrake) + "  escape=" + Format(lastCommand.FlyEscape) +
             "\n  jump=" + Format(lastCommand.FlyJump) + "  takeoff=" + Format(lastCommand.FlyTakeoff) + "  landing=" + Format(lastCommand.FlyLanding) +
             "  flight-power=" + Format(lastCommand.FlyFlightPower) + "  flight-yaw=" + Format(lastCommand.FlyFlightYaw) + "  wing-motor=" + Format(lastCommand.FlyWingMotor) +
             "\n  groom(antenna/head/leg/abdomen)=" + Format(lastCommand.FlyGroomAntenna) + "/" + Format(lastCommand.FlyGroomHead) + "/" + Format(lastCommand.FlyGroomLeg) + "/" + Format(lastCommand.FlyGroomAbdomen) +
             "\n  feed=" + Format(lastCommand.FlyFeed) + "  courtship=" + Format(lastCommand.FlyCourtship) + "  song=" + Format(lastCommand.FlySong) + "  song-pulse=" + Format(lastCommand.FlySongPulse) +
             "\n  leg-motor=" + Format(lastCommand.FlyLegMotor) + "  leg-asymmetry=" + Format(lastCommand.FlyLegMotorAsym) +
-            "\nHUMAN ADAPTATION REQUEST (" + RequestLabel() + "):\n  arms=" + Format(lastCommand.LeftArm) + "/" + Format(lastCommand.RightArm) +
-            "  legs=" + Format(lastCommand.LeftLeg) + "/" + Format(lastCommand.RightLeg) +
-            "\n  head=" + Format(lastCommand.Head) + "  core=" + Format(lastCommand.Core) +
-            "  grips=" + Format(lastCommand.LeftGrip) + "/" + Format(lastCommand.RightGrip) +
-            "\n  escape-burst-remaining=" + Format(lastCommand.EscapeLocomotionSeconds) + " s (native walking adaptation; shooter direction unknown)" +
-            "\nTHREAT SOURCES\n  body=" + Format(lastCommand.BodyThreat) + "  injury-event=" + lastCommand.InjuryEvent.ToString("0.0000", CultureInfo.InvariantCulture) + "  looming=" + Format(lastCommand.VisualThreat) +
-            "  DNp01-fired=" + Format(lastCommand.DNp01Activity) + "  escape-request=" + Format(lastCommand.NeuralEscape) + "  recent-threat-window=" + Format(escapeContextSeconds) + " s  response=" + ResponseLabel() +
             "\nFILTERED NEURAL READOUT (fractions):\n  forward=" + Format(forwardFilter) + "  backward=" + Format(backwardFilter) + "  turn(R-L)=" + Format(yawFilter);
 
         public long SimulationTick => simulationTick;
@@ -161,7 +146,7 @@ namespace Mod.Core
         public int PendingCount => pendingIds.Count;
         public int ActiveCount => active.Count;
         public bool IsStopped => stopped;
-        public MotorCommand LastCommand => lastCommand;
+        public FlyMotorCommand LastCommand => lastCommand;
 
         public bool DidFire(int neuronId) => neuronId >= 0 && neuronId < potential.Length && firedPresent[neuronId];
 
@@ -176,11 +161,11 @@ namespace Mod.Core
             return count;
         }
 
-        public MotorCommand Step(SensoryFrame sensory) => Step(sensory, DefaultStepSeconds, null);
+        public FlyMotorCommand Step(SensoryFrame sensory) => Step(sensory, DefaultStepSeconds, null);
 
-        public MotorCommand Step(SensoryFrame sensory, float elapsedSeconds) => Step(sensory, elapsedSeconds, null);
+        public FlyMotorCommand Step(SensoryFrame sensory, float elapsedSeconds) => Step(sensory, elapsedSeconds, null);
 
-        public MotorCommand Step(SensoryFrame sensory, float elapsedSeconds, ManualInputState? manualInput)
+        public FlyMotorCommand Step(SensoryFrame sensory, float elapsedSeconds, ManualInputState? manualInput)
         {
             if (sensory.BrainDead || (sensory.HealthValid && !sensory.Alive))
             {
@@ -204,7 +189,8 @@ namespace Mod.Core
             droppedThisStep = 0;
             decayedThisStep = 0;
             lightDrive = audioDrive = touchDrive = damageDrive = regionalTouchDrive = smallVisualDrive = opticRollDrive = gravityDrive = jointDrive = hotDrive = coldDrive = approachDrive = 0f;
-            visualThreat = neuralEscape = foodNearbyDrive = foodContactDrive = 0f;
+            foodNearbyDrive = foodContactDrive = 0f;
+            flyEscapeEvidenceSeconds = Math.Max(0f, flyEscapeEvidenceSeconds - ElapsedSeconds(elapsedSeconds));
             sensoryQueued = 0;
             ClearFired();
             ClearPending(nextPending, nextPendingPresent, nextPendingIds);
@@ -224,7 +210,7 @@ namespace Mod.Core
             ClearPriority();
             manualInput?.FinishTick();
 
-            return BuildMotorCommand(sensory, elapsedSeconds);
+            return BuildFlyMotorCommand(elapsedSeconds);
         }
 
         private void ClearFired()
@@ -233,7 +219,7 @@ namespace Mod.Core
             fired.Clear();
         }
 
-        public MotorCommand Stop()
+        public FlyMotorCommand Stop()
         {
             if (!stopped)
             {
@@ -259,17 +245,16 @@ namespace Mod.Core
             droppedThisStep = 0;
             decayedThisStep = 0;
             lightDrive = audioDrive = touchDrive = damageDrive = regionalTouchDrive = smallVisualDrive = opticRollDrive = gravityDrive = jointDrive = hotDrive = coldDrive = approachDrive = 0f;
-            visualThreat = neuralEscape = foodNearbyDrive = foodContactDrive = 0f;
-            neuralEscapeCooldown = neuralEscapeQuiet = escapeContextSeconds = escapeWalkSeconds = 0f;
-            neuralEscapeArmed = true;
+            foodNearbyDrive = foodContactDrive = 0f;
+            flyEscapeCooldown = flyEscapeQuiet = flyEscapeEvidenceSeconds = 0f;
+            flyEscapeArmed = true;
             sensoryQueued = 0;
-            lastCommand = new MotorCommand();
-            forwardFilter = backwardFilter = yawFilter = leftLegFilter = rightLegFilter = locomotionDwell = 0f;
-            locomotionMode = 0;
+            lastCommand = new FlyMotorCommand();
+            forwardFilter = backwardFilter = yawFilter = 0f;
             return lastCommand;
         }
 
-        private MotorCommand SuspendOutput()
+        private FlyMotorCommand SuspendOutput()
         {
             processedThisStep = 0;
             droppedThisStep = 0;
@@ -280,12 +265,11 @@ namespace Mod.Core
             hasPreviousLight = false;
             previousLight = lightOnDrive = lightOffDrive = 0f;
             lightDrive = audioDrive = touchDrive = damageDrive = regionalTouchDrive = smallVisualDrive = opticRollDrive = gravityDrive = jointDrive = hotDrive = coldDrive = approachDrive = 0f;
-            visualThreat = neuralEscape = foodNearbyDrive = foodContactDrive = 0f;
-            neuralEscapeCooldown = neuralEscapeQuiet = escapeContextSeconds = escapeWalkSeconds = 0f;
-            neuralEscapeArmed = true;
-            lastCommand = new MotorCommand();
-            forwardFilter = backwardFilter = yawFilter = leftLegFilter = rightLegFilter = locomotionDwell = 0f;
-            locomotionMode = 0;
+            foodNearbyDrive = foodContactDrive = 0f;
+            flyEscapeCooldown = flyEscapeQuiet = flyEscapeEvidenceSeconds = 0f;
+            flyEscapeArmed = true;
+            lastCommand = new FlyMotorCommand();
+            forwardFilter = backwardFilter = yawFilter = 0f;
             return lastCommand;
         }
 
@@ -528,19 +512,8 @@ namespace Mod.Core
             }
         }
 
-        private MotorCommand BuildMotorCommand(SensoryFrame sensory, float elapsedSeconds)
+        private FlyMotorCommand BuildFlyMotorCommand(float elapsedSeconds)
         {
-            // DNp01 can fire from recurrent activity without an observed threat.
-            // Keep the spike visible, but qualify its Human avoidance request
-            // with recent evidence. This is a gameplay gate, not causal tracing
-            // or a biological claim about why the neuron fired.
-            var bodyThreatValue = BodyThreatValue(sensory);
-            var freeze = Unit(Unit(sensory.Unconscious) + Unit(sensory.LiquidSedation));
-            var movementPermitted = IsMovementPermitted(sensory, freeze);
-            var dnp01Activity = FiredMotorPopulation("type:DNp01");
-            var escapeEvidence = bodyThreatValue > .5f || Unit(sensory.DamageEvent) > .001f || visualThreat > .05f;
-            var neuralEscapeValue = DecodeNeuralEscape(elapsedSeconds, dnp01Activity, escapeEvidence, movementPermitted);
-            neuralEscape = neuralEscapeValue;
             // Reference MotorMap walking/halting populations. Fractions below are
             // latest-tick activity, not the upstream biological firing-rate decoder.
             var rawForward = MotorActivity("type:DNp09") * .3f + MotorActivity("type:DNg100") * .25f +
@@ -551,111 +524,30 @@ namespace Mod.Core
                 .25f * (MotorActivity("type:DNa01", "R") - MotorActivity("type:DNa01", "L"));
             var halt = Math.Max(MotorActivity("type:DNg60"), Math.Max(MotorActivity("type:DNg74_a"), MotorActivity("type:DNg74_b")));
             var brake = PopulationActivity("type:AN19A018");
+            if (damageDrive > .05f || approachDrive > .05f)
+            {
+                flyEscapeEvidenceSeconds = .5f;
+            }
             var stopRequested = halt >= .2f || brake >= .2f;
-            UpdateLocomotion(rawForward, rawBackward, rawYaw, neuralEscapeValue, stopRequested, movementPermitted, elapsedSeconds);
-            var requested = CreateMotorCommand(sensory, elapsedSeconds, movementPermitted, stopRequested,
-                new MotorCommandContext(bodyThreatValue, neuralEscapeValue, dnp01Activity, freeze, brake));
-            if (!movementPermitted || stopRequested)
-            {
-                ClearMotorRequests(ref requested);
-                forwardFilter = backwardFilter = yawFilter = leftLegFilter = rightLegFilter = locomotionDwell = 0f;
-                locomotionMode = 0;
-                escapeWalkSeconds = 0f;
-                lastCommand = requested;
-                return lastCommand;
-            }
-
-            lastCommand = SmoothMotorRequest(requested, elapsedSeconds);
-            return lastCommand;
-        }
-
-        private void UpdateLocomotion(float rawForward, float rawBackward, float rawYaw, float neuralEscapeValue,
-            bool stopRequested, bool movementPermitted, float elapsedSeconds)
-        {
-            var escapeElapsed = IsFinite(elapsedSeconds) && elapsedSeconds > 0f ? elapsedSeconds : DefaultStepSeconds;
-            escapeWalkSeconds = Math.Max(0f, escapeWalkSeconds - escapeElapsed);
-            if (neuralEscapeValue > 0f && !stopRequested && movementPermitted)
-            {
-                escapeWalkSeconds = .6f;
-                escapeWalkDirection = rawBackward >= .5f || locomotionMode < 0 ? -1 : 1;
-            }
             if (stopRequested)
             {
-                locomotionMode = 0;
-                locomotionDwell = 0f;
-                return;
+                forwardFilter = backwardFilter = yawFilter = 0f;
+            }
+            else
+            {
+                forwardFilter = Ema(forwardFilter, rawForward, elapsedSeconds, .15f);
+                backwardFilter = Ema(backwardFilter, rawBackward, elapsedSeconds, .15f);
+                yawFilter = Ema(yawFilter, rawYaw, elapsedSeconds, .1f);
             }
 
-            forwardFilter = Ema(forwardFilter, rawForward, elapsedSeconds, .15f);
-            backwardFilter = Ema(backwardFilter, rawBackward, elapsedSeconds, .15f);
-            yawFilter = Ema(yawFilter, rawYaw, elapsedSeconds, .1f);
-            locomotionDwell += ElapsedSeconds(elapsedSeconds);
-            if (rawBackward >= .5f)
-            {
-                if (locomotionMode != -1)
-                {
-                    locomotionMode = -1;
-                    locomotionDwell = 0f;
-                }
-            }
-            else if (locomotionMode == 0 && forwardFilter >= .08f)
-            {
-                locomotionMode = 1;
-                locomotionDwell = 0f;
-            }
-            else if (locomotionDwell >= .25f && ShouldStopLocomotion())
-            {
-                locomotionMode = 0;
-                locomotionDwell = 0f;
-            }
-        }
-
-        private bool ShouldStopLocomotion() => locomotionMode > 0 ? forwardFilter < .04f : backwardFilter < .25f;
-
-        private MotorCommand CreateMotorCommand(SensoryFrame sensory, float elapsedSeconds, bool movementPermitted,
-            bool stopRequested, MotorCommandContext context)
-        {
-            var locomotionGate = stopRequested ? 0f : 1f;
-            var neuralWalk = ResolveNeuralWalk();
-            // The People Playground body uses fly leg activity only as a
-            // locomotor proxy; fly-native channels are populated separately below.
-            var left = Ema(leftLegFilter, MotorActivity(FlyLegPopulation, "L"), elapsedSeconds, .15f) * locomotionGate;
-            var right = Ema(rightLegFilter, MotorActivity(FlyLegPopulation, "R"), elapsedSeconds, .15f) * locomotionGate;
-            leftLegFilter = left;
-            rightLegFilter = right;
-            var center = (left + right) * .5f;
-            var sideBias = right - left;
-            var walk = movementPermitted ? neuralWalk : 0f;
-            var motorSideBias = movementPermitted ? sideBias : 0f;
-            var motorCenter = movementPermitted ? center : 0f;
-            var armSwing = Signed((left - right) * .75f * (movementPermitted ? 1f : 0f) + walk * .35f + motorCenter * .15f);
-            var command = new MotorCommand
-            {
-                Walk = walk,
-                EscapeLocomotionSeconds = escapeWalkSeconds,
-                LeftArm = Signed(-armSwing),
-                RightArm = armSwing,
-                LeftLeg = Signed(walk - motorSideBias * .2f),
-                RightLeg = Signed(walk + motorSideBias * .2f),
-                Core = Signed(walk * .6f + motorCenter * .15f + yawFilter * .25f),
-                Head = Signed(motorSideBias * .5f + yawFilter),
-                Avoid = context.BodyThreat > .5f || context.NeuralEscape > 0f ? 1f : 0f,
-                BodyThreat = context.BodyThreat,
-                InjuryEvent = Unit(sensory.DamageEvent),
-                VisualThreat = visualThreat,
-                NeuralEscape = context.NeuralEscape,
-                DNp01Activity = context.DNp01Activity ? 1f : 0f,
-                Freeze = context.Freeze,
-                Heal = Unit(Unit(sensory.Damage) + Unit(sensory.Bleeding) + Unit(sensory.LiquidHealing)),
-                Stimulate = Unit(sensory.LiquidStimulation),
-                Calm = Unit(sensory.LiquidSedation),
-                Extinguish = Unit(sensory.Fire)
-            };
-            PopulateFlyRequests(ref command, context);
+            var command = new FlyMotorCommand();
+            var dnp01Activity = FiredMotorPopulation("type:DNp01");
+            PopulateFlyRequests(ref command, dnp01Activity, brake);
+            command.FlyEscape = DecodeFlyEscape(elapsedSeconds, dnp01Activity);
             return command;
         }
 
-        private void PopulateFlyRequests(ref MotorCommand command, MotorCommandContext context)
+        private void PopulateFlyRequests(ref FlyMotorCommand command, bool dnp01Activity, float brake)
         {
             var leftLeg = MotorActivity(FlyLegPopulation, "L");
             var rightLeg = MotorActivity(FlyLegPopulation, "R");
@@ -665,8 +557,8 @@ namespace Mod.Core
             var flyHalt = MotorActivity("type:DNg60") * .6f +
                 Math.Max(MotorActivity("type:DNg74_a"), MotorActivity("type:DNg74_b")) * .4f;
             command.FlyHalt = Unit(flyHalt);
-            command.FlyBrake = Unit(context.Brake);
-            command.FlyJump = context.DNp01Activity ? 1f : 0f;
+            command.FlyBrake = Unit(brake);
+            command.FlyJump = dnp01Activity ? 1f : 0f;
             command.FlyTakeoff = WeightedMotorActivity("type:DNp11", .5f, "type:DNp02", .25f, "type:DNp04", .25f);
             command.FlyLanding = WeightedMotorActivity("type:DNp07", .5f, "type:DNp10", .5f);
             command.FlyFlightPower = MotorActivity("type:DNg02");
@@ -706,94 +598,6 @@ namespace Mod.Core
         private float AverageMotorActivity(string first, string second, string third) =>
             (MotorActivity(first) + MotorActivity(second) + MotorActivity(third)) / 3f;
 
-        private float ResolveNeuralWalk()
-        {
-            if (escapeWalkSeconds > 0f) return escapeWalkDirection * .7f;
-            if (locomotionMode > 0) return Math.Max(.3f, forwardFilter);
-            if (locomotionMode < 0) return -Math.Max(.3f, backwardFilter);
-            return 0f;
-        }
-
-        private readonly struct MotorCommandContext
-        {
-            public readonly float BodyThreat;
-            public readonly float NeuralEscape;
-            public readonly bool DNp01Activity;
-            public readonly float Freeze;
-            public readonly float Brake;
-
-            public MotorCommandContext(float bodyThreat, float neuralEscape, bool dnp01Activity, float freeze,
-                float brake)
-            {
-                BodyThreat = bodyThreat;
-                NeuralEscape = neuralEscape;
-                DNp01Activity = dnp01Activity;
-                Freeze = freeze;
-                Brake = brake;
-            }
-        }
-
-        private static void ClearMotorRequests(ref MotorCommand command)
-        {
-            command.Walk = 0f;
-            command.EscapeLocomotionSeconds = 0f;
-            command.LeftArm = 0f;
-            command.RightArm = 0f;
-            command.LeftLeg = 0f;
-            command.RightLeg = 0f;
-            command.Core = 0f;
-            command.Head = 0f;
-            command.ReachGrab = 0f;
-            command.LeftGrip = 0f;
-            command.RightGrip = 0f;
-        }
-
-        private bool IsMovementPermitted(SensoryFrame sensory, float freeze)
-        {
-            return sensory.HealthValid && sensory.ConsciousnessValid && IsFinite(sensory.Consciousness) && Unit(sensory.Consciousness) > .8f && freeze < .5f;
-        }
-
-        private static float BodyThreatValue(SensoryFrame sensory)
-        {
-            return Unit(Unit(sensory.Pain) + Unit(sensory.Fire) + Unit(sensory.Shock) + Unit(sensory.SubmergedHypoxia) + Unit(sensory.Projectile));
-        }
-
-        private float DecodeNeuralEscape(float elapsedSeconds, bool rawSpike, bool evidence, bool permitted)
-        {
-            const float refractorySeconds = 1.5f;
-            const float rearmQuietSeconds = .25f;
-            if (!permitted)
-            {
-                neuralEscapeCooldown = neuralEscapeQuiet = escapeContextSeconds = escapeWalkSeconds = 0f;
-                neuralEscapeArmed = true;
-                return 0f;
-            }
-            // Use actual elapsed game time so a delayed callback cannot keep
-            // a stale threat alive through the motor smoother's 0.25 s cap.
-            var seconds = IsFinite(elapsedSeconds) && elapsedSeconds > 0f ? elapsedSeconds : DefaultStepSeconds;
-            escapeContextSeconds = evidence ? .5f : Math.Max(0f, escapeContextSeconds - seconds);
-            neuralEscapeCooldown = Math.Max(0f, neuralEscapeCooldown - seconds);
-            if (rawSpike)
-            {
-                neuralEscapeQuiet = 0f;
-                if (escapeContextSeconds > 0f && neuralEscapeArmed && neuralEscapeCooldown <= 0f)
-                {
-                    neuralEscapeArmed = false;
-                    neuralEscapeCooldown = refractorySeconds;
-                    return 1f;
-                }
-
-                return 0f;
-            }
-
-            neuralEscapeQuiet = Math.Min(rearmQuietSeconds, neuralEscapeQuiet + seconds);
-            if (neuralEscapeCooldown <= 0f && neuralEscapeQuiet >= rearmQuietSeconds)
-            {
-                neuralEscapeArmed = true;
-            }
-
-            return 0f;
-        }
 
         private bool FiredMotorPopulation(string population)
         {
@@ -806,27 +610,34 @@ namespace Mod.Core
             return false;
         }
 
-        private MotorCommand SmoothMotorRequest(MotorCommand requested, float elapsedSeconds)
+        private float DecodeFlyEscape(float elapsedSeconds, bool dnp01Activity)
         {
-            var seconds = IsFinite(elapsedSeconds) && elapsedSeconds > 0f ? elapsedSeconds : DefaultStepSeconds;
-            var maximumChange = MotorChangePerSecond * Clamp(seconds, 0f, .25f);
-            requested.Walk = MoveTowards(lastCommand.Walk, requested.Walk, maximumChange);
-            requested.LeftArm = MoveTowards(lastCommand.LeftArm, requested.LeftArm, maximumChange);
-            requested.RightArm = MoveTowards(lastCommand.RightArm, requested.RightArm, maximumChange);
-            requested.LeftLeg = MoveTowards(lastCommand.LeftLeg, requested.LeftLeg, maximumChange);
-            requested.RightLeg = MoveTowards(lastCommand.RightLeg, requested.RightLeg, maximumChange);
-            requested.Core = MoveTowards(lastCommand.Core, requested.Core, maximumChange);
-            requested.Head = MoveTowards(lastCommand.Head, requested.Head, maximumChange);
-            requested.ReachGrab = MoveTowards(lastCommand.ReachGrab, requested.ReachGrab, maximumChange);
-            requested.LeftGrip = MoveTowards(lastCommand.LeftGrip, requested.LeftGrip, maximumChange);
-            requested.RightGrip = MoveTowards(lastCommand.RightGrip, requested.RightGrip, maximumChange);
-            return requested;
+            const float RefractorySeconds = 1.5f;
+            const float RearmQuietSeconds = .25f;
+            var seconds = ElapsedSeconds(elapsedSeconds);
+            flyEscapeCooldown = Math.Max(0f, flyEscapeCooldown - seconds);
+            if (dnp01Activity)
+            {
+                flyEscapeQuiet = 0f;
+                if (flyEscapeEvidenceSeconds > 0f && flyEscapeArmed && flyEscapeCooldown <= 0f)
+                {
+                    flyEscapeArmed = false;
+                    flyEscapeCooldown = RefractorySeconds;
+                    return 1f;
+                }
+
+                return 0f;
+            }
+
+            flyEscapeQuiet = Math.Min(RearmQuietSeconds, flyEscapeQuiet + seconds);
+            if (flyEscapeCooldown <= 0f && flyEscapeQuiet >= RearmQuietSeconds)
+            {
+                flyEscapeArmed = true;
+            }
+
+            return 0f;
         }
 
-        private static float MoveTowards(float current, float target, float maximumChange)
-        {
-            return current < target ? Math.Min(current + maximumChange, target) : Math.Max(current - maximumChange, target);
-        }
 
         private static float ElapsedSeconds(float value) => IsFinite(value) && value > 0f ? Clamp(value, 0f, .25f) : DefaultStepSeconds;
         private static float Ema(float prior, float target, float elapsedSeconds, float tauSeconds)
@@ -956,7 +767,6 @@ namespace Mod.Core
             approachDrive = Math.Max(expansion.Amplitude, looming.Amplitude);
             var effectiveExpansion = DriveChannel(manualInput, ManualInputChannel.ExpandingVisual, expansion.Amplitude, expansion.Direction);
             var effectiveLooming = DriveChannel(manualInput, ManualInputChannel.LoomingVisual, looming.Amplitude, looming.Direction);
-            visualThreat = Math.Max(effectiveExpansion, effectiveLooming);
             return effectiveExpansion + effectiveLooming + DriveChannel(manualInput, ManualInputChannel.SmallMovingVisual, small.Amplitude, small.Direction);
         }
 
@@ -1068,24 +878,5 @@ namespace Mod.Core
             return 1f;
         }
         private static string Format(float value) => value.ToString("0.00", CultureInfo.InvariantCulture);
-        private string LocomotionLabel()
-        {
-            if (locomotionMode > 0) return "FORWARD";
-            if (locomotionMode < 0) return "BACKWARD";
-            return "IDLE";
-        }
-
-        private string RequestLabel()
-        {
-            if (escapeWalkSeconds > 0f) return "ESCAPE BURST";
-            return "WALK " + LocomotionLabel();
-        }
-
-        private string ResponseLabel()
-        {
-            if (lastCommand.NeuralEscape > 0f) return "neural escape";
-            if (lastCommand.Avoid > 0f) return "body avoidance";
-            return "none";
-        }
     }
 }

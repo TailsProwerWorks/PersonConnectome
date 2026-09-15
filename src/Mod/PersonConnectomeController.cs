@@ -109,7 +109,8 @@ namespace Mod
                 var command = brain.Step(sensory, sampleElapsed, manualInput);
                 var brainMs = (Time.realtimeSinceStartup - brainStarted) * 1000f;
                 var actuatorStarted = Time.realtimeSinceStartup;
-                actuator.Apply(command, true, JointSpeedDegreesPerSecond, WalkingRequestGain, sampleElapsed);
+                actuator.Apply(command, true,
+                    JointSpeedDegreesPerSecond, WalkingRequestGain, sampleElapsed);
                 var actuatorMs = (Time.realtimeSinceStartup - actuatorStarted) * 1000f;
                 sampleElapsed = 0f;
                 statusDisplay?.RecordTick(sensorMs, brainMs, actuatorMs, skipped, brain);

@@ -312,9 +312,9 @@ namespace Mod
         public float LastElapsed;
         public string Status => "test";
         public static LifBrain TryCreate(out string status) { status = "test"; return new(); }
-        public MotorCommand Step(SensoryFrame frame) => default;
-        public MotorCommand Step(SensoryFrame frame, float elapsed) { StepCount++; LastElapsed = elapsed; return default; }
-        public MotorCommand Step(SensoryFrame frame, float elapsed, ManualInputState manualInput) { StepCount++; LastElapsed = elapsed; return default; }
+        public FlyMotorCommand Step(SensoryFrame frame) => default;
+        public FlyMotorCommand Step(SensoryFrame frame, float elapsed) { StepCount++; LastElapsed = elapsed; return default; }
+        public FlyMotorCommand Step(SensoryFrame frame, float elapsed, ManualInputState manualInput) { StepCount++; LastElapsed = elapsed; return default; }
         public void Stop() { }
     }
     internal class PersonConnectomeStatusDisplay

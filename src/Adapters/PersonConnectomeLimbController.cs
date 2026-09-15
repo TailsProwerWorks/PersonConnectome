@@ -1,6 +1,5 @@
 using System;
 using UnityEngine;
-using Mod.Core;
 
 namespace Mod.Adapters
 {
@@ -59,7 +58,7 @@ namespace Mod.Adapters
             }
         }
 
-        public bool Apply(MotorCommand command, float degreesPerSecond = 30f)
+        public bool Apply(PersonMotorCommand command, float degreesPerSecond = 30f)
         {
             if (limb == null || !CanDrive)
             {
@@ -100,7 +99,7 @@ namespace Mod.Adapters
             RestoreChemistry();
         }
 
-        private float ResolveSpeed(MotorCommand command)
+        private float ResolveSpeed(PersonMotorCommand command)
         {
             switch (role)
             {
@@ -150,7 +149,7 @@ namespace Mod.Adapters
             }
         }
 
-        private void ApplyGrip(MotorCommand command)
+        private void ApplyGrip(PersonMotorCommand command)
         {
             var grip = limb.GripBehaviour;
             if (grip == null)
@@ -246,7 +245,7 @@ namespace Mod.Adapters
             return LimbSide.Center;
         }
 
-        public void ApplyChemistry(MotorCommand command, bool enabled, float elapsedSeconds = .05f)
+        public void ApplyChemistry(PersonMotorCommand command, bool enabled, float elapsedSeconds = .05f)
         {
             if (limb == null) return;
             if (!enabled || !CanDrive)

@@ -6,8 +6,8 @@
     <Nullable>disable</Nullable>
     <LangVersion>latest</LangVersion>
     <EnableNETAnalyzers>false</EnableNETAnalyzers>
-    <!-- Game doubles intentionally model Unity's nullable-at-runtime API; keep
-         their legacy permissive surface while accepting annotations in linked sources. -->
+    <!-- Game doubles intentionally model Unity's nullable-at-runtime API while
+         accepting annotations in linked sources. -->
     <NoWarn>$(NoWarn);CS0649;CS8632</NoWarn>
     <IsTestProject>true</IsTestProject>
     <IsPackable>false</IsPackable>
@@ -24,6 +24,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive; compile</IncludeAssets>
     </PackageReference>
     <Compile Include="../../src/Adapters/PeoplePlaygroundPersonAdapter.cs" Link="src/Adapters/PeoplePlaygroundPersonAdapter.cs" />
+    <Compile Include="../../src/Adapters/PersonMotorCommand.cs" Link="src/Adapters/PersonMotorCommand.cs" />
     <Compile Include="../../src/Adapters/PersonConnectomeLimbController.cs" Link="src/Adapters/PersonConnectomeLimbController.cs" />
     <Compile Include="../../src/Adapters/PersonConnectomeLimbProbe.cs" Link="src/Adapters/PersonConnectomeLimbProbe.cs" />
     <Compile Include="../../src/Adapters/LiquidAndStatusReader.cs" Link="src/Adapters/LiquidAndStatusReader.cs" />
@@ -31,7 +32,7 @@
     <Compile Include="../../src/Mod/PersonConnectomeController.cs" Link="src/Mod/PersonConnectomeController.cs" />
     <Compile Include="../../src/Core/IBodyActuator.cs" Link="src/Core/IBodyActuator.cs" />
     <Compile Include="../../src/Core/IBodySensor.cs" Link="src/Core/IBodySensor.cs" />
-    <Compile Include="../../src/Core/MotorCommand.cs" Link="src/Core/MotorCommand.cs" />
+    <Compile Include="../../src/Core/FlyMotorCommand.cs" Link="src/Core/FlyMotorCommand.cs" />
     <Compile Include="../../src/Core/SensoryFrame.cs" Link="src/Core/SensoryFrame.cs" />
     <Compile Include="../../src/UI/ManualInputState.cs" Link="src/UI/ManualInputState.cs" />
   </ItemGroup>

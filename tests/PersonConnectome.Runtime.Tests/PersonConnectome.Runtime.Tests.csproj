@@ -29,7 +29,7 @@
     <Compile Include="../../src/Core/IBodyActuator.cs" Link="src/Core/IBodyActuator.cs" />
     <Compile Include="../../src/Core/IBodySensor.cs" Link="src/Core/IBodySensor.cs" />
     <Compile Include="../../src/Core/LifBrain.cs" Link="src/Core/LifBrain.cs" />
-    <Compile Include="../../src/Core/MotorCommand.cs" Link="src/Core/MotorCommand.cs" />
+    <Compile Include="../../src/Core/FlyMotorCommand.cs" Link="src/Core/FlyMotorCommand.cs" />
     <Compile Include="../../src/Core/SensoryFrame.cs" Link="src/Core/SensoryFrame.cs" />
     <Compile Include="../../src/UI/ManualInputState.cs" Link="src/UI/ManualInputState.cs" />
     <Compile Include="../../src/UI/BrainMap.cs" Link="src/UI/BrainMap.cs" />

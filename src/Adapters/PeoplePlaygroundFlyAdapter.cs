@@ -19,7 +19,7 @@ namespace Mod.Adapters
 
         public SensoryFrame Read() => default;
 
-        public void Apply(MotorCommand command, bool chemistry, float jointSpeedDegreesPerSecond, float walkingRequestGain, float elapsedSeconds)
+        public void Apply(FlyMotorCommand command, bool chemistry, float jointSpeedDegreesPerSecond, float walkingRequestGain, float elapsedSeconds)
         {
             // No fly API is registered yet; unsupported actuation is deliberately ignored.
         }

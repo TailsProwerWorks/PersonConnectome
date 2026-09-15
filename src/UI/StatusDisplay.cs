@@ -167,7 +167,7 @@ namespace Mod.UI
             stepMilliseconds = sensorMs + brainMs + actuatorMs;
             droppedSeconds += skippedSeconds;
             lastSampleTime = Time.unscaledTime;
-            if (source != null && source.LastCommand.NeuralEscape > 0f)
+            if (source != null && source.LastCommand.FlyEscape > 0f)
             {
                 neuralEscapeFlash = NeuralEscapeFlashSeconds;
             }
@@ -346,7 +346,7 @@ namespace Mod.UI
             stimulationElements.Add(zeroManual.gameObject);
             stimulationElements.Add(returnToLive.gameObject);
             directControlHeading = AddText(stimulationElements, "NATIVE BALANCE ASSISTS", Accent);
-            directControlExplanation = AddText(stimulationElements, "Best effort: disables native upright, stumble and pose-force helpers while enabled. Gravity, joints, collisions and pose selection remain active.", Foreground);
+            directControlExplanation = AddText(stimulationElements, "Fly wing, leg and flight channels are always adapted to available joints. This toggle only disables native upright, stumble and pose-force helpers. Gravity, joints and collisions remain active.", Foreground);
             directControlToggle = CreateToggleButton(content, "Direct fly control", () => isDirectFlyControlEnabled?.Invoke() ?? false, value =>
             {
                 setDirectFlyControl?.Invoke(value);
@@ -703,6 +703,7 @@ namespace Mod.UI
             {
                 sections.Add(adapter.LiveBodySummary);
                 sections.Add(adapter.LiveLimbSummary);
+                sections.Add(adapter.LiveMotorSummary);
                 sections.Add(brain == null ? "REQUEST: unavailable" : brain.DisplayMotorSummary);
                 return;
             }

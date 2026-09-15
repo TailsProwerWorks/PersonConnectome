@@ -5,7 +5,7 @@ namespace Mod.Core
     /// <summary>Actuation boundary from the runtime into a controlled body.</summary>
     internal interface IBodyActuator
     {
-        void Apply(MotorCommand command, bool chemistry, float jointSpeedDegreesPerSecond, float walkingRequestGain, float elapsedSeconds);
+        void Apply(FlyMotorCommand command, bool chemistry, float jointSpeedDegreesPerSecond, float walkingRequestGain, float elapsedSeconds);
         void RefreshWalkingRequest();
         void Suspend();
         void Stop();

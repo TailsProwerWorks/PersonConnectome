@@ -76,6 +76,8 @@ namespace Mod.Adapters
         private float projectile;
         private float walkingIntent;
         private bool walkingIntentActive;
+        private readonly PeoplePlaygroundPersonMotorMapper motorMapper = new();
+        private PersonMotorCommand lastMotorCommand;
         private SensoryFrame lastFrame;
         private float nativeAdrenaline;
         private bool hasReadFrame;
@@ -179,6 +181,19 @@ namespace Mod.Adapters
                 }
 
                 return summary + "\nEXCLUDED:\n  " + ExcludedLimbSummary.Replace(",", "\n  ");
+            }
+        }
+        public string LiveMotorSummary
+        {
+            get
+            {
+                return "HUMAN ADAPTATION REQUEST:\n  walk=" + lastMotorCommand.Walk.ToString("0.00") +
+                    "  arms=" + lastMotorCommand.LeftArm.ToString("0.00") + "/" + lastMotorCommand.RightArm.ToString("0.00") +
+                    "  legs=" + lastMotorCommand.LeftLeg.ToString("0.00") + "/" + lastMotorCommand.RightLeg.ToString("0.00") +
+                    "  head=" + lastMotorCommand.Head.ToString("0.00") + "  core=" + lastMotorCommand.Core.ToString("0.00") +
+                    "\n  avoid=" + lastMotorCommand.Avoid.ToString("0.00") + "  freeze=" + lastMotorCommand.Freeze.ToString("0.00") +
+                    "  chemistry(heal/stimulate/calm/extinguish)=" + lastMotorCommand.Heal.ToString("0.00") + "/" +
+                    lastMotorCommand.Stimulate.ToString("0.00") + "/" + lastMotorCommand.Calm.ToString("0.00") + "/" + lastMotorCommand.Extinguish.ToString("0.00");
             }
         }
         private string ExcludedLimbSummary
@@ -600,18 +615,24 @@ namespace Mod.Adapters
             return body != null && IsFinite(body.velocity.y) ? Mathf.Max(0f, -body.velocity.y) : 0f;
         }
 
-        public void Apply(MotorCommand command, bool chemistry)
+        public void Apply(FlyMotorCommand command, bool chemistry, float jointSpeedDegreesPerSecond, float walkingRequestGain, float elapsedSeconds)
+        {
+            Apply(motorMapper.Map(command, lastFrame, elapsedSeconds), chemistry, jointSpeedDegreesPerSecond, walkingRequestGain, elapsedSeconds);
+        }
+
+        internal void Apply(PersonMotorCommand command, bool chemistry)
         {
             Apply(command, chemistry, 30f, 2f, .05f);
         }
 
-        public void Apply(MotorCommand command, bool chemistry, float jointSpeedDegreesPerSecond, float walkingRequestGain)
+        internal void Apply(PersonMotorCommand command, bool chemistry, float jointSpeedDegreesPerSecond, float walkingRequestGain)
         {
             Apply(command, chemistry, jointSpeedDegreesPerSecond, walkingRequestGain, .05f);
         }
 
-        public void Apply(MotorCommand command, bool chemistry, float jointSpeedDegreesPerSecond, float walkingRequestGain, float elapsedSeconds)
+        internal void Apply(PersonMotorCommand command, bool chemistry, float jointSpeedDegreesPerSecond, float walkingRequestGain, float elapsedSeconds)
         {
+            lastMotorCommand = command;
             hasAppliedControl = true;
             appliedLimbCount = 0;
             jointSpeedValid = IsFinite(jointSpeedDegreesPerSecond);
@@ -676,11 +697,13 @@ namespace Mod.Adapters
         public void Stop()
         {
             healthSamples.Clear();
+            motorMapper.Reset();
             StopActuators();
         }
 
         private void StopActuators()
         {
+            lastMotorCommand = default;
             // Unconscious/frozen bodies still receive sensor samples. Only an
             // actual sensing suspension or invalid/terminal read resets history.
             walkingIntent = 0f;
@@ -1132,7 +1155,7 @@ namespace Mod.Adapters
             person?.DesiredWalkingDirection = appliedWalk;
         }
 
-        private static float ResolveWalkingRequest(MotorCommand command, float walkingRequestGain)
+        private static float ResolveWalkingRequest(PersonMotorCommand command, float walkingRequestGain)
         {
             if (!IsFinite(command.Walk) || !IsFinite(walkingRequestGain)) return 0f;
             var walkGain = Mathf.Clamp(walkingRequestGain, 0f, 4f);

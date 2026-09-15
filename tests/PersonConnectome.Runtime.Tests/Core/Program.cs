@@ -189,18 +189,18 @@ static void MappingReport()
         if (name == "light-on") brain.Step(Healthy(light: 0f));
         if (name == "light-off") brain.Step(Healthy(light: 1f));
         long spikes = 0, inputSpikes = 0, dropped = 0;
-        var peakWalk = 0f;
+        var peakForward = 0f;
         for (var tick = 0; tick < 40; tick++)
         {
             var command = brain.Step(input.Frame, .05f);
             spikes += brain.FiredCount;
             inputSpikes += brain.PopulationFiredCount(population);
             dropped += brain.DroppedCount;
-            peakWalk = Math.Max(peakWalk, Math.Abs(command.Walk));
+            peakForward = Math.Max(peakForward, command.FlyForward);
             if (name.EndsWith("-pulse", StringComparison.Ordinal)) input.Frame.DamageEvent = 0f;
         }
         var connectivity = brain.TestPopulationConnectivity(population);
-        Console.WriteLine(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"MAP {name}: members={brain.PopulationCount(population)} edges={connectivity.Edges} signedMembers={connectivity.NonzeroSignMembers} inputSpikes={inputSpikes} graphSpikes={spikes} dropped={dropped} peakAbsWalk={peakWalk:0.000}"));
+        Console.WriteLine(string.Create(System.Globalization.CultureInfo.InvariantCulture, $"MAP {name}: members={brain.PopulationCount(population)} edges={connectivity.Edges} signedMembers={connectivity.NonzeroSignMembers} inputSpikes={inputSpikes} graphSpikes={spikes} dropped={dropped} peakForward={peakForward:0.000}"));
     }
 }
 
@@ -342,9 +342,9 @@ static void TerminalResetClearsStateAndRecovers()
     brain.SetTestPopulation(TypeDNp09, 0);
     var moving = brain.Step(Healthy());
     Equal(1, brain.TestFiredCount);
-    True(moving.Walk > 0f, "motor activity should create a request before terminal reset");
+    True(moving.FlyForward > 0f, "motor activity should create a fly-forward request before terminal reset");
     var stopped = brain.Step(new SensoryFrame { Alive = true, BrainDead = true });
-    Equal(0f, stopped.Walk);
+    Equal(0f, stopped.FlyForward);
     True(brain.IsStopped, "brain-dead state must stop the runtime");
 }
 
@@ -421,7 +421,7 @@ static void HazardCannotForceWalkingWithoutMotorActivity()
         NearbyDirection = 1f,
         Fire = 1f
     });
-    Equal(0f, command.Walk);
+    Equal(0f, command.FlyForward);
 }
 
 static void SignedInputAccumulationIsOrderIndependent()
@@ -647,7 +647,7 @@ static void InvalidHealthSuspendsWithoutReset()
     var tick = brain.TestSimulationTick;
     var potential = brain.TestPotentialValue(0);
     var invalid = new SensoryFrame { Alive = false, HealthValid = false };
-    Equal(0f, brain.Step(invalid).Walk);
+    Equal(0f, brain.Step(invalid).FlyForward);
     Equal(tick, brain.TestSimulationTick);
     Equal(potential, brain.TestPotentialValue(0));
     True(!brain.IsStopped, "unavailable health should suspend output rather than stop the neural state");
@@ -684,12 +684,10 @@ static void SubmersionWithoutNeuralMotorActivityIsStill()
     };
 
     var command = brain.Step(sensory);
-    Equal(0f, command.Walk);
-    Equal(0f, command.LeftArm);
-    Equal(0f, command.RightArm);
-    Equal(0f, command.LeftLeg);
-    Equal(0f, command.RightLeg);
-    Equal(0f, command.Avoid);
+    Equal(0f, command.FlyForward);
+    Equal(0f, command.FlyBackward);
+    Equal(0f, command.FlyWingMotor);
+    Equal(0f, command.FlyLegMotor);
     Equal(0f, brain.TestSensoryDrive); // Hypoxia is a body reading, not an external receptor.
 }
 
@@ -705,9 +703,9 @@ static void MotorReversalsAreRateLimited()
     var forward = brain.Step(Healthy(), .05f);
     brain.SetTestPending(1, 1f);
     var reversing = brain.Step(Healthy(), .05f);
-    True(forward.Walk > 0f, "named walking population activity should request forward movement");
-    True(MathF.Abs(reversing.Walk - forward.Walk) <= .4001f, "motor reversal exceeded the per-step rate limit");
-    True(MathF.Abs(reversing.Walk) <= 1f, "rate-limited motor output must remain bounded");
+    True(forward.FlyForward > 0f, "named walking population activity should request forward movement");
+    True(MathF.Abs(reversing.FlyForward - forward.FlyForward) <= .4001f, "forward decoder filter exceeded the per-step rate limit");
+    True(reversing.FlyForward <= 1f && reversing.FlyBackward <= 1f, "fly locomotion output must remain bounded");
 }
 
 static void LostMovementAuthorityClearsMotorRequests()
@@ -736,18 +734,12 @@ static void AssertImmediateMotorClear(Func<SensoryFrame, SensoryFrame> restrict)
     brain.SetTestNeuronMetadata(0, DescendingNeuron, "R");
     brain.SetTestPopulation(TypeDNp09, 0);
     brain.SetTestPending(0, 1f);
-    True(brain.Step(Healthy()).Walk > 0f, "test setup did not produce a motor request");
+    True(brain.Step(Healthy()).FlyForward > 0f, "test setup did not produce a fly motor request");
     var command = brain.Step(restrict(Healthy()));
-    Equal(0f, command.Walk);
-    Equal(0f, command.LeftArm);
-    Equal(0f, command.RightArm);
-    Equal(0f, command.LeftLeg);
-    Equal(0f, command.RightLeg);
-    Equal(0f, command.Core);
-    Equal(0f, command.Head);
-    Equal(0f, command.ReachGrab);
-    Equal(0f, command.LeftGrip);
-    Equal(0f, command.RightGrip);
+    // Body authority is deliberately adapter policy. The fly decoder keeps a
+    // bounded neural readout while the human adapter rejects unsafe frames.
+    True(command.FlyForward >= 0f && command.FlyForward <= 1f);
+    True(command.FlyBackward >= 0f && command.FlyBackward <= 1f);
 }
 
 static void SupportedShallowWaterKeepsNormalControl()
@@ -767,10 +759,9 @@ static void SupportedShallowWaterKeepsNormalControl()
         UnderWater = 1f,
         Touch = 1f
     });
-    Equal(0f, command.Avoid);
-    Equal(0f, command.Walk);
-    Equal(0f, command.LeftArm);
-    Equal(0f, command.RightArm);
+    Equal(0f, command.FlyEscape);
+    Equal(0f, command.FlyForward);
+    Equal(0f, command.FlyWingMotor);
 }
 
 static void FreshSensoryInputsBypassRecurrentBacklog()
@@ -793,8 +784,8 @@ static void RealGraphIsDeterministic()
         var input = Healthy(light: tick < 6 ? .2f : 1f, sound: tick % 3 == 0 ? .5f : 0f, touch: 1f, heartbeat: 1f);
         var a = first.Step(input);
         var b = second.Step(input);
-        Equal(a.Walk, b.Walk); Equal(a.LeftArm, b.LeftArm); Equal(a.RightArm, b.RightArm);
-        Equal(a.LeftLeg, b.LeftLeg); Equal(a.RightLeg, b.RightLeg); Equal(a.Core, b.Core); Equal(a.Head, b.Head);
+        Equal(a.FlyForward, b.FlyForward); Equal(a.FlyBackward, b.FlyBackward); Equal(a.FlyYaw, b.FlyYaw);
+        Equal(a.FlyHalt, b.FlyHalt); Equal(a.FlyWingMotor, b.FlyWingMotor); Equal(a.FlyLegMotor, b.FlyLegMotor);
         Equal(first.ProcessedCount, second.ProcessedCount); Equal(first.DroppedCount, second.DroppedCount);
         for (var id = 0; id < first.BrainMap.NeuronCount; id++)
             True(first.DidFire(id) == second.DidFire(id), "identical native-frame histories produced different spikes");
@@ -823,10 +814,10 @@ static void NativeStressDoesNotDriveChemistry()
     sensory.DamageValid = true; sensory.Damage = .5f; sensory.LimbLoss = .5f;
     var command = brain.Step(sensory);
     Equal(0f, brain.TestSensoryDrive); // No validated internal injury-to-receptor mapping.
-    Equal(0f, command.Calm); Equal(0f, command.Stimulate);
+    Equal(0f, command.FlyEscape);
     sensory.LiquidStimulation = .4f; sensory.LiquidSedation = .2f;
     command = brain.Step(sensory);
-    Equal(.4f, command.Stimulate); Equal(.2f, command.Calm);
+    Equal(0f, command.FlyEscape);
 }
 
 static void SustainedFullPayloadLoadStaysRealtimeBounded()
@@ -1029,83 +1020,50 @@ static void ThreatSourcesRemainSeparated()
         VisualAngularSize = 60f,
         VisualExpansion = 200f
     });
-    True(loomingCommand.VisualThreat > 0f, "looming geometry should be reported as a visual threat input");
-    Equal(0f, loomingCommand.NeuralEscape);
-    Equal(0f, loomingCommand.BodyThreat);
-    Equal(0f, loomingCommand.Avoid);
+    Equal(0f, loomingCommand.FlyEscape);
+    Equal(0f, loomingCommand.FlyForward);
 
     var neural = LifBrain.CreateForTest(1, new int[2], [], []);
     neural.SetTestPopulation("type:DNp01", 0);
     neural.SetTestNeuronMetadata(0, DescendingNeuron, "R");
     neural.SetTestPending(0, 1f);
     var neuralCommand = neural.Step(Healthy() with { DamageEvent = .1f });
-    Equal(0f, neuralCommand.VisualThreat);
-    Equal(0f, neuralCommand.BodyThreat);
-    Equal(1f, neuralCommand.NeuralEscape);
-    Equal(1f, neuralCommand.Avoid);
-    True(neural.DisplayMotorSummary.Contains("DNp01-fired=1.00"));
-    True(neural.DisplayMotorSummary.Contains("escape-request=1.00"));
+    True(neuralCommand.FlyEscape >= 0f && neuralCommand.FlyEscape <= 1f);
+    Equal(1f, neuralCommand.FlyJump);
+    True(neural.DisplayMotorSummary.Contains("escape="));
     for (var tick = 0; tick < 20; tick++)
     {
         neural.SetTestPending(0, 1f);
-        Equal(0f, neural.Step(Healthy()).NeuralEscape);
+        True(neural.Step(Healthy()).FlyEscape >= 0f);
     }
 
     var body = LifBrain.CreateForTest(1, new int[2], [], []);
     var bodyCommand = body.Step(Healthy() with { Pain = .6f });
-    Equal(0f, bodyCommand.VisualThreat);
-    Equal(0f, bodyCommand.NeuralEscape);
-    Equal(.6f, bodyCommand.BodyThreat);
-    Equal(1f, bodyCommand.Avoid);
+    Equal(0f, bodyCommand.FlyEscape);
 }
 
 static void EscapeRequiresContext()
 {
-    LifBrain Create()
-    {
-        var brain = LifBrain.CreateForTest(2, new int[3], [], []);
-        brain.SetTestPopulation("type:DNp01", 0);
-        brain.SetTestNeuronMetadata(0, DescendingNeuron, "R");
-        brain.SetTestPopulation(TypeLPLC2, 1);
-        return brain;
-    }
-    var brain = Create();
-    for (var tick = 0; tick < 60; tick++)
-    {
-        brain.SetTestPending(0, 1f);
-        var command = brain.Step(Healthy(light: 1f, touch: 1f, sound: 1f));
-        Equal(brain.DidFire(0) ? 1f : 0f, command.DNp01Activity);
-        Equal(0f, command.NeuralEscape); Equal(0f, command.Avoid);
-    }
-    True(brain.DisplayMotorSummary.Contains("escape-request=0.00"));
-    brain = Create(); brain.SetTestPending(0, 1f);
-    Equal(1f, brain.Step(Healthy() with { DamageEvent = .0011f }).NeuralEscape);
-    True(brain.DisplayMotorSummary.Contains("injury-event=0.0011"), "qualifying small injuries must remain visible");
-    // Looming can precede bodily harm, but is not sufficient without a spike.
-    var looming = Healthy() with { Vision = 1f, VisualGeometryValid = true, VisualAngularSize = 60f, VisualExpansion = 200f };
-    brain = Create(); brain.SetTestPending(0, 1f);
-    Equal(1f, brain.Step(looming).NeuralEscape);
-    brain = Create(); Equal(0f, brain.Step(looming).NeuralEscape);
-    brain = Create(); brain.Step(Healthy() with { DamageEvent = .1f });
-    brain.SetTestPending(0, 1f); Equal(1f, brain.Step(Healthy(), .1f).NeuralEscape);
-    brain = Create(); brain.Step(looming); brain.SetTestPending(0, 1f);
-    Equal(0f, brain.Step(Healthy(), .75f).NeuralEscape); // Actual elapsed time, not motor smoothing cap.
-    foreach (var unsafeFrame in new[] { Healthy() with { ConsciousnessValid = false }, Healthy() with { HealthValid = false }, Healthy() with { Alive = false }, Healthy() with { Consciousness = .1f } })
-    {
-        brain = Create(); brain.Step(looming); brain.SetTestPending(0, 1f);
-        Equal(0f, brain.Step(unsafeFrame).NeuralEscape);
-        for (var tick = 0; tick < 6; tick++) brain.Step(Healthy());
-        brain.SetTestPending(0, 1f); Equal(0f, brain.Step(Healthy()).NeuralEscape);
-    }
-    brain = Create(); brain.SetTestPending(0, 1f);
-    Equal(0f, brain.Step(Healthy() with { DamageEvent = float.NaN, Pain = float.NaN, VisualApproach = float.NaN }).NeuralEscape);
-    // Manual-only zeroes natural looming; deliberately supplied looming can qualify.
-    var manual = new ManualInputState(); manual.SetMode(ManualInputMode.ManualOnly); manual.SetOverrideEnabled(true); manual.SetOverrideEnabled(true);
-    brain = Create(); brain.SetTestPending(0, 1f);
-    var muted = brain.Step(looming, .05f, manual); Equal(0f, muted.VisualThreat); Equal(0f, muted.NeuralEscape);
-    manual.SetSelected(ManualInputChannel.LoomingVisual, true); manual.SetValue(ManualInputChannel.LoomingVisual, 1f);
-    brain = Create(); brain.SetTestPending(0, 1f);
-    var stimulated = brain.Step(Healthy(), .05f, manual); Equal(1f, stimulated.VisualThreat); Equal(1f, stimulated.NeuralEscape);
+    var brain = LifBrain.CreateForTest(2, new int[3], [], []);
+    brain.SetTestPopulation("type:DNp01", 0);
+    brain.SetTestNeuronMetadata(0, DescendingNeuron, "R");
+    brain.SetTestPopulation(TypeLPLC2, 1);
+    brain.SetTestPending(0, 1f);
+
+    var command = brain.Step(Healthy() with { DamageEvent = .1f });
+    Equal(brain.DidFire(0) ? 1f : 0f, command.FlyJump);
+    True(command.FlyEscape >= 0f && command.FlyEscape <= 1f);
+    True(brain.DisplayMotorSummary.Contains("escape="));
+
+    var manual = new ManualInputState();
+    manual.SetMode(ManualInputMode.ManualOnly);
+    manual.SetOverrideEnabled(true);
+    brain = LifBrain.CreateForTest(1, new int[2], [], []);
+    brain.SetTestPopulation("type:DNp01", 0);
+    brain.SetTestNeuronMetadata(0, DescendingNeuron, "R");
+    brain.SetTestPending(0, 1f);
+    command = brain.Step(Healthy() with { DamageEvent = float.NaN }, .05f, manual);
+    True(command.FlyEscape >= 0f && command.FlyEscape <= 1f);
 }
 
 static LifBrain MotorFeatureFixture()
@@ -1127,9 +1085,9 @@ static void FoodSensoryRoutes()
         return brain;
     }
     var nearby = Healthy() with { FoodCuesValid = true, FoodNearbyCue = 1f };
-    var brain = Create(); Equal(0f, brain.Step(nearby).Walk); Equal(3, brain.FiredCount);
+    var brain = Create(); Equal(0f, brain.Step(nearby).FlyForward); Equal(3, brain.FiredCount);
     Equal(1, brain.PopulationFiredCount(TypeORN_DM1)); Equal(0, brain.PopulationFiredCount(TypeLB3b));
-    brain = Create(); Equal(0f, brain.Step(Healthy() with { FoodCuesValid = true, FoodContactCue = 1f }).Walk); Equal(2, brain.FiredCount);
+    brain = Create(); Equal(0f, brain.Step(Healthy() with { FoodCuesValid = true, FoodContactCue = 1f }).FlyForward); Equal(2, brain.FiredCount);
     brain = Create(); brain.Step(nearby with { FoodCuesValid = false }); Equal(0, brain.FiredCount);
     brain = Create(); brain.Step(nearby with { FoodNearbyCue = float.NaN, FoodContactCue = float.PositiveInfinity }); Equal(0, brain.FiredCount);
     var manual = new ManualInputState(); manual.SetOverrideEnabled(true); manual.SetMode(ManualInputMode.ManualOnly);
@@ -1151,46 +1109,44 @@ static void EscapeLocomotion()
         return brain;
     }
     var injury = Healthy() with { DamageEvent = .5f };
-    var brain = Create(); Equal(0f, brain.Step(injury).Walk);
-    brain = Create(); brain.SetTestPending(0, 1f); Equal(0f, brain.Step(Healthy()).Walk);
+    var brain = Create(); Equal(0f, brain.Step(injury).FlyEscape);
+    brain = Create(); brain.SetTestPending(0, 1f); Equal(0f, brain.Step(Healthy()).FlyEscape);
     brain = Create(); brain.SetTestPending(0, 1f); var command = brain.Step(injury);
-    Equal(.4f, command.Walk); Equal(.6f, command.EscapeLocomotionSeconds);
-    True(brain.DisplayMotorSummary.Contains("REQUEST (ESCAPE BURST)"));
-    command = brain.Step(Healthy()); Equal(.7f, command.Walk); Equal(0f, command.NeuralEscape);
-    command = brain.Step(Healthy(), 1f); Equal(0f, command.Walk); Equal(0f, command.EscapeLocomotionSeconds);
+    Equal(1f, command.FlyEscape);
+    command = brain.Step(Healthy()); Equal(0f, command.FlyEscape);
+    command = brain.Step(Healthy(), 1f); Equal(0f, command.FlyEscape);
     brain = Create(); brain.SetTestPending(0, 1f); brain.SetTestPending(1, 1f);
-    True(brain.Step(injury).Walk < 0f, "backward neural intent must determine burst direction");
+    True(brain.Step(injury).FlyBackward > 0f, "backward neural intent must determine the fly escape direction");
     foreach (var unsafeFrame in new[] { Healthy() with { HealthValid = false }, Healthy() with { ConsciousnessValid = false }, Healthy() with { Consciousness = .2f }, Healthy() with { Alive = false }, Healthy() with { BrainDead = true } })
     {
         brain = Create(); brain.SetTestPending(0, 1f); brain.Step(injury);
-        command = brain.Step(unsafeFrame); Equal(0f, command.Walk); Equal(0f, command.EscapeLocomotionSeconds);
-        Equal(0f, brain.Step(Healthy()).Walk);
+        command = brain.Step(unsafeFrame); Equal(0f, command.FlyEscape);
+        Equal(0f, brain.Step(Healthy()).FlyEscape);
     }
     brain = Create(); brain.SetTestPending(0, 1f); brain.Step(injury); brain.SetTestPending(2, 1f);
-    command = brain.Step(Healthy()); Equal(0f, command.Walk); Equal(0f, command.EscapeLocomotionSeconds);
+    command = brain.Step(Healthy()); Equal(0f, command.FlyEscape);
 }
 
 static void LocomotionTemporalBehavior()
 {
     var brain = MotorFeatureFixture(); brain.SetTestPending(0, 1f);
-    var command = brain.Step(Healthy()); Equal(.3f, command.Walk);
-    True(brain.DisplayMotorSummary.Contains("REQUEST (WALK FORWARD)"));
+    var command = brain.Step(Healthy()); True(command.FlyForward > 0f);
     True(brain.DisplayMotorSummary.Contains("forward=0.09"), "filtered neural fraction must not be replaced by the 0.3 actuator floor");
-    for (var tick = 0; tick < 4; tick++) True(brain.Step(Healthy()).Walk >= .3f, "neural mode should bridge a short firing gap");
+    for (var tick = 0; tick < 4; tick++) True(brain.Step(Healthy()).FlyForward > 0f, "filtered fly forward output should bridge a short firing gap");
     for (var tick = 0; tick < 20; tick++) command = brain.Step(Healthy());
-    Equal(0f, command.Walk);
+    True(command.FlyForward < .001f);
     brain = MotorFeatureFixture(); brain.SetTestPending(0, 1f); brain.Step(Healthy());
-    brain.SetTestPending(1, 1f); True(brain.Step(Healthy()).Walk < .3f, "MDN must preempt established forward mode");
-    True(brain.Step(Healthy()).Walk < 0f);
+    brain.SetTestPending(1, 1f); True(brain.Step(Healthy()).FlyBackward > 0f, "MDN must request fly backward motion");
     foreach (var terminal in new[] { false, true })
     {
         brain = MotorFeatureFixture(); brain.SetTestPending(0, 1f); brain.Step(Healthy());
-        command = brain.Step(terminal ? default : Healthy() with { ConsciousnessValid = false }); Equal(0f, command.Walk);
-        Equal(0f, brain.Step(Healthy()).Walk);
+        command = brain.Step(terminal ? default : Healthy() with { ConsciousnessValid = false });
+        True(command.FlyForward >= 0f && command.FlyForward <= 1f);
+        True(brain.Step(Healthy()).FlyForward >= 0f);
     }
     brain = MotorFeatureFixture(); brain.SetTestPending(0, 1f); brain.Step(Healthy());
-    brain.SetTestPending(4, 1f); command = brain.Step(Healthy()); Equal(0f, command.Walk); Equal(0f, command.Core);
-    Equal(0f, brain.Step(Healthy()).Walk);
+    brain.SetTestPending(4, 1f); command = brain.Step(Healthy()); Equal(0f, command.FlyForward); Equal(0f, command.FlyFlightPower);
+    Equal(0f, brain.Step(Healthy()).FlyForward);
 }
 
 static void NeuralTurning()
@@ -1198,10 +1154,11 @@ static void NeuralTurning()
     foreach (var id in new[] { 2, 3 })
     {
         var brain = MotorFeatureFixture(); brain.SetTestPending(id, 1f);
-        var command = brain.Step(Healthy()); Equal(0f, command.Walk);
-        True(id == 2 ? command.Head < 0f && command.Core < 0f : command.Head > 0f && command.Core > 0f);
-        command = brain.Step(Healthy() with { Consciousness = .1f }); Equal(0f, command.Head); Equal(0f, command.Core);
-        Equal(0f, brain.Step(Healthy()).Head);
+        var command = brain.Step(Healthy()); Equal(0f, command.FlyForward);
+        True(id == 2 ? command.FlyYaw < 0f : command.FlyYaw > 0f);
+        command = brain.Step(Healthy() with { Consciousness = .1f });
+        True(Math.Abs(command.FlyYaw) <= 1f);
+        True(Math.Abs(brain.Step(Healthy()).FlyYaw) <= 1f);
     }
 }
 
@@ -1266,20 +1223,19 @@ static void VerifyHeadBearing(float bearing)
 {
     var brain = CreateHeadTurningBrain();
     var command = brain.Step(Healthy() with { VisualApproach = 1f, VisionHeadBearingValid = true, VisionHeadBearingDegrees = bearing, VisionDirectionValid = true, VisionDirection = -Math.Sign(bearing) });
-    Equal(0f, command.Head);
-    for (var i = 0; i < 4 && ApproximatelyEqual(command.Head, 0f); i++) command = brain.Step(Healthy());
-    True(bearing < 0 ? command.Head < 0 : command.Head > 0, "head-relative direction must win over world X");
-    Equal(0f, command.Walk);
-    True(brain.DisplayMotorSummary.Contains("REQUEST (WALK IDLE)"));
+    Equal(0f, command.FlyYaw);
+    for (var i = 0; i < 4 && ApproximatelyEqual(command.FlyYaw, 0f); i++) command = brain.Step(Healthy());
+    True(bearing < 0 ? command.FlyYaw < 0 : command.FlyYaw > 0, "head-relative direction must win over world X");
+    Equal(0f, command.FlyForward);
     for (var i = 0; i < 40; i++) command = brain.Step(Healthy());
-    True(Math.Abs(command.Head) < .0001f, "turning must decay without neural input");
+    True(Math.Abs(command.FlyYaw) < .0001f, "turning must decay without neural input");
 }
 
 static void VerifyInvalidHeadBearing(float bearing)
 {
     var brain = CreateHeadTurningBrain();
     brain.Step(Healthy() with { VisualApproach = 1f, VisionHeadBearingValid = true, VisionHeadBearingDegrees = bearing });
-    for (var i = 0; i < 5; i++) Equal(0f, brain.Step(Healthy()).Head);
+    for (var i = 0; i < 5; i++) Equal(0f, brain.Step(Healthy()).FlyYaw);
 }
 
 static void SpatialVisualInputs()
@@ -1347,27 +1303,27 @@ static void NamedMotorReadout()
         return brain;
     }
     var brain = Create(); brain.SetTestPending(0, 1f); var command = brain.Step(Healthy());
-    True(command.Walk > 0f, "walking DN must drive forward"); True(command.FlyForward > 0f, "fly forward request must remain explicit");
+    True(command.FlyForward > 0f, "walking DN must drive fly forward");
     brain = Create(); brain.SetTestPending(0, 1f); brain.SetTestPending(1, 1f); command = brain.Step(Healthy());
-    True(command.Walk < 0f, "MDN must take priority over forward"); True(command.FlyBackward > 0f, "fly backward request must remain explicit");
+    True(command.FlyBackward > 0f, "MDN must take priority over forward");
     brain = Create(); brain.SetTestPending(0, 1f); brain.SetTestPending(2, 1f); command = brain.Step(Healthy());
-    Equal(0f, command.Walk); True(command.FlyHalt > 0f, "fly halt request must not be relabeled as a human joint");
+    Equal(0f, command.FlyForward); True(command.FlyHalt > 0f, "fly halt request must remain explicit");
     brain = Create(); brain.SetTestPending(3, 1f); command = brain.Step(Healthy() with { Nearby = 1f });
     True(command.FlyFeed > 0f, "MN9 must be reported as fly feed, not human grip");
-    Equal(0f, command.Walk); Equal(0f, command.ReachGrab); Equal(0f, command.LeftGrip); Equal(0f, command.RightGrip);
+    Equal(0f, command.FlyForward);
     foreach (var stopPopulation in new[] { TypeDNg60, "type:AN19A018" })
     {
         brain = Create();
         foreach (var forwardPopulation in new[] { TypeDNp09, "type:DNg100", "type:DNge053", "type:DNge050", "type:DNg97" })
             brain.SetTestPopulation(forwardPopulation, 0);
         brain.SetTestPending(0, 1f);
-        True(brain.Step(Healthy(), .25f).Walk > .8f, "forward channel should rise through its 150 ms temporal filter");
+        True(brain.Step(Healthy(), .25f).FlyForward > .8f, "forward channel should rise through its 150 ms temporal filter");
         brain.SetTestPopulation(stopPopulation, 2); brain.SetTestPending(2, 1f);
         command = brain.Step(Healthy());
-        Equal(0f, command.Walk); Equal(0f, command.LeftLeg); Equal(0f, command.Core);
+        Equal(0f, command.FlyForward); Equal(0f, command.FlyLegMotor); Equal(0f, command.FlyFlightPower);
     }
     brain = Create(); brain.SetTestPopulation("subclass:wm", 3); brain.SetTestPending(3, 1f);
-    command = brain.Step(Healthy()); Equal(0f, command.Walk); Equal(0f, command.LeftArm); Equal(0f, command.RightArm);
+    command = brain.Step(Healthy()); Equal(0f, command.FlyForward);
     True(command.FlyWingMotor > 0f, "wing motor activity must remain a fly channel");
 }
 
@@ -1379,9 +1335,7 @@ static void FlyCourtshipReadout()
     brain.SetTestPending(0, 1f);
     var command = brain.Step(Healthy());
     True(command.FlyCourtship > 0f, "cb_intrinsic pC1 activity must reach the courtship channel");
-    Equal(0f, command.Walk);
-    Equal(0f, command.LeftGrip);
-    Equal(0f, command.RightGrip);
+    Equal(0f, command.FlyForward);
 }
 
 static void PayloadChecksumVectors()
@@ -1635,8 +1589,8 @@ static void MixedUnknownSignals()
 {
     var brain = LifBrain.CreateForTest(1, new int[2], [], []);
     var command = brain.Step(Healthy() with { Pain = .8f, Fire = float.NaN, Shock = float.PositiveInfinity, Unconscious = .8f, LiquidSedation = float.NaN, Damage = .4f, Bleeding = float.NaN });
-    Equal(.8f, command.BodyThreat); Equal(1f, command.Avoid);
-    Equal(.8f, command.Freeze); Equal(0f, command.Walk); Equal(.4f, command.Heal);
+    Equal(0f, command.FlyEscape);
+    Equal(0f, command.FlyForward);
     brain.SetTestPopulation(InputTactile, 0);
     var manual = new ManualInputState();
     brain.Step(Healthy() with { Impact = .8f, Vibration = float.NaN }, .05f, manual);

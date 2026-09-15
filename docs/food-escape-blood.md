@@ -37,7 +37,7 @@ All 28 mapping cases completed. Zero walking for isolated food cues is an observ
 
 ## Files changed in this follow-up
 
-- src/UI/ManualInputState.cs, Core/SensoryFrame.cs and Core/MotorCommand.cs, Core/LifBrain.cs: food routes, explicit burst state and truthful input/output fields.
+- src/UI/ManualInputState.cs, Core/SensoryFrame.cs and Core/FlyMotorCommand.cs, Core/LifBrain.cs: food routes, explicit burst state and truthful input/output fields.
 - src/Adapters/PeoplePlaygroundPersonAdapter.cs: stock food identity/contact, injury history/loss, blood readings, jukebox/attached audio.
 - tests/PersonConnectome.Adapter.Tests/Adapters/GameDoubles.cs and Program.cs; tests/PersonConnectome.Runtime.Tests/Core/Program.cs: focused native-boundary, reset, routing and real-asset checks.
 - README.md, assets/README.txt, docs/architecture.md, docs/api-compatibility.md, docs/PROVENANCE.md, docs/sensory-mapping.md, docs/minecraft-adaptation.md, docs/manual-game-test.md and this report: behavior, attribution and limitations. Existing unrelated edits, including thumb.png, are preserved.
