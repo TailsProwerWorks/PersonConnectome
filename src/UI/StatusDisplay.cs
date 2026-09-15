@@ -718,7 +718,13 @@ namespace Mod.UI
             while (i <= line.Length)
             {
                 var delimiter = i == line.Length || (line[i] == ' ' && i + 1 < line.Length && line[i + 1] == ' ');
-                if (!delimiter) continue;
+                if (!delimiter)
+                {
+                    // Every parser branch must advance i; this runs on the
+                    // main UI thread and a non-advancing branch freezes the game.
+                    i++;
+                    continue;
+                }
                 var field = line.Substring(start, i - start).Trim();
                 if (field.Length > 0) fields.Add(field);
                 if (i < line.Length)

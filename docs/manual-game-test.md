@@ -1,5 +1,15 @@
 # Manual People Playground test checklist
 
+## Freeze regression note (2026-09-15)
+
+The spawn freeze diagnosed during native testing was an infinite loop in
+`StatusDisplay.SplitTelemetryFields`. Its non-delimiter branch continued without
+advancing the character index, so the first sampled telemetry refresh could hold
+the Unity main thread forever. The branch now increments `i` before continuing.
+When changing this parser, preserve the invariant that every loop iteration
+either consumes a delimiter/field or advances the index; verify a fresh spawn
+reaches the telemetry refresh without a hang.
+
 Source-linked tests use game doubles. The following native-game checks remain required; do not mark them passed based on an offline build.
 
 1. Run `pwsh -NoProfile -File scripts/ai/Test-GameCompilation.ps1` against the installed compiler's recorded references, then deploy with `scripts/deploy/Deploy-Mod.ps1`. Confirm exactly manifest scripts, `mod.json` and the PNG; enable the mod with shady-code rejection enabled and confirm compilation/loading succeeds. The Canvas/TextMeshPro overlay must compile without the previously reported GUIStyle/GUIContent errors. Offline compilation does not replace this native load check.
