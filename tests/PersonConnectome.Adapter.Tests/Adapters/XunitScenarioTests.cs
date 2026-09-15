@@ -86,6 +86,7 @@ public sealed class AdapterScenarioTests
             yield return Case("hazard walking keeps the native pose gate", "HazardWalkingKeepsNativeGate");
             yield return Case("chemistry interventions scale with elapsed time", "ChemistryScalesWithElapsedTime");
             yield return Case("future fly adapter reports unsupported capabilities safely", "FlyAdapterIsDisabled");
+            yield return Case("vision radius updates the live adapter without recreation", "VisionRadiusUpdates");
         }
     }
 
@@ -98,6 +99,7 @@ public sealed class AdapterScenarioTests
         Physics2D.Hits = [];
         Physics2D.LinecastHits = [];
         Physics2D.LinecastResult = default;
+        Physics2D.LastOverlapRadius = 0f;
         var method = typeof(Program).GetMethod(methodName, BindingFlags.Static | BindingFlags.NonPublic);
         if (method == null) throw new InvalidOperationException("Scenario method not found: " + methodName);
         try

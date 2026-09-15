@@ -20,7 +20,7 @@ namespace Mod.UI
         private int id;
         private readonly float[] history = new float[120];
         private int historyIndex, historyCount;
-        private float refreshTimer, stepMilliseconds, droppedSeconds;
+        private float refreshTimer, stepMilliseconds, sensorMilliseconds, brainMilliseconds, actuatorMilliseconds, uiMilliseconds, droppedSeconds;
         private float neuralEscapeFlash;
         private float lastSampleTime = -1f;
         private long capturedTick;
@@ -137,6 +137,7 @@ namespace Mod.UI
                 Array.Clear(history, 0, history.Length);
                 historyIndex = historyCount = 0;
                 stepMilliseconds = droppedSeconds = 0f;
+                sensorMilliseconds = brainMilliseconds = actuatorMilliseconds = uiMilliseconds = 0f;
                 neuralEscapeFlash = 0f;
                 lastSampleTime = -1f;
                 capturedTick = 0;
@@ -149,9 +150,12 @@ namespace Mod.UI
             }
         }
 
-        public void RecordTick(float milliseconds, float skippedSeconds, LifBrain source)
+        public void RecordTick(float sensorMs, float brainMs, float actuatorMs, float skippedSeconds, LifBrain source)
         {
-            stepMilliseconds = milliseconds;
+            sensorMilliseconds = sensorMs;
+            brainMilliseconds = brainMs;
+            actuatorMilliseconds = actuatorMs;
+            stepMilliseconds = sensorMs + brainMs + actuatorMs;
             droppedSeconds += skippedSeconds;
             lastSampleTime = Time.unscaledTime;
             if (source != null && source.LastCommand.NeuralEscape > 0f)
@@ -174,7 +178,9 @@ namespace Mod.UI
             refreshTimer -= Mathf.Max(0f, elapsedSeconds);
             if (refreshTimer > 0f) return;
             refreshTimer = .1f;
+            var uiStarted = Time.realtimeSinceStartup;
             RefreshUi();
+            uiMilliseconds = (Time.realtimeSinceStartup - uiStarted) * 1000f;
         }
 
         private void BuildUi()
@@ -625,7 +631,7 @@ namespace Mod.UI
             var nativeSignal = !hasSample ? "WAITING FOR NATIVE SAMPLE" : adapter.LiveState + " | " + adapter.LiveSignal + " " + adapter.LiveSignalValue.ToString("0.00");
             var manualIndicator = manualInput.OverrideEnabled ? " | MANUAL INPUT ACTIVE" : "";
             var age = lastSampleTime < 0f ? "not sampled" : (Time.unscaledTime - lastSampleTime).ToString("0.00") + " s ago";
-            PlaceText(timing, 12f, ref y, width - 24f, nativeSignal + manualIndicator + "\nInput: " + age + " | loop " + stepMilliseconds.ToString("0.0") + " ms\nSkipped game time: " + droppedSeconds.ToString("0.000") + " s | scroll below for more");
+            PlaceText(timing, 12f, ref y, width - 24f, nativeSignal + manualIndicator + "\nInput: " + age + " | loop " + stepMilliseconds.ToString("0.0") + " ms (sensor " + sensorMilliseconds.ToString("0.0") + " / brain " + brainMilliseconds.ToString("0.0") + " / actuator " + actuatorMilliseconds.ToString("0.0") + ") | UI " + uiMilliseconds.ToString("0.0") + " ms\nSkipped game time: " + droppedSeconds.ToString("0.000") + " s | scroll below for more");
             for (var i = 0; i < tabs.Length; i++)
             {
                 SetRect((RectTransform)tabs[i].transform, 12f + i * (width - 24f) / Pages.Length, y, (width - 24f) / Pages.Length - 4f, 30f);
@@ -642,10 +648,16 @@ namespace Mod.UI
             SetVisible(brainElements, hasSample && brain != null && shared.Page == 2);
             SetVisible(stimulationElements, showStimulation);
             SetVisible(telemetryElements, !showStimulation);
-            HideTelemetryRows();
             body.gameObject.SetActive(!showStimulation);
             BuildTelemetrySections(hasSample, out var telemetryIntro, out var telemetrySections);
-            if (!showStimulation) LayoutTelemetry(telemetryIntro, telemetrySections, contentWidth, ref contentY);
+            if (!showStimulation)
+            {
+                LayoutTelemetry(telemetryIntro, telemetrySections, contentWidth, ref contentY);
+            }
+            else
+            {
+                HideTelemetryRows();
+            }
             if (hasSample && brain != null && shared.Page == 0) LayoutMotors(contentWidth, ref contentY);
             if (hasSample && brain != null && shared.Page == 2) LayoutBrain(contentWidth, ref contentY);
             if (showStimulation) LayoutStimulation(contentWidth, ref contentY);

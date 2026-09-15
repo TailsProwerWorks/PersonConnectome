@@ -26,6 +26,7 @@ namespace Mod.Adapters
         private readonly PersonBehaviour person;
         private readonly SpawnableAsset? pumpkinAsset;
         private readonly List<LimbBehaviour> limbs = [];
+        private readonly HashSet<LimbBehaviour> limbMembership = [];
         private readonly List<PersonConnectomeLimbController> limbControllers = [];
         private readonly List<LimbBehaviour> discoveredLimbs = [];
         private readonly Dictionary<CirculationBehaviour, float> bloodBaselines = [];
@@ -37,7 +38,7 @@ namespace Mod.Adapters
         private float jointSpeedLimit = 30f;
         private bool jointSpeedValid = true;
         private bool hasAppliedControl;
-        private readonly float visionRadius;
+        private float visionRadius;
         private readonly Collider2D[] nearbyColliders = new Collider2D[128];
         private readonly NearbyScanState nearbyScanState = new();
         private readonly HashSet<PhysicalBehaviour> lightOwners = [];
@@ -45,7 +46,16 @@ namespace Mod.Adapters
         private readonly List<LightSprite> nativeLightSprites = [];
         private readonly List<SpriteRenderer> lightSpriteBuffer = [];
         private readonly List<FlashlightAttachmentBehaviour> flashlightAttachments = [];
+        private readonly Dictionary<PhysicalBehaviour, ComponentDiscovery> componentCache = [];
+        private readonly HashSet<PhysicalBehaviour> refreshedOwners = [];
+        private readonly HashSet<PhysicalBehaviour> sampledOwners = [];
+        private readonly List<Component> componentBuffer = [];
+        private int discoverySamples;
+        private int limbDiscoverySamples;
+        private int lastRootChildCount = -1;
         private const int MaxLightSpritesPerSample = 64;
+        private const int ComponentDiscoveryRefreshSamples = 60;
+        private const int LimbDiscoveryRefreshSamples = 20;
         private readonly RaycastHit2D[] visionLinecastHits = new RaycastHit2D[32];
         private const int MaxVisualCandidates = 16;
         private readonly Collider2D[] visualCandidates = new Collider2D[MaxVisualCandidates];
@@ -232,10 +242,10 @@ namespace Mod.Adapters
             // Catalog identity is stable for this controller's lifetime; avoid
             // repeated Resources fallback scans when a custom install lacks it.
             pumpkinAsset = ModAPI.FindSpawnable("Pumpkin");
-            RefreshLimbs();
+            RefreshLimbs(true);
         }
 
-        private void RefreshLimbs()
+        private void RefreshLimbs(bool forceDiscovery = false)
         {
             for (var i = limbs.Count - 1; i >= 0; i--)
             {
@@ -243,12 +253,19 @@ namespace Mod.Adapters
                 {
                     if (!ReferenceEquals(limbs[i], null)) healthSamples.Remove(limbs[i]);
                     limbControllers[i].Stop();
+                    limbMembership.Remove(limbs[i]);
                     limbs.RemoveAt(i);
                     limbControllers.RemoveAt(i);
                 }
             }
 
             if (root == null) return;
+            limbDiscoverySamples++;
+            var hierarchyChanged = root.transform.childCount != lastRootChildCount;
+            var personListChanged = person != null && person.Limbs != null && HasUnregisteredLimb(person.Limbs);
+            if (!forceDiscovery && !hierarchyChanged && !personListChanged && limbDiscoverySamples < LimbDiscoveryRefreshSamples) return;
+            limbDiscoverySamples = 0;
+            lastRootChildCount = root.transform.childCount;
             root.GetComponentsInChildren(true, discoveredLimbs);
             foreach (var limb in discoveredLimbs) RegisterLimb(limb);
             if (person != null && person.Limbs != null)
@@ -259,10 +276,26 @@ namespace Mod.Adapters
 
         private void RegisterLimb(LimbBehaviour limb)
         {
-            if (limb == null || limbs.Contains(limb)) return;
+            if (limb == null || !limbMembership.Add(limb)) return;
             limbs.Add(limb);
             limbControllers.Add(new PersonConnectomeLimbController(limb, root.transform));
             AttachProbe(limb.gameObject, root.transform, reportCollision, reportProjectile, () => IsConnectedLimb(limb));
+        }
+
+        private bool HasUnregisteredLimb(IList<LimbBehaviour> candidates)
+        {
+            for (var i = 0; i < candidates.Count; i++)
+            {
+                var limb = candidates[i];
+                if (limb != null && !limbMembership.Contains(limb)) return true;
+            }
+
+            return false;
+        }
+
+        public void UpdateVisionRadius(float value)
+        {
+            visionRadius = IsFinite(value) ? Mathf.Clamp(value, 1f, 30f) : 8f;
         }
 
         private void AttachProbe(GameObject limbObject, Transform ownerRoot, Action<float> reportCollision, Action<float>? reportProjectile, Func<bool> isConnected)
@@ -654,6 +687,7 @@ namespace Mod.Adapters
         public void Dispose()
         {
             Stop();
+            ResetComponentDiscoveryCache();
             foreach (var limb in limbs)
             {
                 if (limb == null) continue;
@@ -1125,12 +1159,19 @@ namespace Mod.Adapters
         private void ReadNearby(ref SensoryFrame f, ref string audioSourceSummary)
         {
             lightOwners.Clear();
+            sampledOwners.Clear();
             sampledLightSprites.Clear();
             sampledAudioSources.Clear();
             var head = FindStatusAnchor();
             var origin = (Vector2)head.position;
             var facing = InitializeNearbyState(ref f, head, out var headCollider);
-            nearbyScanState.Reset(origin, facing, headCollider);
+            var refreshDiscovery = ++discoverySamples >= ComponentDiscoveryRefreshSamples;
+            if (refreshDiscovery)
+            {
+                discoverySamples = 0;
+                ResetComponentDiscoveryCache();
+            }
+            nearbyScanState.Reset(origin, facing, headCollider, refreshDiscovery);
             var scanState = nearbyScanState;
             Array.Clear(visualCandidates, 0, visualCandidates.Length);
             ReadAmbientTemperature(ref f, origin);
@@ -1149,6 +1190,57 @@ namespace Mod.Adapters
             ReadVisualCandidates(ref f, origin, facing, head, scanState.CandidateCount);
         }
 
+        private ComponentDiscovery GetComponentDiscovery(PhysicalBehaviour owner, bool refresh)
+        {
+            var firstOwnerThisSample = sampledOwners.Add(owner);
+            var refreshOwner = refresh && refreshedOwners.Add(owner);
+            if (!firstOwnerThisSample && componentCache.TryGetValue(owner, out var repeatedCached)) return repeatedCached;
+            componentCache.TryGetValue(owner, out var cached);
+            owner.GetComponents(componentBuffer);
+            if (!refreshOwner && cached != null && cached.ChildCount == owner.transform.childCount && cached.ComponentCount == componentBuffer.Count) return cached;
+
+            var discovery = new ComponentDiscovery
+            {
+                ChildCount = owner.transform.childCount,
+                ComponentCount = componentBuffer.Count,
+                Glowtube = owner.GetComponent<GlowtubeBehaviour>(),
+                Bulb = owner.GetComponent<BulbBehaviour>(),
+                Led = owner.GetComponent<LEDBulbBehaviour>(),
+                Toggle = owner.GetComponent<ActivationToggleBehaviour>(),
+                Floodlight = owner.GetComponent<SingleFloodlightBehaviour>(),
+                Jukebox = owner.GetComponent<JukeboxBehaviour>(),
+                Identity = owner.GetComponentInParent<SerialiseInstructions>()
+            };
+            owner.gameObject.GetComponentsInChildren(true, nativeLightSprites);
+            discovery.NativeLightSprites = nativeLightSprites.ToArray();
+            owner.gameObject.GetComponentsInChildren(true, flashlightAttachments);
+            discovery.FlashlightAttachments = flashlightAttachments.ToArray();
+            owner.gameObject.GetComponentsInChildren(true, nearbyAudioSources);
+            discovery.AudioSources = nearbyAudioSources.ToArray();
+            var groupSprites = new List<SpriteRenderer>();
+            if (discovery.Toggle?.LightObject != null)
+            {
+                discovery.Toggle.LightObject.GetComponentsInChildren(true, lightSpriteBuffer);
+                groupSprites.AddRange(lightSpriteBuffer);
+            }
+            if (discovery.Floodlight?.ToToggle != null)
+            {
+                discovery.Floodlight.ToToggle.GetComponentsInChildren(true, lightSpriteBuffer);
+                groupSprites.AddRange(lightSpriteBuffer);
+            }
+            discovery.GroupLightSprites = groupSprites.ToArray();
+            componentCache[owner] = discovery;
+            return discovery;
+        }
+
+        private void ResetComponentDiscoveryCache()
+        {
+            componentCache.Clear();
+            refreshedOwners.Clear();
+            sampledOwners.Clear();
+            componentBuffer.Clear();
+        }
+
         private sealed class NearbyScanState
         {
             public Vector2 Origin;
@@ -1156,17 +1248,36 @@ namespace Mod.Adapters
             public Collider2D? HeadCollider;
             public float Closest = float.MaxValue;
             public int CandidateCount;
+            public bool RefreshDiscovery;
             public string AudioSourceSummary = "none";
 
-            public void Reset(Vector2 origin, Vector3 facing, Collider2D? headCollider)
+            public void Reset(Vector2 origin, Vector3 facing, Collider2D? headCollider, bool refreshDiscovery)
             {
                 Origin = origin;
                 Facing = facing;
                 HeadCollider = headCollider;
                 Closest = float.MaxValue;
                 CandidateCount = 0;
+                RefreshDiscovery = refreshDiscovery;
                 AudioSourceSummary = "none";
             }
+        }
+
+        private sealed class ComponentDiscovery
+        {
+            public int ChildCount;
+            public int ComponentCount;
+            public LightSprite[] NativeLightSprites = [];
+            public FlashlightAttachmentBehaviour[] FlashlightAttachments = [];
+            public SpriteRenderer[] GroupLightSprites = [];
+            public AudioSource[] AudioSources = [];
+            public GlowtubeBehaviour? Glowtube;
+            public BulbBehaviour? Bulb;
+            public LEDBulbBehaviour? Led;
+            public ActivationToggleBehaviour? Toggle;
+            public SingleFloodlightBehaviour? Floodlight;
+            public JukeboxBehaviour? Jukebox;
+            public SerialiseInstructions? Identity;
         }
 
         private void ReadVisualCandidates(ref SensoryFrame frame, Vector2 origin, Vector3 facing, Transform head, int candidateCount)
@@ -1242,11 +1353,12 @@ namespace Mod.Adapters
             ReadNearbyHazards(ref frame, hit, distance);
             var physical = hit.GetComponentInParent<PhysicalBehaviour>();
             if (physical == null) return;
-            ReadFoodCue(ref frame, hit, physical, distance, state.HeadCollider);
+            var discovery = GetComponentDiscovery(physical, state.RefreshDiscovery);
+            ReadFoodCue(ref frame, hit, physical, distance, state.HeadCollider, discovery);
             if (lightOwners.Add(physical))
             {
-                ReadLocalLights(ref frame, physical, state.Origin);
-                ReadExternalSound(ref frame, physical, state.Origin, ref state.AudioSourceSummary);
+                ReadLocalLights(ref frame, physical, state.Origin, discovery);
+                ReadExternalSound(ref frame, physical, state.Origin, ref state.AudioSourceSummary, discovery);
             }
             ReadExternalTemperature(ref frame, physical, distance);
             if (distance < state.Closest)
@@ -1270,10 +1382,10 @@ namespace Mod.Adapters
             frame.AmbientHeat = Mathf.Max(frame.AmbientHeat, AmbientTemperatureHeat(lava.LavaTemperature) * distanceSignal);
         }
 
-        private void ReadFoodCue(ref SensoryFrame frame, Collider2D hit, PhysicalBehaviour physical, float distance, Collider2D? headCollider)
+        private void ReadFoodCue(ref SensoryFrame frame, Collider2D hit, PhysicalBehaviour physical, float distance, Collider2D? headCollider, ComponentDiscovery discovery)
         {
             if (!frame.FoodCuesValid || physical.isDisintegrated || !physical.gameObject.activeInHierarchy || !hit.enabled || hit.isTrigger || !hit.gameObject.activeInHierarchy || IsOwnTransform(physical.transform)) return;
-            var identity = physical.GetComponentInParent<SerialiseInstructions>();
+            var identity = discovery.Identity;
             if (identity == null || identity.OriginalSpawnableAsset != pumpkinAsset) return;
             frame.FoodNearbyCue = Mathf.Max(frame.FoodNearbyCue, Unit(1f - distance / visionRadius));
             if (headCollider != null && headCollider.enabled && !headCollider.isTrigger && headCollider.IsTouching(hit)) frame.FoodContactCue = 1f;
@@ -1302,40 +1414,37 @@ namespace Mod.Adapters
             visualDistances[slot] = distance;
         }
 
-        private void ReadLocalLights(ref SensoryFrame frame, PhysicalBehaviour owner, Vector2 origin)
+        private void ReadLocalLights(ref SensoryFrame frame, PhysicalBehaviour owner, Vector2 origin, ComponentDiscovery discovery)
         {
             // Only native light owners qualify. Arbitrary bright body sprites,
             // UI labels and particles are not guessed to be light sources.
-            owner.gameObject.GetComponentsInChildren(false, nativeLightSprites);
-            for (var i = 0; i < nativeLightSprites.Count; i++)
+            for (var i = 0; i < discovery.NativeLightSprites.Length; i++)
             {
-                var light = nativeLightSprites[i];
+                var light = discovery.NativeLightSprites[i];
                 if (light != null) ReadLightSprite(ref frame, light.SpriteRenderer, origin, light.Brightness);
             }
-            var tube = owner.GetComponent<GlowtubeBehaviour>();
+            var tube = discovery.Glowtube;
             if (tube != null) ReadLightSprite(ref frame, tube.LightSprite, origin, 1f);
-            var bulb = owner.GetComponent<BulbBehaviour>();
+            var bulb = discovery.Bulb;
             if (bulb != null) ReadLightSprite(ref frame, bulb.LightSprite, origin, 1f);
-            var led = owner.GetComponent<LEDBulbBehaviour>();
+            var led = discovery.Led;
             if (led != null) ReadLightSprite(ref frame, led.LightSprite, origin, 1f);
-            var toggle = owner.GetComponent<ActivationToggleBehaviour>();
-            if (toggle != null) ReadLightGroup(ref frame, toggle.LightObject, origin);
-            var floodlight = owner.GetComponent<SingleFloodlightBehaviour>();
-            if (floodlight != null) ReadLightGroup(ref frame, floodlight.ToToggle, origin);
-            owner.gameObject.GetComponentsInChildren(false, flashlightAttachments);
-            for (var i = 0; i < flashlightAttachments.Count; i++)
+            var toggle = discovery.Toggle;
+            if (toggle != null && toggle.LightObject != null)
             {
-                var attachment = flashlightAttachments[i];
+                for (var i = 0; i < discovery.GroupLightSprites.Length; i++) ReadLightSprite(ref frame, discovery.GroupLightSprites[i], origin, 1f);
+            }
+            var floodlight = discovery.Floodlight;
+            if (floodlight != null && floodlight.ToToggle != null && toggle?.LightObject == null)
+            {
+                for (var i = 0; i < discovery.GroupLightSprites.Length; i++) ReadLightSprite(ref frame, discovery.GroupLightSprites[i], origin, 1f);
+            }
+            for (var i = 0; i < discovery.FlashlightAttachments.Length; i++)
+            {
+                var attachment = discovery.FlashlightAttachments[i];
                 if (attachment == null || attachment.Lights == null) continue;
                 foreach (var sprite in attachment.Lights) ReadLightSprite(ref frame, sprite, origin, 1f);
             }
-        }
-
-        private void ReadLightGroup(ref SensoryFrame frame, GameObject group, Vector2 origin)
-        {
-            if (group == null || !group.activeInHierarchy) return;
-            group.GetComponentsInChildren(false, lightSpriteBuffer);
-            foreach (var sprite in lightSpriteBuffer) ReadLightSprite(ref frame, sprite, origin, 1f);
         }
 
         private void ReadLightSprite(ref SensoryFrame frame, SpriteRenderer renderer, Vector2 origin, float brightness)
@@ -1526,17 +1635,16 @@ namespace Mod.Adapters
             frame.AmbientCold = Mathf.Max(frame.AmbientCold, AmbientTemperatureCold(temperature));
         }
 
-        private void ReadExternalSound(ref SensoryFrame frame, PhysicalBehaviour physical, Vector2 origin, ref string audioSourceSummary)
+        private void ReadExternalSound(ref SensoryFrame frame, PhysicalBehaviour physical, Vector2 origin, ref string audioSourceSummary, ComponentDiscovery discovery)
         {
             if (physical == null || IsOwnPhysical(physical) || physical.isDisintegrated || !physical.gameObject.activeInHierarchy) return;
             ReadExternalAudioSource(ref frame, physical, physical.MainAudioSource, origin, ref audioSourceSummary);
-            var jukebox = physical.GetComponent<JukeboxBehaviour>();
+            var jukebox = discovery.Jukebox;
             if (jukebox != null) ReadExternalAudioSource(ref frame, physical, jukebox.audioSource, origin, ref audioSourceSummary);
             if (sampledAudioSources.Count >= MaxAudioSourcesPerSample) { frame.SoundLimited = true; return; }
-            physical.gameObject.GetComponentsInChildren(false, nearbyAudioSources);
-            for (var i = 0; i < nearbyAudioSources.Count; i++)
+            for (var i = 0; i < discovery.AudioSources.Length; i++)
             {
-                var source = nearbyAudioSources[i];
+                var source = discovery.AudioSources[i];
                 if (source == null) continue;
                 if (sampledAudioSources.Count >= MaxAudioSourcesPerSample) { frame.SoundLimited = true; break; }
                 ReadExternalAudioSource(ref frame, physical, source, origin, ref audioSourceSummary);
@@ -1552,7 +1660,7 @@ namespace Mod.Adapters
             var sourceDistance = sourceDelta.magnitude;
             if (physical == null || IsOwnPhysical(physical) || audio == null || !IsFinite(sourceDistance) || IsLikelySelfRootAudio(physical, audio, sourceDistance) ||
                 IsOwnTransform(audio.transform) ||
-                !audio.isPlaying || audio.mute || !audio.isActiveAndEnabled)
+                !audio.isPlaying || audio.mute || !audio.isActiveAndEnabled || !audio.gameObject.activeInHierarchy)
             {
                 return;
             }

@@ -19,9 +19,10 @@ namespace Mod.Core
             public string[] Superclasses = [], Sides = [];
             public BrainMapSample? BrainMap;
             internal readonly Dictionary<string, int[]> populations = new(StringComparer.OrdinalIgnoreCase);
+            private static readonly int[] EmptyPopulation = [];
             public IReadOnlyList<int> Population(string name)
             {
-                return populations.TryGetValue(name, out var ids) ? ids : [];
+                return populations.TryGetValue(name, out var ids) ? ids : EmptyPopulation;
             }
 
             int IConnectomeAsset.NeuronCount => NeuronCount;
@@ -33,7 +34,7 @@ namespace Mod.Core
             sbyte IConnectomeAsset.SignAt(int neuronId) => NtSigns[neuronId];
             string IConnectomeAsset.SuperclassAt(int neuronId) => Superclasses[neuronId];
             string IConnectomeAsset.SideAt(int neuronId) => Sides[neuronId];
-            void IConnectomeAsset.SetPopulation(string name, int[] ids) => populations[name] = ids ?? [];
+            void IConnectomeAsset.SetPopulation(string name, int[] ids) => populations[name] = ids ?? EmptyPopulation;
 
             public static bool TryLoad(out ModAsset? asset, out string status)
             {

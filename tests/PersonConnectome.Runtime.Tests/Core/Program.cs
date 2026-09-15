@@ -38,6 +38,7 @@ internal static async Task<int> RunLegacy(string[] args)
     {
         BundledPayloadIdentity();
         BenchmarkScheduler();
+        SixPersonBenchmark();
         return 0;
     }
 
@@ -1198,6 +1199,43 @@ static void HeadRelativeTurningLoop()
         VerifyHeadBearing(bearing);
     foreach (var bearing in new[] { 0f, float.NaN, float.PositiveInfinity })
         VerifyInvalidHeadBearing(bearing);
+}
+
+static void SixPersonBenchmark()
+{
+    const int people = 6;
+    const int warmupTicks = 30;
+    const int measuredTicks = 120;
+    var brains = new LifBrain[people];
+    for (var i = 0; i < brains.Length; i++)
+    {
+        brains[i] = LifBrain.TryCreate(out var status) ?? throw new InvalidOperationException(status);
+    }
+
+    var sensory = Healthy(velocity: 1f, light: 1f, sound: 1f, touch: 1f, physicalContact: 1f, heartbeat: 1f);
+    for (var tick = 0; tick < warmupTicks; tick++)
+        for (var person = 0; person < brains.Length; person++) brains[person].Step(sensory);
+
+    var times = new double[measuredTicks];
+    var allocated = GC.GetAllocatedBytesForCurrentThread();
+    long processed = 0, dropped = 0, fired = 0;
+    for (var tick = 0; tick < times.Length; tick++)
+    {
+        var started = Stopwatch.GetTimestamp();
+        for (var person = 0; person < brains.Length; person++)
+        {
+            var brain = brains[person];
+            brain.Step(sensory);
+            processed += brain.ProcessedCount;
+            dropped += brain.DroppedCount;
+            fired += brain.FiredCount;
+        }
+        times[tick] = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+    }
+    allocated = GC.GetAllocatedBytesForCurrentThread() - allocated;
+    Array.Sort(times);
+    Console.WriteLine(string.Create(System.Globalization.CultureInfo.InvariantCulture,
+        $"BENCH sixPeople={people} meanSixMs={times.Average():0.00} meanPerPersonMs={times.Average() / people:0.00} p95SixMs={times[113]:0.00} maxSixMs={times[^1]:0.00} allocatedBytes={allocated} processed={processed} fired={fired} dropped={dropped}"));
 }
 
 static LifBrain CreateHeadTurningBrain()

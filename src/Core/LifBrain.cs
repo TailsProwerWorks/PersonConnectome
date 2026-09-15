@@ -31,15 +31,23 @@ namespace Mod.Core
         private readonly IConnectomeAsset asset;
         private readonly float[] potential;
         private readonly long[] refractoryUntil;
-        private Dictionary<int, float> pending = [];
-        private HashSet<int> active = [];
-        private readonly HashSet<int> priority = [];
-        private readonly HashSet<int> scheduled = [];
-        private readonly List<int> fired = [];
+        private float[] pending;
+        private bool[] pendingPresent;
+        private List<int> pendingIds;
+        private List<int> active;
+        private bool[] activePresent;
+        private readonly List<int> priority;
+        private readonly bool[] priorityPresent;
+        private readonly List<int> scheduled;
+        private readonly bool[] scheduledPresent;
+        private readonly List<int> fired;
         private readonly bool[] firedPresent;
-        private Dictionary<int, float> nextPending = [];
-        private HashSet<int> nextActive = [];
-        private readonly List<int> orderedActive = [];
+        private float[] nextPending;
+        private bool[] nextPendingPresent;
+        private List<int> nextPendingIds;
+        private List<int> nextActive;
+        private bool[] nextActivePresent;
+        private readonly List<int> orderedActive;
         private MotorCommand lastCommand;
         private bool stopped;
         private long simulationTick;
@@ -72,11 +80,29 @@ namespace Mod.Core
             this.asset = asset ?? throw new ArgumentNullException(nameof(asset));
             potential = new float[asset.NeuronCount];
             refractoryUntil = new long[asset.NeuronCount];
+            var sparseCapacity = Math.Min(asset.NeuronCount, MaxSpikesPerStep * 3);
+            pendingIds = new List<int>(sparseCapacity);
+            active = new List<int>(sparseCapacity);
+            nextPendingIds = new List<int>(sparseCapacity);
+            nextActive = new List<int>(sparseCapacity);
+            var spikeCapacity = Math.Min(asset.NeuronCount, MaxSpikesPerStep);
+            priority = new List<int>(spikeCapacity);
+            scheduled = new List<int>(spikeCapacity);
+            fired = new List<int>(spikeCapacity);
+            orderedActive = new List<int>(spikeCapacity);
             firedPresent = new bool[asset.NeuronCount];
+            pending = new float[asset.NeuronCount];
+            pendingPresent = new bool[asset.NeuronCount];
+            activePresent = new bool[asset.NeuronCount];
+            priorityPresent = new bool[asset.NeuronCount];
+            scheduledPresent = new bool[asset.NeuronCount];
+            nextPending = new float[asset.NeuronCount];
+            nextPendingPresent = new bool[asset.NeuronCount];
+            nextActivePresent = new bool[asset.NeuronCount];
         }
 
         public string Status => "MaleCNS v1.0 " + asset.NeuronCount + " neurons / " + asset.EdgeCount +
-            (stopped ? " STOPPED" : " queued=" + pending.Count + " input-integrated=" + processedThisStep +
+            (stopped ? " STOPPED" : " queued=" + pendingIds.Count + " input-integrated=" + processedThisStep +
             " dropped-spikes=" + droppedThisStep + " fired=" + fired.Count + " input=" + Format(LastSensoryDrive) +
             " request-walk=" + Format(lastCommand.Walk));
 
@@ -90,7 +116,7 @@ namespace Mod.Core
                 }
 
                 var scheduler = droppedThisStep > 0 ? "OVERLOADED" : "STEADY";
-                return "NEURAL:\n  input=" + Format(LastSensoryDrive) + "  queued=" + pending.Count + "  active=" + active.Count +
+                return "NEURAL:\n  input=" + Format(LastSensoryDrive) + "  queued=" + pendingIds.Count + "  active=" + active.Count +
                     "\n  integrated=" + processedThisStep + "  decay-only=" + decayedThisStep + "  dropped-spikes=" + droppedThisStep +
                     "\n  fired=" + fired.Count + "/" + MaxSpikesPerStep + "  scheduler=" + scheduler +
                     (droppedThisStep > 0 ? "\nFiring-event limit reached; dropped spikes are not deferred. This is not a CPU-time measurement." : "");
@@ -124,7 +150,7 @@ namespace Mod.Core
         public int ProcessedCount => processedThisStep;
         public int DroppedCount => droppedThisStep;
         public int DecayedCount => decayedThisStep;
-        public int PendingCount => pending.Count;
+        public int PendingCount => pendingIds.Count;
         public int ActiveCount => active.Count;
         public bool IsStopped => stopped;
         public MotorCommand LastCommand => lastCommand;
@@ -173,21 +199,21 @@ namespace Mod.Core
             visualThreat = neuralEscape = foodNearbyDrive = foodContactDrive = 0f;
             sensoryQueued = 0;
             ClearFired();
-            nextPending.Clear();
-            nextActive.Clear();
-            priority.Clear();
+            ClearPending(nextPending, nextPendingPresent, nextPendingIds);
+            ClearActive(nextActivePresent, nextActive);
+            ClearPriority();
             DriveSensoryPopulations(sensory, manualInput);
 
-            ProcessActiveNeurons(nextPending, nextActive);
+            ProcessActiveNeurons(nextPending, nextActivePresent);
             // A target can fire after an earlier source queued it this tick.
             // Clear only those fired IDs, rather than scanning the whole queue.
             foreach (var id in fired)
             {
-                nextPending.Remove(id);
-                nextActive.Remove(id);
+                RemovePending(id, nextPending, nextPendingPresent, nextPendingIds);
+                RemoveActive(id, nextActivePresent, nextActive);
             }
             SwapPendingState();
-            priority.Clear();
+            ClearPriority();
             manualInput?.FinishTick();
 
             return BuildMotorCommand(sensory, elapsedSeconds);
@@ -205,13 +231,13 @@ namespace Mod.Core
             {
                 Array.Clear(potential, 0, potential.Length);
                 Array.Clear(refractoryUntil, 0, refractoryUntil.Length);
-                pending.Clear();
-                active.Clear();
-                priority.Clear();
-                scheduled.Clear();
+                ClearPending(pending, pendingPresent, pendingIds);
+                ClearActive(activePresent, active);
+                ClearPriority();
+                ClearScheduled();
                 ClearFired();
-                nextPending.Clear();
-                nextActive.Clear();
+                ClearPending(nextPending, nextPendingPresent, nextPendingIds);
+                ClearActive(nextActivePresent, nextActive);
                 orderedActive.Clear();
                 simulationTick = 0;
                 backlogCursor = 0;
@@ -255,22 +281,23 @@ namespace Mod.Core
             return lastCommand;
         }
 
-        private void ProcessActiveNeurons(Dictionary<int, float> next, HashSet<int> nextActiveState)
+        private void ProcessActiveNeurons(float[] next, bool[] nextActiveState)
         {
             // Integrate once per tick before propagating spikes. Subthreshold
             // inputs and residual decay must not compete with outgoing-edge work.
             // The active set is bounded by the loaded graph's neuron count.
             orderedActive.Clear();
-            foreach (var id in active)
+            for (var index = 0; index < active.Count; index++)
             {
+                var id = active[index];
                 if (simulationTick < refractoryUntil[id]) { potential[id] = 0f; continue; }
-                var input = pending.TryGetValue(id, out var queued) ? queued : 0f;
+                var input = pendingPresent[id] ? pending[id] : 0f;
                 var updated = Clamp(potential[id] * .92f + Clamp(input, -4f, 4f), -8f, 8f);
                 potential[id] = updated;
                 if (input == 0f) decayedThisStep++;
                 else processedThisStep++;
                 if (updated >= 1f) orderedActive.Add(id);
-                else if (Math.Abs(updated) > .001f) nextActiveState.Add(id);
+                else if (Math.Abs(updated) > .001f) AddActive(id, nextActiveState);
             }
             if (orderedActive.Count > MaxSpikesPerStep)
             {
@@ -281,18 +308,19 @@ namespace Mod.Core
             foreach (var id in orderedActive) PropagateSpike(id, next, nextActiveState);
         }
 
-        private void ProcessFairSpikeBudget(Dictionary<int, float> next, HashSet<int> nextActiveState)
+        private void ProcessFairSpikeBudget(float[] next, bool[] nextActiveState)
         {
             // Only threshold crossings need sorting and fair propagation selection.
             orderedActive.Sort();
             var start = (int)(backlogCursor % orderedActive.Count);
-            scheduled.Clear();
-            foreach (var id in orderedActive) scheduled.Add(id);
+            ClearScheduled();
+            foreach (var id in orderedActive) AddScheduled(id);
             var budget = MaxSpikesPerStep;
-            foreach (var id in priority)
+            for (var priorityIndex = 0; priorityIndex < priority.Count; priorityIndex++)
             {
                 if (budget == 0) break;
-                if (!scheduled.Remove(id)) continue;
+                var id = priority[priorityIndex];
+                if (!RemoveScheduled(id)) continue;
                 PropagateSpike(id, next, nextActiveState);
                 budget--;
             }
@@ -302,21 +330,24 @@ namespace Mod.Core
             {
                 var id = orderedActive[(start + index) % orderedActive.Count];
                 examined++;
-                if (!scheduled.Remove(id)) continue;
+                if (!RemoveScheduled(id)) continue;
                 PropagateSpike(id, next, nextActiveState);
                 budget--;
             }
 
-            foreach (var id in scheduled)
+            for (var scheduledIndex = 0; scheduledIndex < scheduled.Count; scheduledIndex++)
             {
+                var id = scheduled[scheduledIndex];
+                if (!scheduledPresent[id]) continue;
                 if (simulationTick < refractoryUntil[id]) potential[id] = 0f;
                 else DropNeuron(id);
             }
+            ClearScheduled();
 
             backlogCursor = (start + examined) % orderedActive.Count;
         }
 
-        private void PropagateSpike(int id, Dictionary<int, float> next, HashSet<int> nextActiveState)
+        private void PropagateSpike(int id, float[] next, bool[] nextActiveState)
         {
             potential[id] = 0f;
             refractoryUntil[id] = simulationTick + RefractoryTicks + 1;
@@ -331,7 +362,88 @@ namespace Mod.Core
             potential[id] = 0f;
         }
 
-        private void QueueOutgoing(int source, Dictionary<int, float> next, HashSet<int> nextActiveState)
+        private void AddActive(int id, bool[] membership)
+        {
+            if (membership[id]) return;
+            membership[id] = true;
+            (ReferenceEquals(membership, nextActivePresent) ? nextActive : active).Add(id);
+        }
+
+        private void AddPending(int id, float value)
+        {
+            if (!pendingPresent[id])
+            {
+                pendingPresent[id] = true;
+                pendingIds.Add(id);
+            }
+            pending[id] += value;
+        }
+
+        private static void ClearPending(float[] values, bool[] membership, List<int> ids)
+        {
+            for (var i = 0; i < ids.Count; i++)
+            {
+                var id = ids[i];
+                membership[id] = false;
+                values[id] = 0f;
+            }
+            ids.Clear();
+        }
+
+        private static void RemovePending(int id, float[] values, bool[] membership, List<int> ids)
+        {
+            if (!membership[id]) return;
+            membership[id] = false;
+            values[id] = 0f;
+        }
+
+        private static void ClearActive(bool[] membership, List<int> ids)
+        {
+            for (var i = 0; i < ids.Count; i++) membership[ids[i]] = false;
+            ids.Clear();
+        }
+
+        private static void RemoveActive(int id, bool[] membership, List<int> ids)
+        {
+            if (!membership[id]) return;
+            membership[id] = false;
+        }
+
+        private void ClearPriority()
+        {
+            for (var i = 0; i < priority.Count; i++) priorityPresent[priority[i]] = false;
+            priority.Clear();
+        }
+
+        private void AddPriority(int id)
+        {
+            if (priorityPresent[id]) return;
+            priorityPresent[id] = true;
+            priority.Add(id);
+            sensoryQueued++;
+        }
+
+        private void ClearScheduled()
+        {
+            for (var i = 0; i < scheduled.Count; i++) scheduledPresent[scheduled[i]] = false;
+            scheduled.Clear();
+        }
+
+        private void AddScheduled(int id)
+        {
+            if (scheduledPresent[id]) return;
+            scheduledPresent[id] = true;
+            scheduled.Add(id);
+        }
+
+        private bool RemoveScheduled(int id)
+        {
+            if (!scheduledPresent[id]) return false;
+            scheduledPresent[id] = false;
+            return true;
+        }
+
+        private void QueueOutgoing(int source, float[] next, bool[] nextActiveState)
         {
             var start = asset.OutgoingStart(source);
             var end = asset.OutgoingEnd(source);
@@ -342,24 +454,56 @@ namespace Mod.Core
                 // Propagated input arrives on the next tick. Allow input on
                 // the exact recovery tick; earlier input cannot be integrated.
                 if (simulationTick + 1 < refractoryUntil[target]) continue;
-                var exists = next.TryGetValue(target, out var queued);
-                next[target] = queued + asset.WeightAt(edge) * sign;
+                var exists = nextPendingPresent[target];
+                next[target] += asset.WeightAt(edge) * sign;
                 // Existing pending entries already have an active target.
-                if (!exists) nextActiveState.Add(target);
+                if (!exists)
+                {
+                    nextPendingPresent[target] = true;
+                    nextPendingIds.Add(target);
+                    AddActive(target, nextActiveState);
+                }
             }
         }
 
         private void SwapPendingState()
         {
+            Compact(nextPendingIds, nextPendingPresent);
+            Compact(nextActive, nextActivePresent);
             var previousPending = pending;
             pending = nextPending;
             nextPending = previousPending;
-            nextPending.Clear();
+            var previousPendingPresent = pendingPresent;
+            pendingPresent = nextPendingPresent;
+            nextPendingPresent = previousPendingPresent;
+            var previousPendingIds = pendingIds;
+            pendingIds = nextPendingIds;
+            nextPendingIds = previousPendingIds;
 
             var previousActive = active;
             active = nextActive;
             nextActive = previousActive;
-            nextActive.Clear();
+            var previousActivePresent = activePresent;
+            activePresent = nextActivePresent;
+            nextActivePresent = previousActivePresent;
+            ClearPending(nextPending, nextPendingPresent, nextPendingIds);
+            ClearActive(nextActivePresent, nextActive);
+        }
+
+        private static void Compact(List<int> ids, bool[] membership)
+        {
+            for (var i = 0; i < ids.Count;)
+            {
+                if (membership[ids[i]])
+                {
+                    i++;
+                    continue;
+                }
+
+                var last = ids.Count - 1;
+                ids[i] = ids[last];
+                ids.RemoveAt(last);
+            }
         }
 
         private MotorCommand BuildMotorCommand(SensoryFrame sensory, float elapsedSeconds)
@@ -829,10 +973,9 @@ namespace Mod.Core
                 var gain = SideGain(side, direction);
                 var input = value * gain;
                 if (input <= .001f) continue;
-                var queued = pending.TryGetValue(id, out var valueAtId) ? valueAtId : 0f;
-                pending[id] = queued + input;
-                active.Add(id);
-                if (priority.Add(id)) sensoryQueued++;
+                AddPending(id, input);
+                AddActive(id, activePresent);
+                if (!priorityPresent[id]) AddPriority(id);
             }
         }
 

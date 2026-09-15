@@ -30,6 +30,7 @@ namespace UnityEngine
             }
             return null;
         }
+        public void GetComponents<T>(List<T> result) where T : Component => gameObject.GetComponents(result);
     }
     public class MonoBehaviour : Component { }
     public sealed class DefaultExecutionOrderAttribute : Attribute
@@ -47,6 +48,11 @@ namespace UnityEngine
         public GameObject(string name = "") { this.name = name; transform = new Transform { gameObject = this }; components.Add(transform); }
         public T AddComponent<T>() where T : Component, new() { var c = new T { gameObject = this }; components.Add(c); return c; }
         public T GetComponent<T>() where T : Component => components.OfType<T>().FirstOrDefault(c => c != null);
+        public void GetComponents<T>(List<T> result) where T : Component
+        {
+            result.Clear();
+            result.AddRange(components.OfType<T>().Where(c => c != null));
+        }
         public void GetComponentsInChildren<T>(bool includeInactive, List<T> result) where T : Component
         {
             result.Clear(); Collect(this, includeInactive, result);
@@ -62,6 +68,7 @@ namespace UnityEngine
     {
         public Transform parent;
         public readonly List<Transform> Children = [];
+        public int childCount => Children.Count;
         public Vector3 position;
         public Vector3 lossyScale = new(1f, 1f, 1f);
         public float RotationDegrees;
@@ -151,8 +158,9 @@ namespace UnityEngine
         public static RaycastHit2D[] LinecastHits = [];
         public static Func<Vector2, Vector2, RaycastHit2D[]> LinecastHandler;
         public static int LinecastCalls;
+        public static float LastOverlapRadius;
         public static int OverlapCircleNonAlloc(Vector2 position, float radius, Collider2D[] buffer)
-        { var count = Math.Min(Hits.Length, buffer.Length); Array.Copy(Hits, buffer, count); return count; }
+        { LastOverlapRadius = radius; var count = Math.Min(Hits.Length, buffer.Length); Array.Copy(Hits, buffer, count); return count; }
         public static RaycastHit2D Linecast(Vector2 start, Vector2 end) => LinecastResult;
         public static int LinecastNonAlloc(Vector2 start, Vector2 end, RaycastHit2D[] buffer)
         {
@@ -315,7 +323,7 @@ namespace Mod
             active = value;
             activeCount += value ? 1 : -1;
         }
-        public void RecordTick(float milliseconds, float skipped, LifBrain brain) { }
+        public void RecordTick(float sensorMs, float brainMs, float actuatorMs, float skipped, LifBrain brain) { }
         public void Dispose() { SetActive(false); }
     }
 }

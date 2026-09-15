@@ -79,6 +79,31 @@ Pre-existing user/accuracy-sweep changes remain in the working tree. No commit, 
 
 Restart/reload the mod, then test quiet/ordinary scenes, sustained combined inputs, manual stimulation, hazards, pause/resume and multiple people. Compare integrated + decay-only, fired/24000, dropped-spikes, measured loop time and skipped game time. Above 24,000 active/input cells alone should no longer cause overload. Verify actual movement and frame-time spikes; the old heavily truncated neural trace is not an expected movement oracle. See manual-game-test.md case 30.
 
+## Focused runtime performance pass - 2026-09-15
+
+The next pass keeps the full graph and configured neural cadence. `LifBrain` now
+uses dense per-neuron value/presence arrays with reusable sparse ID lists for
+pending input, active cells, priority input and scheduled firing candidates.
+This removes per-tick dictionary/hash-set work without changing integration,
+threshold, refractory or propagation rules. The People Playground adapter caches
+component discovery (with topology and newly-added-component invalidation),
+refreshes limb discovery periodically, and continues reading live component
+state each sample. Telemetry no longer hides every row before rebuilding the
+same page; UI refresh cost is measured separately. `VisionRadius` is pushed to
+the live adapter before every sensor read, so inspector changes take effect
+without respawning.
+
+The controller now reports sensor, brain, actuator and UI milliseconds in the
+telemetry header. The offline six-person benchmark warms six real-graph brains
+for 30 ticks, then measures 120 ticks with the same combined synthetic sensory
+frame:
+
+`BENCH sixPeople=6 meanSixMs=19.50 meanPerPersonMs=3.25 p95SixMs=23.01 maxSixMs=25.19 allocatedBytes=0 processed=39290778 fired=3672780 dropped=0`
+
+This is .NET 10 source-linked runtime evidence for six neural steps per tick,
+not a native Unity sensor/physics/UI frame-time guarantee. Use the in-game
+bucketed telemetry to identify which main-thread phase dominates a real scene.
+
 ## Validation and local deployment
 
 All listed checks exited 0:

@@ -68,7 +68,7 @@ namespace Mod
 
         private void FixedUpdate()
         {
-            if (sensor == null || actuator == null || brain == null)
+            if (sensor == null || actuator == null || brain == null || adapter == null)
             {
                 return;
             }
@@ -83,11 +83,18 @@ namespace Mod
                 var remaining = Mathf.Max(0f, accumulator - interval);
                 var skipped = (float)Math.Floor((remaining + .000001f) / interval) * interval;
                 accumulator = Mathf.Max(0f, remaining - skipped);
-                var started = Time.realtimeSinceStartup;
+                var sensorStarted = Time.realtimeSinceStartup;
+                adapter.UpdateVisionRadius(VisionRadius);
                 var sensory = sensor.Read();
-                actuator.Apply(brain.Step(sensory, sampleElapsed, manualInput), true, JointSpeedDegreesPerSecond, WalkingRequestGain, sampleElapsed);
+                var sensorMs = (Time.realtimeSinceStartup - sensorStarted) * 1000f;
+                var brainStarted = Time.realtimeSinceStartup;
+                var command = brain.Step(sensory, sampleElapsed, manualInput);
+                var brainMs = (Time.realtimeSinceStartup - brainStarted) * 1000f;
+                var actuatorStarted = Time.realtimeSinceStartup;
+                actuator.Apply(command, true, JointSpeedDegreesPerSecond, WalkingRequestGain, sampleElapsed);
+                var actuatorMs = (Time.realtimeSinceStartup - actuatorStarted) * 1000f;
                 sampleElapsed = 0f;
-                statusDisplay?.RecordTick((Time.realtimeSinceStartup - started) * 1000f, skipped, brain);
+                statusDisplay?.RecordTick(sensorMs, brainMs, actuatorMs, skipped, brain);
             }
         }
 

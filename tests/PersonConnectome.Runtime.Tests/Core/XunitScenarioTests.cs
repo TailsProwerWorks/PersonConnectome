@@ -92,6 +92,22 @@ public sealed class RuntimeScenarioTests
         }
     }
 
+    [Fact]
+    public void SixPersonBenchmarkReportsMatchedWorkload()
+    {
+        EnsurePayload();
+        var method = typeof(Program).GetMethod("SixPersonBenchmark", BindingFlags.Static | BindingFlags.NonPublic)
+            ?? throw new InvalidOperationException("Six-person benchmark not found");
+        try
+        {
+            method.Invoke(null, null);
+        }
+        catch (TargetInvocationException exception)
+        {
+            throw exception.InnerException ?? exception;
+        }
+    }
+
     private static void EnsurePayload()
     {
         if (payloadInitialized != 0)

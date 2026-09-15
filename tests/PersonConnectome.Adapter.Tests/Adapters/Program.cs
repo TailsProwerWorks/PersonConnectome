@@ -82,7 +82,8 @@ internal static class Program
             ("active chemistry respects native adrenaline range", NativeAdrenalineRange),
             ("hazard walking keeps the native pose gate", HazardWalkingKeepsNativeGate),
             ("chemistry interventions scale with elapsed time", ChemistryScalesWithElapsedTime),
-            ("future fly adapter reports unsupported capabilities safely", FlyAdapterIsDisabled)
+            ("future fly adapter reports unsupported capabilities safely", FlyAdapterIsDisabled),
+            ("vision radius updates the live adapter without recreation", VisionRadiusUpdates)
         ];
         var failures = 0;
         foreach (var (name, test) in tests)
@@ -687,6 +688,19 @@ internal static class Program
         healthy.InitialHealth = 0f;
         frame = f.Adapter.Read();
         True(!frame.DamageValid && !frame.VitalityValid);
+    }
+
+    private static void VisionRadiusUpdates()
+    {
+        var f = new Fixture();
+        f.Adapter.Read();
+        Equal(8f, Physics2D.LastOverlapRadius);
+        f.Adapter.UpdateVisionRadius(3f);
+        f.Adapter.Read();
+        Equal(3f, Physics2D.LastOverlapRadius);
+        f.Adapter.UpdateVisionRadius(float.NaN);
+        f.Adapter.Read();
+        Equal(8f, Physics2D.LastOverlapRadius);
     }
 
     private static void ControlClock()

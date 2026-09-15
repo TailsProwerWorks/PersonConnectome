@@ -32,20 +32,38 @@ namespace Mod.Core
 
         internal void SetTestPending(int id, float value)
         {
+            if (!pendingPresent[id])
+            {
+                pendingPresent[id] = true;
+                pendingIds.Add(id);
+            }
             pending[id] = value;
-            active.Add(id);
+            if (!activePresent[id])
+            {
+                activePresent[id] = true;
+                active.Add(id);
+            }
         }
 
         internal void SetTestActiveRange(int count, float value)
         {
             for (var id = 0; id < count; id++)
             {
+                if (!pendingPresent[id])
+                {
+                    pendingPresent[id] = true;
+                    pendingIds.Add(id);
+                }
                 pending[id] = value;
-                active.Add(id);
+                if (!activePresent[id])
+                {
+                    activePresent[id] = true;
+                    active.Add(id);
+                }
             }
         }
 
-        internal float TestPendingValue(int id) => pending.TryGetValue(id, out var value) ? value : 0f;
+        internal float TestPendingValue(int id) => pendingPresent[id] ? pending[id] : 0f;
         internal float TestPotentialValue(int id) => potential[id];
         internal int TestTraversedEdges
         {
@@ -56,7 +74,7 @@ namespace Mod.Core
                 return count;
             }
         }
-        internal int TestPendingCount => pending.Count;
+        internal int TestPendingCount => pendingIds.Count;
         internal int TestActiveCount => active.Count;
         internal int TestProcessedCount => processedThisStep;
         internal int TestFiredCount => fired.Count;
