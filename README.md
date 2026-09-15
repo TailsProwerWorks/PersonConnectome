@@ -84,7 +84,7 @@ Deploy from an appropriately permitted PowerShell:
 
 Discovery uses registered Steam paths and modern or legacy `steamapps/libraryfolders.vdf`. The resolved install is forwarded to MSBuild. `-GameInstall` takes precedence; an invalid explicit path fails rather than silently selecting another installation. `-WhatIf` validates the package and shows the destination/planned build without building or writing the game directory. `-NoBuild` is for an already verified build. Direct `dotnet` builds use the project default Steam directory unless `-p:PeoplePlaygroundInstall='D:\Games\People Playground'` is supplied.
 
-Deployment copies manifest scripts, `mod.json`, a README with the current Git commit marker, the thumbnail and the PNG carrier, then verifies SHA-256. It removes only the known stale raw `.flyb.gz` from older deployments. Other game-directory files are preserved. Rebuild the carrier with `scripts/build/Build-ConnectomeCarrier.ps1`; the raw payload stays a build input and its identity constants must change deliberately before a different payload is accepted.
+Deployment copies manifest scripts, `mod.json`, a README with the current Git commit marker, the thumbnail and the PNG carrier, then verifies SHA-256. It removes the known stale raw `.flyb.gz` and the explicitly listed flat-layout Person Connectome source files left by the refactor; other game-directory files are preserved. Rebuild the carrier with `scripts/build/Build-ConnectomeCarrier.ps1`; the raw payload stays a build input and its identity constants must change deliberately before a different payload is accepted.
 
 ## Code and attribution
 

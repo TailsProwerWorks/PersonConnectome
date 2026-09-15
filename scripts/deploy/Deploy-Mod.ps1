@@ -134,6 +134,24 @@ $managedDirectory = Join-Path $GameInstall 'People Playground_Data\Managed'
 $targetDirectory = Join-Path $GameInstall 'Mods\PersonConnectome'
 $manifestSourcePath = Join-Path $modSource 'mod.json'
 $readmeSourcePath = Join-Path $assetRoot 'README.txt'
+# These files belonged to the pre-refactor flat layout. Keep this list explicit:
+# the target directory can contain files owned by other mods or by the user, so
+# deployment must never prune arbitrary unlisted content.
+$staleLegacySourcePaths = @(
+    'BrainVisualization.cs',
+    'ConnectomeRuntimeAsset.cs',
+    'ConnectomeRuntimeAssetReader.cs',
+    'ConnectomeSensoryRouter.cs',
+    'ManualInput.cs',
+    'PeoplePlaygroundPersonAdapter.cs',
+    'PersonConnectomeController.cs',
+    'PersonConnectomeLimbController.cs',
+    'PersonConnectomeStatusDisplay.cs',
+    'RuntimeBrain.cs',
+    'RuntimeTypes.cs',
+    'script.cs',
+    'TelemetryLayout.cs'
+)
 
 if (-not (Test-Path -LiteralPath $modProject -PathType Leaf)) {
     throw "Mod project was not found: $modProject"
@@ -215,6 +233,15 @@ if ($PSCmdlet.ShouldProcess($targetDirectory, 'deploy Person Connectome mod file
     if (Test-Path -LiteralPath $staleRawPayload -PathType Leaf) {
         if ($PSCmdlet.ShouldProcess($staleRawPayload, 'remove unused raw connectome payload')) {
             Remove-Item -LiteralPath $staleRawPayload -Force
+        }
+    }
+
+    foreach ($relativePath in $staleLegacySourcePaths) {
+        $stalePath = Join-Path $targetDirectory $relativePath
+        if (Test-Path -LiteralPath $stalePath -PathType Leaf) {
+            if ($PSCmdlet.ShouldProcess($stalePath, 'remove legacy flat-layout source')) {
+                Remove-Item -LiteralPath $stalePath -Force
+            }
         }
     }
 
