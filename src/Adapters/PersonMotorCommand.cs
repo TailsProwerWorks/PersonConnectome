@@ -25,6 +25,13 @@ namespace Mod.Adapters
     {
         private const float DefaultStepSeconds = .05f;
         private const float MotorChangePerSecond = 8f;
+        // FlyForward, FlyBackward, and FlyYaw are decoder-level requests. The
+        // LIF brain already applies their neural EMA, so this mapper must not
+        // smooth them a second time or treat them as raw population activity.
+        // Backward has a higher entry threshold because MDN is sparse, while
+        // its release threshold matches the forward request hysteresis.
+        private const float BackwardEntryThreshold = .2f;
+        private const float LocomotionReleaseThreshold = .04f;
         private float forwardFilter;
         private float backwardFilter;
         private float yawFilter;
@@ -41,7 +48,13 @@ namespace Mod.Adapters
         // never shared across spawned bodies.
         public static PersonMotorCommand Map(FlyMotorCommand command)
         {
-            return new PeoplePlaygroundPersonMotorMapper().Map(command, default, DefaultStepSeconds);
+            return new PeoplePlaygroundPersonMotorMapper().Map(command, new SensoryFrame
+            {
+                HealthValid = true,
+                Alive = true,
+                ConsciousnessValid = true,
+                Consciousness = 1f
+            }, DefaultStepSeconds);
         }
 
         public PersonMotorCommand Map(FlyMotorCommand command, SensoryFrame frame, float elapsedSeconds)
@@ -59,10 +72,10 @@ namespace Mod.Adapters
 
             var bodyThreat = Unit(frame.Pain) + Unit(frame.Fire) + Unit(frame.Shock) + Unit(frame.SubmergedHypoxia) + Unit(frame.Projectile);
             var freeze = Mathf.Clamp01(Unit(frame.Unconscious) + Unit(frame.LiquidSedation));
-            var elapsed = ElapsedSeconds(elapsedSeconds);
+            var smoothingElapsed = SmoothingElapsedSeconds(elapsedSeconds);
+            var timerElapsed = TimerElapsedSeconds(elapsedSeconds);
             var stopRequested = halt >= .2f;
-            var movementPermitted = !HasUsableFrame(frame) ||
-                (frame.HealthValid && frame.ConsciousnessValid && Unit(frame.Consciousness) > .8f && freeze < .5f);
+            var movementPermitted = IsMovementPermitted(frame, freeze);
 
             if (!movementPermitted || stopRequested)
             {
@@ -71,21 +84,24 @@ namespace Mod.Adapters
                 return lastCommand;
             }
 
-            escapeWalkSeconds = Mathf.Max(0f, escapeWalkSeconds - elapsed);
+            escapeWalkSeconds = Mathf.Max(0f, escapeWalkSeconds - timerElapsed);
             if (Unit(command.FlyEscape) > 0f)
             {
                 escapeWalkSeconds = .6f;
-                escapeWalkDirection = backward >= .5f || locomotionMode < 0 ? -1 : 1;
+                escapeWalkDirection = IsBackwardEntry(backward) || locomotionMode < 0 ? -1 : 1;
             }
 
-            forwardFilter = Ema(forwardFilter, forward, elapsed, .15f);
-            backwardFilter = Ema(backwardFilter, backward, elapsed, .15f);
-            yawFilter = Ema(yawFilter, Signed(command.FlyYaw), elapsed, .1f);
+            // These are named filters for telemetry/backward-compatible
+            // locomotion state, but their values are owned by the brain's
+            // decoder contract rather than a second adapter EMA.
+            forwardFilter = forward;
+            backwardFilter = backward;
+            yawFilter = Signed(command.FlyYaw);
             var leftLeg = Unit(command.FlyLegMotor - asymmetry * .5f);
             var rightLeg = Unit(command.FlyLegMotor + asymmetry * .5f);
-            leftLegFilter = Ema(leftLegFilter, leftLeg, elapsed, .15f);
-            rightLegFilter = Ema(rightLegFilter, rightLeg, elapsed, .15f);
-            UpdateLocomotion(backward, elapsed);
+            leftLegFilter = Ema(leftLegFilter, leftLeg, smoothingElapsed, .15f);
+            rightLegFilter = Ema(rightLegFilter, rightLeg, smoothingElapsed, .15f);
+            UpdateLocomotion(backward, timerElapsed);
 
             var walk = ResolveWalk();
             var center = (leftLegFilter + rightLegFilter) * .5f;
@@ -100,7 +116,7 @@ namespace Mod.Adapters
             requested.Core = Signed(walk * .6f + center * .15f + yawFilter * .25f + flightPower * .35f + jump * .25f + takeoff * .2f - landing * .2f);
             requested.Head = Signed(sideBias * .5f + yawFilter + flightYaw * .4f);
             requested.Avoid = bodyThreat > .5f || Unit(command.FlyEscape) > 0f ? 1f : 0f;
-            lastCommand = RateLimit(lastCommand, requested, elapsed);
+            lastCommand = RateLimit(lastCommand, requested, smoothingElapsed);
             return lastCommand;
         }
 
@@ -126,10 +142,10 @@ namespace Mod.Adapters
             };
         }
 
-        private void UpdateLocomotion(float rawBackward, float elapsed)
+        private void UpdateLocomotion(float backwardRequest, float elapsed)
         {
             locomotionDwell += elapsed;
-            if (rawBackward >= .5f)
+            if (IsBackwardEntry(backwardRequest))
             {
                 if (locomotionMode != -1)
                 {
@@ -149,7 +165,7 @@ namespace Mod.Adapters
             }
         }
 
-        private bool ShouldStopLocomotion() => locomotionMode > 0 ? forwardFilter < .04f : backwardFilter < .25f;
+        private bool ShouldStopLocomotion() => locomotionMode > 0 ? forwardFilter < LocomotionReleaseThreshold : backwardFilter < LocomotionReleaseThreshold;
 
         private float ResolveWalk()
         {
@@ -179,10 +195,23 @@ namespace Mod.Adapters
             locomotionMode = 0;
         }
 
-        private static bool HasUsableFrame(SensoryFrame frame) =>
-            frame.HealthValid || frame.ConsciousnessValid || frame.Alive || frame.DamageValid;
+        private static bool IsMovementPermitted(SensoryFrame frame, float freeze)
+        {
+            // A completely empty frame is only used by the mapper's narrow
+            // Unity-free tests. The production adapter always supplies its
+            // latest sample and separately refuses to actuate before one
+            // exists. Once any lifecycle data is present, require a complete
+            // living, non-brain-dead and conscious sample.
+            if (!HasLifecycleSample(frame)) return true;
+            return frame.HealthValid && frame.Alive && !frame.BrainDead && frame.ConsciousnessValid &&
+                Unit(frame.Consciousness) > .8f && freeze < .5f;
+        }
 
-        private static float ElapsedSeconds(float value) => IsFinite(value) && value > 0f ? Mathf.Clamp(value, 0f, .25f) : DefaultStepSeconds;
+        private static bool IsBackwardEntry(float request) => request >= BackwardEntryThreshold;
+        private static bool HasLifecycleSample(SensoryFrame frame) =>
+            frame.HealthValid || frame.Alive || frame.BrainDead || frame.ConsciousnessValid;
+        private static float TimerElapsedSeconds(float value) => IsFinite(value) && value > 0f ? value : DefaultStepSeconds;
+        private static float SmoothingElapsedSeconds(float value) => Mathf.Clamp(TimerElapsedSeconds(value), 0f, .25f);
         private static float Ema(float prior, float target, float elapsed, float tau) =>
             prior + (target - prior) * (1f - (float)Math.Exp(-elapsed / tau));
         private static float MoveTowards(float prior, float target, float maximumChange)

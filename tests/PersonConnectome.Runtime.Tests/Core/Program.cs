@@ -83,6 +83,10 @@ var tests = new (string Name, Action Run)[]
     ("supported shallow water keeps normal control", SupportedShallowWaterKeepsNormalControl),
     ("hazard cannot force walking without motor activity", HazardCannotForceWalkingWithoutMotorActivity),
     ("lost movement authority clears motor requests", LostMovementAuthorityClearsMotorRequests),
+    ("published fly command matches telemetry and resets", PublishedCommandMatchesTelemetryAndResets),
+    ("fractional halt activity is published without changing its contract", FractionalHaltContract),
+    ("manual looming overrides qualify and suppress neural escape evidence", ManualVisualEscapeQualification),
+    ("escape evidence expires across long neural tick gaps", EscapeEvidenceExpiresAcrossLongTickGap),
     ("motor reversals are rate limited", MotorReversalsAreRateLimited),
     ("R7 R8 variants receive light drive", RetinaVariantsReceiveLightDrive),
     ("bundled payload identity", BundledPayloadIdentity),
@@ -740,6 +744,97 @@ static void AssertImmediateMotorClear(Func<SensoryFrame, SensoryFrame> restrict)
     // bounded neural readout while the human adapter rejects unsafe frames.
     True(command.FlyForward >= 0f && command.FlyForward <= 1f);
     True(command.FlyBackward >= 0f && command.FlyBackward <= 1f);
+}
+
+static void PublishedCommandMatchesTelemetryAndResets()
+{
+    var brain = OneNeuronBrain();
+    brain.SetTestNeuronMetadata(0, DescendingNeuron, "R");
+    brain.SetTestPopulation(TypeDNp09, 0);
+    brain.SetTestPending(0, 1f);
+
+    var returned = brain.Step(Healthy());
+    True(returned.FlyForward > 0f, "test setup did not produce a fly request");
+    Equal(returned.FlyForward, brain.LastCommand.FlyForward);
+    Equal(returned.FlyYaw, brain.LastCommand.FlyYaw);
+    Equal(returned.FlyBackward, brain.LastCommand.FlyBackward);
+    Equal(returned.FlyHalt, brain.LastCommand.FlyHalt);
+    Equal(returned.FlyEscape, brain.LastCommand.FlyEscape);
+
+    var suspended = brain.Step(new SensoryFrame { HealthValid = false });
+    Equal(0f, suspended.FlyForward);
+    Equal(0f, brain.LastCommand.FlyForward);
+
+    var stopped = brain.Stop();
+    Equal(0f, stopped.FlyForward);
+    Equal(0f, brain.LastCommand.FlyForward);
+    Equal(0f, brain.LastCommand.FlyEscape);
+}
+
+static void FractionalHaltContract()
+{
+    var brain = LifBrain.CreateForTest(5, new int[6], [], []);
+    brain.SetTestPopulation(TypeDNp09, 0);
+    foreach (var population in new[] { "type:DNg100", "type:DNge053", "type:DNge050", "type:DNg97" }) brain.SetTestPopulation(population, 0);
+    brain.SetTestPopulation(TypeDNg60, 1, 2, 3, 4);
+    for (var id = 0; id < 5; id++) brain.SetTestNeuronMetadata(id, DescendingNeuron, "R");
+
+    brain.SetTestPending(0, 1f);
+    True(brain.Step(Healthy(), .25f).FlyForward > .8f, "test setup did not enter forward locomotion");
+    brain.SetTestPending(1, 1f);
+    var command = brain.Step(Healthy());
+
+    Equal(.25f, command.FlyHalt);
+    Equal(0f, command.FlyForward);
+    Equal(0f, command.FlyBackward);
+}
+
+static void ManualVisualEscapeQualification()
+{
+    LifBrain Create()
+    {
+        var brain = LifBrain.CreateForTest(2, new int[3], [], []);
+        brain.SetTestPopulation("type:DNp01", 0);
+        brain.SetTestPopulation(TypeLPLC2, 1);
+        brain.SetTestNeuronMetadata(0, DescendingNeuron, "R");
+        return brain;
+    }
+
+    var manual = new ManualInputState();
+    manual.SetOverrideEnabled(true);
+    manual.SetMode(ManualInputMode.ManualOnly);
+    manual.SetSelected(ManualInputChannel.LoomingVisual, true);
+    manual.SetValue(ManualInputChannel.LoomingVisual, 1f);
+    var brain = Create();
+    brain.SetTestPending(0, 1f);
+    Equal(1f, brain.Step(Healthy(), .05f, manual).FlyEscape);
+
+    manual = new ManualInputState();
+    manual.SetOverrideEnabled(true);
+    manual.SetMode(ManualInputMode.ManualOnly);
+    manual.SetSelected(ManualInputChannel.LoomingVisual, true);
+    manual.SetValue(ManualInputChannel.LoomingVisual, 0f);
+    brain = Create();
+    brain.SetTestPending(0, 1f);
+    var naturalLooming = Healthy() with
+    {
+        Vision = 1f,
+        VisualGeometryValid = true,
+        VisualAngularSize = 60f,
+        VisualExpansion = 200f
+    };
+    Equal(0f, brain.Step(naturalLooming, .05f, manual).FlyEscape);
+}
+
+static void EscapeEvidenceExpiresAcrossLongTickGap()
+{
+    var brain = LifBrain.CreateForTest(1, new int[2], [], []);
+    brain.SetTestPopulation("type:DNp01", 0);
+    brain.SetTestNeuronMetadata(0, DescendingNeuron, "R");
+
+    brain.Step(Healthy() with { DamageEvent = .5f }, .05f);
+    brain.SetTestPending(0, 1f);
+    Equal(0f, brain.Step(Healthy(), 1f).FlyEscape);
 }
 
 static void SupportedShallowWaterKeepsNormalControl()

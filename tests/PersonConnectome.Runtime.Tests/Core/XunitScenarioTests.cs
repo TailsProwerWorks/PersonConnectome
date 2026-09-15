@@ -36,6 +36,10 @@ public sealed class RuntimeScenarioTests
             yield return Case("supported shallow water keeps normal control", "SupportedShallowWaterKeepsNormalControl");
             yield return Case("hazard cannot force walking without motor activity", "HazardCannotForceWalkingWithoutMotorActivity");
             yield return Case("lost movement authority clears motor requests", "LostMovementAuthorityClearsMotorRequests");
+            yield return Case("published fly command matches telemetry and resets", "PublishedCommandMatchesTelemetryAndResets");
+            yield return Case("fractional halt activity is published without changing its contract", "FractionalHaltContract");
+            yield return Case("manual looming overrides qualify and suppress neural escape evidence", "ManualVisualEscapeQualification");
+            yield return Case("escape evidence expires across long neural tick gaps", "EscapeEvidenceExpiresAcrossLongTickGap");
             yield return Case("motor reversals are rate limited", "MotorReversalsAreRateLimited");
             yield return Case("R7 R8 variants receive light drive", "RetinaVariantsReceiveLightDrive");
             yield return Case("bundled payload identity", "BundledPayloadIdentity");

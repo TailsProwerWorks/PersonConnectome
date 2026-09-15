@@ -703,6 +703,11 @@ namespace Mod.Adapters
 
         private void StopActuators()
         {
+            // This is the authoritative safety stop used for terminal reads,
+            // lost native movement permission, and explicit shutdown. A future
+            // valid sample must not revive retained mapper filters, locomotion
+            // mode, or an escape burst from before the stop.
+            motorMapper.Reset();
             lastMotorCommand = default;
             // Unconscious/frozen bodies still receive sensor samples. Only an
             // actual sensing suspension or invalid/terminal read resets history.

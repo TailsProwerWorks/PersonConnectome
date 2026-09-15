@@ -32,10 +32,16 @@ namespace Mod
         private readonly List<SuppressedContextMenuButton> suppressedContextMenuButtons = [];
         private readonly List<ContextMenuOptionComponent> contextMenuOptions = [];
         private readonly List<LimbBehaviour> directControlLimbBuffer = [];
+        private readonly List<LimbBehaviour> directControlLimbs = [];
         private readonly List<NativeAssistSnapshot> directControlSnapshotValues = [];
         private readonly Dictionary<LimbBehaviour, NativeAssistSnapshot> directControlSnapshots = [];
         private readonly List<NativePoseSnapshot> directControlPoseSnapshotValues = [];
         private readonly Dictionary<RagdollPose, NativePoseSnapshot> directControlPoseSnapshots = [];
+        private const float DirectControlTopologyCheckSeconds = .25f;
+        private bool directControlTopologyKnown;
+        private int directControlTopologyFingerprint;
+        private float nextDirectControlTopologyCheck;
+        private float pendingDirectControlMs;
         private static readonly List<PersonConnectomeController> activeControllers = [];
 
         public bool DirectFlyControlEnabled => directFlyControl;
@@ -75,17 +81,13 @@ namespace Mod
             acceptingEvents = true;
             pendingPoseSweep = true;
             statusDisplay?.SetActive(true);
-            if (!directFlyControl)
-            {
-                directFlyControl = true;
-            }
             ApplyDirectFlyControl();
             SuppressNativePoseOptions();
         }
 
         private void FixedUpdate()
         {
-            ApplyDirectFlyControl();
+            ApplyDirectFlyControlWithTiming();
             if (sensor == null || actuator == null || brain == null || adapter == null)
             {
                 return;
@@ -111,7 +113,8 @@ namespace Mod
                 var actuatorStarted = Time.realtimeSinceStartup;
                 actuator.Apply(command, true,
                     JointSpeedDegreesPerSecond, WalkingRequestGain, sampleElapsed);
-                var actuatorMs = (Time.realtimeSinceStartup - actuatorStarted) * 1000f;
+                var actuatorMs = (Time.realtimeSinceStartup - actuatorStarted) * 1000f + pendingDirectControlMs;
+                pendingDirectControlMs = 0f;
                 sampleElapsed = 0f;
                 statusDisplay?.RecordTick(sensorMs, brainMs, actuatorMs, skipped, brain);
             }
@@ -152,7 +155,7 @@ namespace Mod
                 pendingPoseSweep = false;
                 SuppressNativePoseOptions();
             }
-            ApplyDirectFlyControl();
+            ApplyDirectFlyControlWithTiming();
             (actuator ?? adapter as IBodyActuator)?.RefreshWalkingRequest();
             if (statusDisplay != null && brain != null && adapter != null)
             {
@@ -167,6 +170,7 @@ namespace Mod
             activeControllers.Remove(this);
             RebalanceTickPhases();
             sampleElapsed = 0f;
+            pendingDirectControlMs = 0f;
             statusDisplay?.SetActive(false);
             manualInput.Deactivate();
             brain?.Stop();
@@ -246,13 +250,14 @@ namespace Mod
 
         private void ApplyDirectFlyControl()
         {
-            if (!directFlyControl || gameObject == null)
+            if (!CanApplyDirectFlyControl())
             {
+                RestoreDirectFlyControlState();
                 return;
             }
 
-            gameObject.GetComponentsInChildren(true, directControlLimbBuffer);
-            foreach (var limb in directControlLimbBuffer)
+            RefreshDirectControlLimbCacheIfNeeded();
+            foreach (var limb in directControlLimbs)
             {
                 if (limb == null)
                 {
@@ -273,8 +278,8 @@ namespace Mod
             }
 
             // A dismembered limb can leave the hierarchy without being destroyed.
-            // Restore and forget it so the cache does not grow for the person's
-            // entire lifetime.
+            // Restore and forget it so the snapshot cache does not grow for the
+            // person's entire lifetime.
             directControlSnapshotValues.Clear();
             foreach (var snapshot in directControlSnapshots.Values)
             {
@@ -295,8 +300,83 @@ namespace Mod
             ApplyDirectPoseControl();
         }
 
+        private void ApplyDirectFlyControlWithTiming()
+        {
+            var started = Time.realtimeSinceStartup;
+            ApplyDirectFlyControl();
+            pendingDirectControlMs += (Time.realtimeSinceStartup - started) * 1000f;
+        }
+
+        private bool CanApplyDirectFlyControl()
+        {
+            return directFlyControl && gameObject != null && brain != null &&
+                adapter != null && adapter.IsUsable && person != null;
+        }
+
+        private void RefreshDirectControlLimbCacheIfNeeded()
+        {
+            if (Time.time < nextDirectControlTopologyCheck && directControlTopologyKnown)
+            {
+                return;
+            }
+
+            nextDirectControlTopologyCheck = Time.time + DirectControlTopologyCheckSeconds;
+            var fingerprint = GetDirectControlTopologyFingerprint();
+            if (directControlTopologyKnown && fingerprint == directControlTopologyFingerprint)
+            {
+                return;
+            }
+
+            directControlTopologyKnown = true;
+            directControlTopologyFingerprint = fingerprint;
+            gameObject.GetComponentsInChildren(true, directControlLimbBuffer);
+            directControlLimbs.Clear();
+            foreach (var limb in directControlLimbBuffer)
+            {
+                if (limb != null)
+                {
+                    directControlLimbs.Add(limb);
+                }
+            }
+        }
+
+        private int GetDirectControlTopologyFingerprint()
+        {
+            unchecked
+            {
+                var fingerprint = transform.childCount;
+                var limbs = person.Limbs;
+                fingerprint = fingerprint * 31 + (limbs == null ? 0 : limbs.Length);
+                if (limbs == null)
+                {
+                    return fingerprint;
+                }
+
+                foreach (var limb in limbs)
+                {
+                    fingerprint = fingerprint * 31 + (limb == null ? 0 : limb.GetHashCode());
+                }
+
+                return fingerprint;
+            }
+        }
+
         private void RestoreDirectFlyControl()
         {
+            RestoreDirectFlyControlState();
+        }
+
+        private void RestoreDirectFlyControlState()
+        {
+            if (directControlSnapshots.Count == 0 && directControlPoseSnapshots.Count == 0)
+            {
+                directControlLimbBuffer.Clear();
+                directControlLimbs.Clear();
+                directControlTopologyKnown = false;
+                nextDirectControlTopologyCheck = 0f;
+                return;
+            }
+
             foreach (var snapshot in directControlSnapshots.Values)
             {
                 snapshot.Restore();
@@ -305,8 +385,10 @@ namespace Mod
             directControlSnapshots.Clear();
             directControlSnapshotValues.Clear();
             directControlLimbBuffer.Clear();
+            directControlLimbs.Clear();
+            directControlTopologyKnown = false;
+            nextDirectControlTopologyCheck = 0f;
             RestoreDirectPoseControl();
-            directFlyControl = false;
         }
 
         private void ApplyDirectPoseControl()

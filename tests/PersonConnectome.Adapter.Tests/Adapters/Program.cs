@@ -20,8 +20,11 @@ internal static class Program
             ("terminal motors and grips clear immediately", TerminalStop),
             ("native pose context actions are suppressed", ContextMenuPoseActions),
             ("direct fly control suppresses native balance assists and restores them", DirectFlyControl),
+            ("failed brain loading leaves native pose assists unchanged", DirectFlyControlFailedLoad),
             ("direct fly control maps fly channels to available human joints", DirectFlyMotorMapping),
             ("fly-to-person projection retains locomotion filtering and escape bursts", StatefulFlyMotorProjection),
+            ("published fly locomotion decisions preempt and halt person movement", PublishedFlyLocomotionDecisions),
+            ("fly mapper clears retained movement on terminal and between-tick safety stops", FlyMappingSafetyStops),
             ("unconscious and locally damaged limbs clear old commands", IncapableStop),
             ("brain injury remains alive with matching signal value", BrainInjury),
             ("invalid health stops control without inventing death", InvalidHealth),
@@ -102,6 +105,13 @@ internal static class Program
     private static void Equal(float expected, float actual) { if (float.IsNaN(actual) || MathF.Abs(expected - actual) > .00001f) throw new Exception($"expected {expected}, actual {actual}"); }
     private static void Equal(string expected, string actual) { if (expected != actual) throw new Exception($"expected {expected}, actual {actual}"); }
     private static PersonMotorCommand Moving => new() { Walk = 1, RightArm = 1, LeftArm = -1, RightLeg = 1, LeftLeg = -1, Head = .5f, Core = .5f, RightGrip = 1, LeftGrip = 1, ReachGrab = 1, Heal = .8f, Avoid = 0, Freeze = 0, Stimulate = 0, Calm = 0, Extinguish = 0 };
+    private static SensoryFrame ActiveMapperFrame => new()
+    {
+        Alive = true,
+        HealthValid = true,
+        ConsciousnessValid = true,
+        Consciousness = 1f
+    };
     private static void FlyAdapterIsDisabled()
     {
         using var adapter = new PeoplePlaygroundFlyAdapter();
@@ -287,6 +297,8 @@ internal static class Program
         var added = Fixture.AddLimb(f.Root, "LateArm");
         added.FakeUprightForce = 8f;
         added.BalanceMuscleMovement = 3f;
+        var previousTime = Time.time;
+        Time.time += .3f; // Cross the bounded topology-refresh interval.
         type.GetMethod("LateUpdate", flags).Invoke(controller, null);
         Equal(0f, added.FakeUprightForce);
         Equal(0f, added.BalanceMuscleMovement);
@@ -299,6 +311,33 @@ internal static class Program
         Equal(2f, pose.ForceMultiplier);
         Equal(8f, added.FakeUprightForce);
         Equal(3f, added.BalanceMuscleMovement);
+        Time.time = previousTime;
+        type.GetMethod("OnDestroy", flags).Invoke(controller, null);
+    }
+
+    private static void DirectFlyControlFailedLoad()
+    {
+        var f = new Fixture();
+        f.Limb.FakeUprightForce = 12f;
+        f.Limb.BalanceMuscleMovement = 2f;
+        f.Limb.DoBalanceJerk = true;
+        f.Limb.DoStumble = true;
+        var pose = new RagdollPose { ShouldStandUpright = true, ShouldStumble = true, UprightForceMultiplier = 1.5f, ForceMultiplier = 2f };
+        f.Person.Poses.Add(pose);
+        var controller = f.Root.AddComponent<PersonConnectomeController>();
+        var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+        var type = typeof(PersonConnectomeController);
+        type.GetMethod("Awake", flags).Invoke(controller, null);
+        // Model an unsuccessful graph load before activation. Direct-control
+        // suppression is not allowed to alter native state in that condition.
+        type.GetField("brain", flags).SetValue(controller, null);
+        type.GetMethod("OnEnable", flags).Invoke(controller, null);
+        Equal(12f, f.Limb.FakeUprightForce);
+        Equal(2f, f.Limb.BalanceMuscleMovement);
+        True(f.Limb.DoBalanceJerk && f.Limb.DoStumble);
+        True(pose.ShouldStandUpright && pose.ShouldStumble);
+        Equal(1.5f, pose.UprightForceMultiplier);
+        Equal(2f, pose.ForceMultiplier);
         type.GetMethod("OnDestroy", flags).Invoke(controller, null);
     }
     private static void DirectFlyMotorMapping()
@@ -322,18 +361,85 @@ internal static class Program
     private static void StatefulFlyMotorProjection()
     {
         var mapper = new PeoplePlaygroundPersonMotorMapper();
-        var first = mapper.Map(new FlyMotorCommand { FlyForward = 1f }, default, .05f);
-        Equal(.3f, first.Walk); // Start hysteresis retains the native walking floor.
+        var first = mapper.Map(new FlyMotorCommand { FlyForward = 1f }, ActiveMapperFrame, .05f);
+        True(first.Walk >= .3f); // Start hysteresis retains the native walking floor.
 
-        var escape = mapper.Map(new FlyMotorCommand { FlyEscape = 1f }, default, .05f);
+        var escape = mapper.Map(new FlyMotorCommand { FlyEscape = 1f }, ActiveMapperFrame, .05f);
         Equal(.7f, escape.Walk); // A qualified fly escape retains the old .6 s burst magnitude.
-        var held = mapper.Map(default, default, .05f);
+        var held = mapper.Map(default, ActiveMapperFrame, .05f);
         Equal(.7f, held.Walk);
 
-        var halted = mapper.Map(new FlyMotorCommand { FlyHalt = .2f }, default, .05f);
+        var halted = mapper.Map(new FlyMotorCommand { FlyHalt = .2f }, ActiveMapperFrame, .05f);
         Equal(0f, halted.Walk);
         mapper.Reset();
-        Equal(0f, mapper.Map(default, default, .05f).Walk);
+        Equal(0f, mapper.Map(default, ActiveMapperFrame, .05f).Walk);
+    }
+
+    private static void PublishedFlyLocomotionDecisions()
+    {
+        var mapper = new PeoplePlaygroundPersonMotorMapper();
+        True(mapper.Map(new FlyMotorCommand { FlyForward = 1f }, ActiveMapperFrame, .05f).Walk > 0f);
+
+        // FlyBackward is the already-smoothed value published at the core-to-
+        // adapter boundary. It must still preempt forward movement; requiring a
+        // second raw-activity threshold would make a valid MDN request inert.
+        mapper.Map(new FlyMotorCommand { FlyBackward = .283f }, ActiveMapperFrame, .05f);
+        var backward = mapper.Map(new FlyMotorCommand { FlyBackward = .283f }, ActiveMapperFrame, .05f);
+        True(backward.Walk < 0f);
+
+        // An active halt request preempts retained locomotion immediately.
+        Equal(0f, mapper.Map(new FlyMotorCommand { FlyHalt = .25f }, ActiveMapperFrame, .05f).Walk);
+
+        mapper.Map(new FlyMotorCommand { FlyEscape = 1f }, ActiveMapperFrame, .05f);
+        // Timer expiry uses elapsed game time, independently of the smoothing
+        // cap used for rate-limited joint requests.
+        Equal(0f, mapper.Map(default, ActiveMapperFrame, 1f).Walk);
+    }
+
+    private static void FlyMappingSafetyStops()
+    {
+        var frame = ActiveMapperFrame;
+        var mapper = new PeoplePlaygroundPersonMotorMapper();
+        True(mapper.Map(new FlyMotorCommand { FlyForward = 1f }, frame, .05f).Walk > 0f);
+
+        // A terminal sample clears mapper-owned filters and escape state before
+        // a later revived sample is allowed to receive a new command.
+        var terminal = frame;
+        terminal.Alive = false;
+        terminal.BrainDead = true;
+        Equal(0f, mapper.Map(default, terminal, .05f).Walk);
+        Equal(0f, mapper.Map(default, frame, .05f).Walk);
+
+        // Exercise the production adapter boundary as well: it owns the
+        // mapper, and its terminal safety stop must prevent a revived person
+        // from replaying the movement from before death.
+        var terminalAdapter = new Fixture();
+        terminalAdapter.Adapter.Read();
+        terminalAdapter.Adapter.Apply(new FlyMotorCommand { FlyForward = 1f }, false, 30f, 2f, .05f);
+        True(terminalAdapter.Person.DesiredWalkingDirection > 0f);
+        terminalAdapter.Person.Braindead = true;
+        terminalAdapter.Adapter.Read();
+        terminalAdapter.Adapter.Apply(new FlyMotorCommand(), false, 30f, 2f, .05f);
+        Equal(0f, terminalAdapter.Person.DesiredWalkingDirection);
+        terminalAdapter.Person.Braindead = false;
+        terminalAdapter.Person.AverageHealth = 1f;
+        terminalAdapter.Adapter.Read();
+        terminalAdapter.Adapter.Apply(new FlyMotorCommand(), false, 30f, 2f, .05f);
+        Equal(0f, terminalAdapter.Person.DesiredWalkingDirection);
+
+        // RefreshWalkingRequest can revoke native permission between neural
+        // samples. That safety stop must also clear retained fly intent.
+        var f = new Fixture();
+        f.Adapter.Read();
+        f.Adapter.Apply(new FlyMotorCommand { FlyForward = 1f }, false, 30f, 2f, .05f);
+        True(f.Person.DesiredWalkingDirection > 0f);
+        f.Person.Consciousness = .5f;
+        f.Adapter.RefreshWalkingRequest();
+        Equal(0f, f.Person.DesiredWalkingDirection);
+        f.Person.Consciousness = 1f;
+        f.Adapter.Read();
+        f.Adapter.Apply(new FlyMotorCommand(), false, 30f, 2f, .05f);
+        Equal(0f, f.Person.DesiredWalkingDirection);
     }
     private static void FoodItemCues()
     {

@@ -55,7 +55,7 @@ namespace Mod.Core
         private int processedThisStep;
         private int droppedThisStep;
         private int decayedThisStep;
-        private float lightDrive, audioDrive, touchDrive, damageDrive, regionalTouchDrive, smallVisualDrive, opticRollDrive, gravityDrive, jointDrive, hotDrive, coldDrive, approachDrive;
+        private float lightDrive, audioDrive, touchDrive, damageDrive, regionalTouchDrive, smallVisualDrive, opticRollDrive, gravityDrive, jointDrive, hotDrive, coldDrive, approachDrive, effectiveVisualThreatDrive;
         private float foodNearbyDrive, foodContactDrive;
         private float flyEscapeCooldown, flyEscapeQuiet, flyEscapeEvidenceSeconds;
         private bool flyEscapeArmed = true;
@@ -121,7 +121,7 @@ namespace Mod.Core
             "  broad-touch=" + Format(touchDrive) + "  injury-proxy=" + Format(damageDrive) + "  regional-touch=" + Format(regionalTouchDrive) +
             "\n  gravity-proxy=" + Format(gravityDrive) + "  joints=" + Format(jointDrive) + "  small-visual=" + Format(smallVisualDrive) + "  optic-roll=" + Format(opticRollDrive) +
             "\n  light-level change ON=" + Format(lightOnDrive) + "  OFF=" + Format(lightOffDrive) +
-            "\n  warm=" + Format(hotDrive) + "  cool=" + Format(coldDrive) + "  approach-proxy=" + Format(approachDrive) +
+            "\n  warm=" + Format(hotDrive) + "  cool=" + Format(coldDrive) + "  approach-proxy=" + Format(approachDrive) + "  effective-visual-threat=" + Format(effectiveVisualThreatDrive) +
             "\n  food-nearby(gameplay)=" + Format(foodNearbyDrive) + "  food-head-contact(gameplay)=" + Format(foodContactDrive) +
             "\n  input neurons queued this tick=" + sensoryQueued +
             "\nFood cues are explicit catalog-based gameplay mappings, not measured smell/taste. Health/chemistry remain telemetry and control constraints.\nVisual directions use head-relative 2D bearing (positive CCW to R); audio/tilt use world horizontal. These are engineering projections.";
@@ -188,9 +188,9 @@ namespace Mod.Core
             processedThisStep = 0;
             droppedThisStep = 0;
             decayedThisStep = 0;
-            lightDrive = audioDrive = touchDrive = damageDrive = regionalTouchDrive = smallVisualDrive = opticRollDrive = gravityDrive = jointDrive = hotDrive = coldDrive = approachDrive = 0f;
+            lightDrive = audioDrive = touchDrive = damageDrive = regionalTouchDrive = smallVisualDrive = opticRollDrive = gravityDrive = jointDrive = hotDrive = coldDrive = approachDrive = effectiveVisualThreatDrive = 0f;
             foodNearbyDrive = foodContactDrive = 0f;
-            flyEscapeEvidenceSeconds = Math.Max(0f, flyEscapeEvidenceSeconds - ElapsedSeconds(elapsedSeconds));
+            flyEscapeEvidenceSeconds = Math.Max(0f, flyEscapeEvidenceSeconds - GameElapsedSeconds(elapsedSeconds));
             sensoryQueued = 0;
             ClearFired();
             ClearPending(nextPending, nextPendingPresent, nextPendingIds);
@@ -210,7 +210,8 @@ namespace Mod.Core
             ClearPriority();
             manualInput?.FinishTick();
 
-            return BuildFlyMotorCommand(elapsedSeconds);
+            lastCommand = BuildFlyMotorCommand(elapsedSeconds);
+            return lastCommand;
         }
 
         private void ClearFired()
@@ -244,7 +245,7 @@ namespace Mod.Core
             processedThisStep = 0;
             droppedThisStep = 0;
             decayedThisStep = 0;
-            lightDrive = audioDrive = touchDrive = damageDrive = regionalTouchDrive = smallVisualDrive = opticRollDrive = gravityDrive = jointDrive = hotDrive = coldDrive = approachDrive = 0f;
+            lightDrive = audioDrive = touchDrive = damageDrive = regionalTouchDrive = smallVisualDrive = opticRollDrive = gravityDrive = jointDrive = hotDrive = coldDrive = approachDrive = effectiveVisualThreatDrive = 0f;
             foodNearbyDrive = foodContactDrive = 0f;
             flyEscapeCooldown = flyEscapeQuiet = flyEscapeEvidenceSeconds = 0f;
             flyEscapeArmed = true;
@@ -264,7 +265,7 @@ namespace Mod.Core
             sensoryQueued = 0;
             hasPreviousLight = false;
             previousLight = lightOnDrive = lightOffDrive = 0f;
-            lightDrive = audioDrive = touchDrive = damageDrive = regionalTouchDrive = smallVisualDrive = opticRollDrive = gravityDrive = jointDrive = hotDrive = coldDrive = approachDrive = 0f;
+            lightDrive = audioDrive = touchDrive = damageDrive = regionalTouchDrive = smallVisualDrive = opticRollDrive = gravityDrive = jointDrive = hotDrive = coldDrive = approachDrive = effectiveVisualThreatDrive = 0f;
             foodNearbyDrive = foodContactDrive = 0f;
             flyEscapeCooldown = flyEscapeQuiet = flyEscapeEvidenceSeconds = 0f;
             flyEscapeArmed = true;
@@ -524,7 +525,7 @@ namespace Mod.Core
                 .25f * (MotorActivity("type:DNa01", "R") - MotorActivity("type:DNa01", "L"));
             var halt = Math.Max(MotorActivity("type:DNg60"), Math.Max(MotorActivity("type:DNg74_a"), MotorActivity("type:DNg74_b")));
             var brake = PopulationActivity("type:AN19A018");
-            if (damageDrive > .05f || approachDrive > .05f)
+            if (damageDrive > .05f || effectiveVisualThreatDrive > .05f)
             {
                 flyEscapeEvidenceSeconds = .5f;
             }
@@ -542,21 +543,22 @@ namespace Mod.Core
 
             var command = new FlyMotorCommand();
             var dnp01Activity = FiredMotorPopulation("type:DNp01");
-            PopulateFlyRequests(ref command, dnp01Activity, brake);
+            PopulateFlyRequests(ref command, dnp01Activity, halt, brake);
             command.FlyEscape = DecodeFlyEscape(elapsedSeconds, dnp01Activity);
             return command;
         }
 
-        private void PopulateFlyRequests(ref FlyMotorCommand command, bool dnp01Activity, float brake)
+        private void PopulateFlyRequests(ref FlyMotorCommand command, bool dnp01Activity, float halt, float brake)
         {
             var leftLeg = MotorActivity(FlyLegPopulation, "L");
             var rightLeg = MotorActivity(FlyLegPopulation, "R");
             command.FlyForward = Signed(forwardFilter);
             command.FlyYaw = Signed(yawFilter);
             command.FlyBackward = Unit(backwardFilter);
-            var flyHalt = MotorActivity("type:DNg60") * .6f +
-                Math.Max(MotorActivity("type:DNg74_a"), MotorActivity("type:DNg74_b")) * .4f;
-            command.FlyHalt = Unit(flyHalt);
+            // Carry the same activity that made this tick halt internally.
+            // Consumers can therefore apply the documented .2 threshold without
+            // losing fractional DNg60/DNg74 halt requests to a diagnostic mix.
+            command.FlyHalt = Unit(halt);
             command.FlyBrake = Unit(brake);
             command.FlyJump = dnp01Activity ? 1f : 0f;
             command.FlyTakeoff = WeightedMotorActivity("type:DNp11", .5f, "type:DNp02", .25f, "type:DNp04", .25f);
@@ -614,7 +616,7 @@ namespace Mod.Core
         {
             const float RefractorySeconds = 1.5f;
             const float RearmQuietSeconds = .25f;
-            var seconds = ElapsedSeconds(elapsedSeconds);
+            var seconds = GameElapsedSeconds(elapsedSeconds);
             flyEscapeCooldown = Math.Max(0f, flyEscapeCooldown - seconds);
             if (dnp01Activity)
             {
@@ -639,10 +641,11 @@ namespace Mod.Core
         }
 
 
-        private static float ElapsedSeconds(float value) => IsFinite(value) && value > 0f ? Clamp(value, 0f, .25f) : DefaultStepSeconds;
+        private static float GameElapsedSeconds(float value) => IsFinite(value) && value > 0f ? value : DefaultStepSeconds;
+        private static float SmoothingElapsedSeconds(float value) => Clamp(GameElapsedSeconds(value), 0f, .25f);
         private static float Ema(float prior, float target, float elapsedSeconds, float tauSeconds)
         {
-            var alpha = 1f - (float)Math.Exp(-ElapsedSeconds(elapsedSeconds) / tauSeconds);
+            var alpha = 1f - (float)Math.Exp(-SmoothingElapsedSeconds(elapsedSeconds) / tauSeconds);
             return prior + alpha * (target - prior);
         }
 
@@ -767,6 +770,10 @@ namespace Mod.Core
             approachDrive = Math.Max(expansion.Amplitude, looming.Amplitude);
             var effectiveExpansion = DriveChannel(manualInput, ManualInputChannel.ExpandingVisual, expansion.Amplitude, expansion.Direction);
             var effectiveLooming = DriveChannel(manualInput, ManualInputChannel.LoomingVisual, looming.Amplitude, looming.Direction);
+            // Escape qualification must reflect the same resolved visual
+            // channels that are injected into the neural graph. Keep the
+            // unmodified approach drive above for native-world diagnostics.
+            effectiveVisualThreatDrive = Math.Max(effectiveExpansion, effectiveLooming);
             return effectiveExpansion + effectiveLooming + DriveChannel(manualInput, ManualInputChannel.SmallMovingVisual, small.Amplitude, small.Direction);
         }
 
