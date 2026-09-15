@@ -677,7 +677,10 @@ namespace Mod.Core
             command.FlyGroomLeg = MotorActivity("type:DNg11");
             command.FlyGroomAbdomen = MotorActivity("type:DNp29");
             command.FlyFeed = WeightedMotorActivity("type:MN9", .6f, "type:DNg67", .1f, "type:DNge080", .1f, "type:DNge173", .1f, "type:DNge174", .1f);
-            command.FlyCourtship = PopulationActivity("prefix:pC1_", null, true);
+            // pC1/P1 courtship neurons are central-brain intrinsic cells in
+            // MaleCNS, so this explicitly selected population must not use the
+            // locomotor motor-neuron filter.
+            command.FlyCourtship = PopulationActivity("prefix:pC1_");
             command.FlySong = MotorActivity("type:pIP10");
             command.FlySongPulse = MotorActivity("type:pMP2");
             command.FlyLegMotor = Unit((leftLeg + rightLeg) * .5f);

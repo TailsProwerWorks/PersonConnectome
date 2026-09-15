@@ -53,6 +53,7 @@ public sealed class RuntimeScenarioTests
             yield return Case("head-relative visual bearings reach neural turning through synapses", "HeadRelativeTurningLoop");
             yield return Case("spatial visual inputs preserve both sides without multiplying drive", "SpatialVisualInputs");
             yield return Case("named locomotor populations exclude feeding and wing activity", "NamedMotorReadout");
+            yield return Case("courtship readout includes intrinsic pC1 neurons", "FlyCourtshipReadout");
             yield return Case("real graph repeats identical input histories deterministically", "RealGraphIsDeterministic");
             yield return Case("sustained full-payload load respects firing and state bounds", "SustainedFullPayloadLoadStaysRealtimeBounded");
             yield return Case("portable SHA-256 vectors and padding boundaries", "PayloadChecksumVectors");

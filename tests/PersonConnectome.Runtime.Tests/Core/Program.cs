@@ -100,6 +100,7 @@ var tests = new (string Name, Action Run)[]
     ("head-relative visual bearings reach neural turning through synapses", HeadRelativeTurningLoop),
     ("spatial visual inputs preserve both sides without multiplying drive", SpatialVisualInputs),
     ("named locomotor populations exclude feeding and wing activity", NamedMotorReadout),
+    ("courtship readout includes intrinsic pC1 neurons", FlyCourtshipReadout),
     ("real graph repeats identical input histories deterministically", RealGraphIsDeterministic),
     ("sustained full-payload load respects firing and state bounds", SustainedFullPayloadLoadStaysRealtimeBounded),
     ("portable SHA-256 vectors and padding boundaries", PayloadChecksumVectors),
@@ -862,7 +863,7 @@ static void RetinaVariantsReceiveLightDrive()
 static void BundledSensoryMappings()
 {
     var brain = LifBrain.TryCreate(out var status); True(brain is not null, status);
-    foreach (var population in new[] { InputLight, InputAuditory, InputTactile, InputGravity, "input:joint-position", "input:joint-motion", "input:joint-load", InputHot, InputCold, "motor:leg", TypeDNp09, "type:DNg100", "type:DNge053", "type:DNge050", "type:DNg97", TypeMDN, TypeDNg60, "type:DNg74_a", "type:DNg74_b", "type:AN19A018", TypeLC4, TypeLPLC2, TypeMi1, TypeL2, "type:L3", InputTouchHead, InputTouchArms, InputTouchLegs, InputTouchCore, "input:touch-other", InputOpticRoll, TypeLC11, "type:LC18", "type:DNa02", "type:DNg13", "type:DNa01" })
+    foreach (var population in new[] { InputLight, InputAuditory, InputTactile, InputGravity, "input:joint-position", "input:joint-motion", "input:joint-load", InputHot, InputCold, "motor:leg", "prefix:pC1_", TypeDNp09, "type:DNg100", "type:DNge053", "type:DNge050", "type:DNg97", TypeMDN, TypeDNg60, "type:DNg74_a", "type:DNg74_b", "type:AN19A018", TypeLC4, TypeLPLC2, TypeMi1, TypeL2, "type:L3", InputTouchHead, InputTouchArms, InputTouchLegs, InputTouchCore, "input:touch-other", InputOpticRoll, TypeLC11, "type:LC18", "type:DNa02", "type:DNg13", "type:DNa01" })
     {
         var count = brain.PopulationCount(population);
         Console.WriteLine("MAPPING " + population + "=" + count);
@@ -1368,6 +1369,19 @@ static void NamedMotorReadout()
     brain = Create(); brain.SetTestPopulation("subclass:wm", 3); brain.SetTestPending(3, 1f);
     command = brain.Step(Healthy()); Equal(0f, command.Walk); Equal(0f, command.LeftArm); Equal(0f, command.RightArm);
     True(command.FlyWingMotor > 0f, "wing motor activity must remain a fly channel");
+}
+
+static void FlyCourtshipReadout()
+{
+    var brain = LifBrain.CreateForTest(1, new int[2], [], []);
+    brain.SetTestPopulation("prefix:pC1_", 0);
+    brain.SetTestNeuronMetadata(0, "cb_intrinsic", "R");
+    brain.SetTestPending(0, 1f);
+    var command = brain.Step(Healthy());
+    True(command.FlyCourtship > 0f, "cb_intrinsic pC1 activity must reach the courtship channel");
+    Equal(0f, command.Walk);
+    Equal(0f, command.LeftGrip);
+    Equal(0f, command.RightGrip);
 }
 
 static void PayloadChecksumVectors()
