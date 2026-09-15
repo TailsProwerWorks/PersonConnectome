@@ -1254,7 +1254,7 @@ namespace Mod.Adapters
                 var owner = componentCacheOwners[componentCacheSweepIndex];
                 if (owner == null)
                 {
-                    componentCache.Remove(owner!);
+                    RemoveCachedOwner(owner);
                     componentCacheOwners.RemoveAt(componentCacheSweepIndex);
                     continue;
                 }
@@ -1267,6 +1267,11 @@ namespace Mod.Adapters
                 componentCacheSweepIndex++;
                 inspected++;
             }
+        }
+
+        private void RemoveCachedOwner(object? owner)
+        {
+            if (owner is PhysicalBehaviour physical) componentCache.Remove(physical);
         }
 
         private void ResetComponentDiscoveryCache()
