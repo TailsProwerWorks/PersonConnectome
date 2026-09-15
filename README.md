@@ -86,6 +86,14 @@ Discovery uses registered Steam paths and modern or legacy `steamapps/libraryfol
 
 Deployment copies manifest scripts, `mod.json`, a README with the current Git commit marker, the thumbnail and the PNG carrier, then verifies SHA-256. It removes the known stale raw `.flyb.gz` and any unlisted `.cs` source files under this mod directory, using `src/mod.json` as the source of truth; other game-directory files are preserved. Rebuild the carrier with `scripts/build/Build-ConnectomeCarrier.ps1`; the raw payload stays a build input and its identity constants must change deliberately before a different payload is accepted.
 
+To create the same folder layout as a distributable ZIP without touching a game install:
+
+```powershell
+.\scripts\deploy\Package-Mod.ps1
+```
+
+The archive is written to `artifacts/PersonConnectome-Mod.zip` by default. GitHub Actions runs this packaging step on pushes, pull requests and version tags, and uploads the ZIP as the `PersonConnectome-Mod` workflow artifact.
+
 ## Code and attribution
 
 For the contributor workflow, architecture guardrails, validation commands and recommended reasoning models, see [CONTRIBUTING.md](CONTRIBUTING.md).
