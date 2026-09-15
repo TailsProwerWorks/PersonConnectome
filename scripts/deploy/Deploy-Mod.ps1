@@ -224,11 +224,16 @@ if ($PSCmdlet.ShouldProcess($targetDirectory, 'deploy Person Connectome mod file
 
     # The manifest is the source of truth. Remove only C# source files that are
     # no longer listed there; other target-owned assets and files are preserved.
+    $prunedSourceCount = 0
     foreach ($candidate in @(Get-ChildItem -LiteralPath $targetDirectory -File -Filter '*.cs' -Recurse)) {
         $relativePath = $candidate.FullName.Substring($targetDirectory.Length + 1).Replace('/', '\')
         if (-not $manifestScriptPaths.Contains($relativePath) -and $PSCmdlet.ShouldProcess($candidate.FullName, 'remove unlisted mod source')) {
             Remove-Item -LiteralPath $candidate.FullName -Force
+            $prunedSourceCount++
         }
+    }
+    if ($prunedSourceCount -gt 0) {
+        Write-Host "Pruned $prunedSourceCount unlisted C# source file(s) from the deployed mod directory."
     }
 
     $verificationFailures = @()
