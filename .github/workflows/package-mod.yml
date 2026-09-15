@@ -36,10 +36,11 @@ jobs:
       - name: Run runtime tests
         run: dotnet test tests/PersonConnectome.Runtime.Tests/PersonConnectome.Runtime.Tests.csproj -c Release --no-build --no-restore
 
-      - name: Verify benchmark and mapping commands
-        run: |
-          dotnet run --project tests/PersonConnectome.Runtime.Tests -c Release --no-build --no-restore -- --benchmark
-          dotnet run --project tests/PersonConnectome.Runtime.Tests -c Release --no-build --no-restore -- --mapping-report
+      - name: Verify benchmark command
+        run: dotnet run --project tests/PersonConnectome.Runtime.Tests -c Release --no-build --no-restore -- --benchmark
+
+      - name: Verify mapping-report command
+        run: dotnet run --project tests/PersonConnectome.Runtime.Tests -c Release --no-build --no-restore -- --mapping-report
 
       - name: Run adapter tests
         run: dotnet test tests/PersonConnectome.Adapter.Tests/PersonConnectome.Adapter.Tests.csproj -c Release --no-restore

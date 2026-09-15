@@ -16,6 +16,7 @@ internal static class Program
             ("jukebox and child playback feed current directional audio", JukeboxAudio),
             ("audio source scans stay bounded and exclude self sources", BoundedAudioSources),
             ("component discovery refreshes child components after bounded expiry", ComponentDiscoveryRefresh),
+            ("component discovery cleanup and refresh budgets stay bounded and fair", ComponentDiscoveryBudgets),
             ("terminal motors and grips clear immediately", TerminalStop),
             ("native pose context actions are suppressed", ContextMenuPoseActions),
             ("unconscious and locally damaged limbs clear old commands", IncapableStop),
@@ -391,6 +392,49 @@ internal static class Program
         Time.realtimeSinceStartup = 8f; Time.time = 8f;
         True(f.Adapter.Read().Sound > 0f); // Refresh also sees a replacement without owner count changes.
         Physics2D.Hits = []; Time.realtimeSinceStartup = 0f; Time.time = 0f;
+    }
+
+    private static void ComponentDiscoveryBudgets()
+    {
+        var f = new Fixture();
+        var colliders = new List<Collider2D>();
+        var physicals = new List<PhysicalBehaviour>();
+        var children = new List<GameObject>();
+        for (var i = 0; i < 8; i++)
+        {
+            var item = new GameObject("Speaker " + i);
+            var physical = item.AddComponent<PhysicalBehaviour>(); physicals.Add(physical);
+            var collider = item.AddComponent<Collider2D>(); collider.Surface = new Vector2(2f, 0f); colliders.Add(collider);
+            var child = new GameObject("Source " + i); child.transform.SetParent(item.transform); child.transform.position = new Vector3(2f, 0f, 0f); children.Add(child);
+        }
+
+        Physics2D.Hits = colliders.ToArray(); Time.time = 0f; f.Adapter.Read();
+        var ownersField = typeof(PeoplePlaygroundPersonAdapter).GetField("componentCacheOwners", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var owners = (List<PhysicalBehaviour>)ownersField.GetValue(f.Adapter)!;
+        Equal(8, owners.Count);
+        foreach (var physical in physicals) physical.Destroyed = true;
+        var prune = typeof(PeoplePlaygroundPersonAdapter).GetMethod("PruneComponentDiscoveryCache", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        prune.Invoke(f.Adapter, [4]);
+        Equal(4, owners.Count); // Four destroyed entries, not the whole cache, are removed in one pass.
+
+        // Rebuild a fresh fixture for the fairness portion: all eight owners expire together,
+        // but the last four must still refresh on the following sample.
+        f = new Fixture(); colliders.Clear(); children.Clear();
+        for (var i = 0; i < 8; i++)
+        {
+            var item = new GameObject("Fair speaker " + i); item.AddComponent<PhysicalBehaviour>();
+            var collider = item.AddComponent<Collider2D>(); collider.Surface = new Vector2(2f, 0f); colliders.Add(collider);
+            var child = new GameObject("Fair source " + i); child.transform.SetParent(item.transform); child.transform.position = new Vector3(2f, 0f, 0f); children.Add(child);
+        }
+        Physics2D.Hits = colliders.ToArray(); Time.time = 0f; Equal(0f, f.Adapter.Read().Sound);
+        foreach (var child in children)
+        {
+            var source = child.AddComponent<AudioSource>(); source.isPlaying = true; source.volume = 1f;
+        }
+        Time.time = 1f; Equal(0f, f.Adapter.Read().Sound);
+        Time.time = 3f; True(f.Adapter.Read().Sound > 0f); // First four refresh.
+        Time.time = 4f; True(f.Adapter.Read().Sound > 0f); // Remaining four are not starved.
+        Physics2D.Hits = []; Time.time = 0f;
     }
 
     private static void BloodAndVitality()

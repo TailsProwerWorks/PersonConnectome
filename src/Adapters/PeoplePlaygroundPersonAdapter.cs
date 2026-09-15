@@ -49,6 +49,8 @@ namespace Mod.Adapters
         private readonly List<FlashlightAttachmentBehaviour> flashlightAttachments = [];
         private readonly Dictionary<PhysicalBehaviour, ComponentDiscovery> componentCache = [];
         private readonly List<PhysicalBehaviour> componentCacheOwners = [];
+        private readonly Queue<PhysicalBehaviour> discoveryRefreshQueue = [];
+        private readonly HashSet<PhysicalBehaviour> queuedDiscoveryOwners = [];
         private readonly HashSet<PhysicalBehaviour> sampledOwners = [];
         private readonly List<Component> componentBuffer = [];
         private int componentCacheSweepIndex;
@@ -1170,7 +1172,9 @@ namespace Mod.Adapters
             var origin = (Vector2)head.position;
             var facing = InitializeNearbyState(ref f, head, out var headCollider);
             PruneComponentDiscoveryCache(MaxComponentDiscoveryRemovalsPerSample);
-            nearbyScanState.Reset(origin, facing, headCollider, MaxComponentDiscoveryRefreshesPerSample);
+            EnqueueExpiredComponentDiscoveries();
+            RefreshQueuedComponentDiscoveries(MaxComponentDiscoveryRefreshesPerSample);
+            nearbyScanState.Reset(origin, facing, headCollider);
             var scanState = nearbyScanState;
             Array.Clear(visualCandidates, 0, visualCandidates.Length);
             ReadAmbientTemperature(ref f, origin);
@@ -1189,7 +1193,7 @@ namespace Mod.Adapters
             ReadVisualCandidates(ref f, origin, facing, head, scanState.CandidateCount);
         }
 
-        private ComponentDiscovery GetComponentDiscovery(PhysicalBehaviour owner, NearbyScanState state)
+        private ComponentDiscovery GetComponentDiscovery(PhysicalBehaviour owner)
         {
             var firstOwnerThisSample = sampledOwners.Add(owner);
             if (!firstOwnerThisSample && componentCache.TryGetValue(owner, out var repeatedCached)) return repeatedCached;
@@ -1198,10 +1202,18 @@ namespace Mod.Adapters
             var directHintsChanged = cached == null || cached.ChildCount != owner.transform.childCount || cached.ComponentCount != componentBuffer.Count;
             var age = cached == null ? float.MaxValue : Time.time - cached.LastRefreshTime;
             var expired = directHintsChanged || !IsFinite(age) || age < 0f || age >= ComponentDiscoveryMaxAgeSeconds;
-            if (cached != null && !expired) return cached;
-            if (cached != null && state.DiscoveryRefreshBudget == 0) return cached;
-            if (cached != null) state.DiscoveryRefreshBudget--;
+            if (cached != null)
+            {
+                if (directHintsChanged) return BuildComponentDiscovery(owner, cached);
+                if (expired) QueueDiscoveryRefresh(owner);
+                return cached;
+            }
 
+            return BuildComponentDiscovery(owner, null);
+        }
+
+        private ComponentDiscovery BuildComponentDiscovery(PhysicalBehaviour owner, ComponentDiscovery? cached)
+        {
             var discovery = new ComponentDiscovery
             {
                 ChildCount = owner.transform.childCount,
@@ -1245,28 +1257,72 @@ namespace Mod.Adapters
             return destination;
         }
 
+        private void QueueDiscoveryRefresh(PhysicalBehaviour owner)
+        {
+            // FIFO ordering keeps a stable collider order from starving later owners.
+            if (queuedDiscoveryOwners.Add(owner)) discoveryRefreshQueue.Enqueue(owner);
+        }
+
+        private void EnqueueExpiredComponentDiscoveries()
+        {
+            var now = Time.time;
+            for (var i = 0; i < componentCacheOwners.Count; i++)
+            {
+                var owner = componentCacheOwners[i];
+                if (owner == null || !componentCache.TryGetValue(owner, out var cached)) continue;
+                var age = now - cached.LastRefreshTime;
+                if (!IsFinite(age) || age < 0f || age >= ComponentDiscoveryMaxAgeSeconds) QueueDiscoveryRefresh(owner);
+            }
+        }
+
+        private void RefreshQueuedComponentDiscoveries(int budget)
+        {
+            var refreshed = 0;
+            while (refreshed < budget && discoveryRefreshQueue.Count > 0)
+            {
+                var owner = discoveryRefreshQueue.Dequeue();
+                queuedDiscoveryOwners.Remove(owner);
+                if (owner == null || !componentCache.TryGetValue(owner, out var cached)) continue;
+
+                var age = Time.time - cached.LastRefreshTime;
+                if (IsFinite(age) && age >= 0f && age < ComponentDiscoveryMaxAgeSeconds) continue;
+                owner.GetComponents(componentBuffer);
+                BuildComponentDiscovery(owner, cached);
+                refreshed++;
+            }
+        }
+
         private void PruneComponentDiscoveryCache(int budget)
         {
             var inspected = 0;
             while (inspected < budget && componentCacheOwners.Count > 0)
             {
+                inspected++;
                 if (componentCacheSweepIndex >= componentCacheOwners.Count) componentCacheSweepIndex = 0;
                 var owner = componentCacheOwners[componentCacheSweepIndex];
                 if (owner == null)
                 {
                     RemoveCachedOwner(owner);
-                    componentCacheOwners.RemoveAt(componentCacheSweepIndex);
+                    RemoveQueuedOwner(owner);
+                    RemoveCachedOwnerAt(componentCacheSweepIndex);
                     continue;
                 }
                 if (!componentCache.ContainsKey(owner))
                 {
-                    componentCacheOwners.RemoveAt(componentCacheSweepIndex);
+                    RemoveCachedOwnerAt(componentCacheSweepIndex);
                     continue;
                 }
 
                 componentCacheSweepIndex++;
-                inspected++;
             }
+        }
+
+        private void RemoveCachedOwnerAt(int index)
+        {
+            var last = componentCacheOwners.Count - 1;
+            if (index != last) componentCacheOwners[index] = componentCacheOwners[last];
+            componentCacheOwners.RemoveAt(last);
+            if (componentCacheSweepIndex >= componentCacheOwners.Count) componentCacheSweepIndex = 0;
         }
 
         private void RemoveCachedOwner(object? owner)
@@ -1274,10 +1330,17 @@ namespace Mod.Adapters
             if (owner is PhysicalBehaviour physical) componentCache.Remove(physical);
         }
 
+        private void RemoveQueuedOwner(object? owner)
+        {
+            if (owner is PhysicalBehaviour physical) queuedDiscoveryOwners.Remove(physical);
+        }
+
         private void ResetComponentDiscoveryCache()
         {
             componentCache.Clear();
             componentCacheOwners.Clear();
+            discoveryRefreshQueue.Clear();
+            queuedDiscoveryOwners.Clear();
             sampledOwners.Clear();
             componentBuffer.Clear();
             groupSpriteBuffer.Clear();
@@ -1291,17 +1354,15 @@ namespace Mod.Adapters
             public Collider2D? HeadCollider;
             public float Closest = float.MaxValue;
             public int CandidateCount;
-            public int DiscoveryRefreshBudget;
             public string AudioSourceSummary = "none";
 
-            public void Reset(Vector2 origin, Vector3 facing, Collider2D? headCollider, int discoveryRefreshBudget)
+            public void Reset(Vector2 origin, Vector3 facing, Collider2D? headCollider)
             {
                 Origin = origin;
                 Facing = facing;
                 HeadCollider = headCollider;
                 Closest = float.MaxValue;
                 CandidateCount = 0;
-                DiscoveryRefreshBudget = discoveryRefreshBudget;
                 AudioSourceSummary = "none";
             }
         }
@@ -1397,7 +1458,7 @@ namespace Mod.Adapters
             ReadNearbyHazards(ref frame, hit, distance);
             var physical = hit.GetComponentInParent<PhysicalBehaviour>();
             if (physical == null) return;
-            var discovery = GetComponentDiscovery(physical, state);
+            var discovery = GetComponentDiscovery(physical);
             ReadFoodCue(ref frame, hit, physical, distance, state.HeadCollider, discovery);
             if (lightOwners.Add(physical))
             {

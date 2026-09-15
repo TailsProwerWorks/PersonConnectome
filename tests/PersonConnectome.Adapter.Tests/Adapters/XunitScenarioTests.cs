@@ -19,6 +19,7 @@ public sealed class AdapterScenarioTests
             yield return Case("jukebox and child playback feed current directional audio", "JukeboxAudio");
             yield return Case("audio source scans stay bounded and exclude self sources", "BoundedAudioSources");
             yield return Case("component discovery refreshes child components after bounded expiry", "ComponentDiscoveryRefresh");
+            yield return Case("component discovery cleanup and refresh budgets stay bounded and fair", "ComponentDiscoveryBudgets");
             yield return Case("terminal motors and grips clear immediately", "TerminalStop");
             yield return Case("native pose context actions are suppressed", "ContextMenuPoseActions");
             yield return Case("unconscious and locally damaged limbs clear old commands", "IncapableStop");
