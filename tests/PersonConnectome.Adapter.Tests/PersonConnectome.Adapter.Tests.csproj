@@ -9,8 +9,20 @@
     <!-- Game doubles intentionally model Unity's nullable-at-runtime API; keep
          their legacy permissive surface while accepting annotations in linked sources. -->
     <NoWarn>$(NoWarn);CS0649;CS8632</NoWarn>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.0" />
+    <PackageReference Include="xunit.v3" Version="4.0.1" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive; compile</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="coverlet.MTP" Version="10.0.1">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive; compile</IncludeAssets>
+    </PackageReference>
     <Compile Include="../../src/Adapters/PeoplePlaygroundPersonAdapter.cs" Link="src/Adapters/PeoplePlaygroundPersonAdapter.cs" />
     <Compile Include="../../src/Adapters/PersonConnectomeLimbController.cs" Link="src/Adapters/PersonConnectomeLimbController.cs" />
     <Compile Include="../../src/Adapters/PersonConnectomeLimbProbe.cs" Link="src/Adapters/PersonConnectomeLimbProbe.cs" />

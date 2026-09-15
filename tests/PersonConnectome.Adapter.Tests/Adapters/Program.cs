@@ -6,7 +6,7 @@ using UnityEngine;
 
 internal static class Program
 {
-    private static int Main()
+    internal static int RunLegacy()
     {
         (string, Action)[] tests =
         [

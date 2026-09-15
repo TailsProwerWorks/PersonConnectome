@@ -8,9 +8,20 @@
     <AnalysisLevel>none</AnalysisLevel>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <NoWarn>$(NoWarn);CS0649;CS7022;CS8632</NoWarn>
+    <IsTestProject>true</IsTestProject>
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="../../src/Mod/ModRegistration.cs" Link="src/Mod/ModRegistration.cs" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.0" />
+    <PackageReference Include="xunit.v3" Version="4.0.1" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive; compile</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="coverlet.MTP" Version="10.0.1">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive; compile</IncludeAssets>
+    </PackageReference>
     <Compile Include="../../src/Core/ConnectomeAsset.cs" Link="src/Core/ConnectomeAsset.cs" />
     <Compile Include="../../src/Core/ConnectomeAssetReader.cs" Link="src/Core/ConnectomeAssetReader.cs" />
     <Compile Include="../../src/Core/LifBrainFactory.cs" Link="src/Core/LifBrainFactory.cs" />
