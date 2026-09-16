@@ -10,6 +10,12 @@ using Mod.Core;
 
 namespace Mod.UI
 {
+    internal enum StatusDisplayBodyKind
+    {
+        Person,
+        Fly
+    }
+
     internal sealed class StatusDisplayBindings
     {
         public Func<bool>? IsDirectFlyControlEnabled;
@@ -43,39 +49,46 @@ namespace Mod.UI
         private long capturedTick;
         private LifBrain brain = null!;
         private PeoplePlaygroundPersonAdapter adapter = null!;
-        private GameObject canvasObject = null!;
-        private Canvas canvas = null!;
-        private RectTransform panel = null!, expanded = null!, viewport = null!, content = null!;
-        private RectTransform titleDragArea = null!, resizeArea = null!;
-        private TextMeshProUGUI interactionHint = null!;
-        private ScrollRect scroll = null!;
-        private Scrollbar scrollbar = null!;
-        private TextMeshProUGUI title = null!, toggleLabel = null!, location = null!, state = null!, escapeState = null!, timing = null!, body = null!;
-        private readonly List<TextMeshProUGUI> telemetryHeadings = [];
-        private readonly List<TelemetryRow> telemetryRows = [];
-        private readonly List<GameObject> telemetryElements = [];
-        private readonly TextMeshProUGUI[] tabLabels = new TextMeshProUGUI[4];
-        private readonly Button[] tabs = new Button[4];
-        private Button toggle = null!, previous = null!, next = null!, smaller = null!, larger = null!;
-        private TextMeshProUGUI motorHeading = null!, historyHeading = null!, historyScale = null!, mapHeading = null!, mapCaption = null!, populationHeading = null!, provenance = null!;
-        private RectTransform mapViewport = null!;
-        private Button mapZoomOut = null!, mapReset = null!, mapZoomIn = null!;
-        private float mapZoom = 1f;
-        private Vector2 mapPan;
-        private readonly TextMeshProUGUI[] motorLabels = new TextMeshProUGUI[21];
-        private readonly Image[] motorTracks = new Image[21], motorFills = new Image[21], motorCenters = new Image[21];
-        private readonly TextMeshProUGUI[] populationLabels = new TextMeshProUGUI[8];
-        private readonly Image[] populationTracks = new Image[8], populationFills = new Image[8];
-        private readonly Image[] spikeBars = new Image[120];
-        private readonly List<TextMeshProUGUI> legendLabels = [];
-        private readonly List<Image> legendColors = [];
-        private readonly float[] motorValues = new float[21];
-        private readonly List<GameObject> motorElements = [];
-        private readonly List<GameObject> brainElements = [];
-        private readonly List<GameObject> stimulationElements = [];
-        private readonly List<TextMeshProUGUI> stimulationSections = [];
-        private readonly StimulationRow[] stimulationRows = new StimulationRow[(int)ManualInputChannel.Count];
+        private PeoplePlaygroundFlyAdapter flyAdapter = null!;
+        private readonly StatusDisplayBodyKind bodyKind;
+        private readonly Transform anchor;
+        // The screen-space window is global. Per-body display instances retain
+        // only telemetry/session state and a small world label.
+        private static GameObject canvasObject = null!;
+        private static Canvas canvas = null!;
+        private static RectTransform panel = null!, expanded = null!, viewport = null!, content = null!;
+        private static RectTransform titleDragArea = null!, resizeArea = null!;
+        private static TextMeshProUGUI interactionHint = null!;
+        private static ScrollRect scroll = null!;
+        private static Scrollbar scrollbar = null!;
+        private static TextMeshProUGUI title = null!, toggleLabel = null!, location = null!, state = null!, escapeState = null!, timing = null!, body = null!;
+        private static readonly List<TextMeshProUGUI> telemetryHeadings = [];
+        private static readonly List<TelemetryRow> telemetryRows = [];
+        private static readonly List<GameObject> telemetryElements = [];
+        private static readonly TextMeshProUGUI[] tabLabels = new TextMeshProUGUI[4];
+        private static readonly Button[] tabs = new Button[4];
+        private static Button toggle = null!, previous = null!, next = null!, smaller = null!, larger = null!;
+        private static TextMeshProUGUI motorHeading = null!, historyHeading = null!, historyScale = null!, mapHeading = null!, mapCaption = null!, populationHeading = null!, provenance = null!;
+        private static RectTransform mapViewport = null!;
+        private static Button mapZoomOut = null!, mapReset = null!, mapZoomIn = null!;
+        private static float mapZoom = 1f;
+        private static Vector2 mapPan;
+        private static readonly TextMeshProUGUI[] motorLabels = new TextMeshProUGUI[21];
+        private static readonly Image[] motorTracks = new Image[21], motorFills = new Image[21], motorCenters = new Image[21];
+        private static readonly TextMeshProUGUI[] populationLabels = new TextMeshProUGUI[8];
+        private static readonly Image[] populationTracks = new Image[8], populationFills = new Image[8];
+        private static readonly Image[] spikeBars = new Image[120];
+        private static readonly List<TextMeshProUGUI> legendLabels = [];
+        private static readonly List<Image> legendColors = [];
+        private static readonly float[] motorValues = new float[21];
+        private static readonly List<GameObject> motorElements = [];
+        private static readonly List<GameObject> brainElements = [];
+        private static readonly List<GameObject> stimulationElements = [];
+        private static readonly List<TextMeshProUGUI> stimulationSections = [];
+        private static readonly StimulationRow[] stimulationRows = new StimulationRow[(int)ManualInputChannel.Count];
         private readonly ManualInputState manualInput;
+        private readonly Transform? hostRoot;
+        private readonly int configuredId;
         private readonly Func<bool>? isDirectFlyControlEnabled;
         private readonly Action<bool>? setDirectFlyControl;
         private readonly Func<string>? trainingStatus;
@@ -94,16 +107,16 @@ namespace Mod.UI
         private Vector3 lastWorldLabelPosition;
         private bool hasWorldLabelPosition;
         private bool lastWorldLabelManual;
-        private Image historyBackground = null!;
-        private RawImage mapImage = null!;
-        private Texture2D mapTexture = null!;
-        private Color32[] mapBackground = null!, mapPixels = null!;
-        private Color32[] mapFlashColors = null!;
-        private byte[] mapFlashAges = null!;
-        private int[] mapIndexes = null!;
-        private int[] mapPointByNeuron = null!;
-        private BrainMapSample map = null!;
-        private Color[] mapColors = null!;
+        private static Image historyBackground = null!;
+        private static RawImage mapImage = null!;
+        private static Texture2D mapTexture = null!;
+        private static Color32[] mapBackground = null!, mapPixels = null!;
+        private static Color32[] mapFlashColors = null!;
+        private static byte[] mapFlashAges = null!;
+        private static int[] mapIndexes = null!;
+        private static int[] mapPointByNeuron = null!;
+        private static BrainMapSample map = null!;
+        private static Color[] mapColors = null!;
         private const int MapWidth = 256, MapHeight = 320;
         private const byte MapFlashLifetime = 4;
         private const float NeuralEscapeFlashSeconds = .35f;
@@ -145,15 +158,19 @@ namespace Mod.UI
             public float PanelHeight = 660f;
         }
 
-        private TextMeshProUGUI stimulationHeading = null!, stimulationPerson = null!, stimulationStatus = null!, stimulationExplanation = null!, stimulationResponse = null!, stimulationModeHeading = null!, directControlHeading = null!, directControlExplanation = null!, directControlLabel = null!;
-        private TextMeshProUGUI trainingHeading = null!, trainingStatusLabel = null!, trainingExplanation = null!;
-        private Button stimulationMaster = null!, directControlToggle = null!;
-        private Button mixedMode = null!, manualOnlyMode = null!, zeroManual = null!, returnToLive = null!;
-        private Button trainingStart = null!, trainingEnd = null!, trainingPause = null!, trainingGood = null!, trainingBad = null!, trainingUndo = null!, trainingBest = null!, trainingReset = null!, trainingSave = null!, trainingLoad = null!;
+        private static TextMeshProUGUI stimulationHeading = null!, stimulationPerson = null!, stimulationStatus = null!, stimulationExplanation = null!, stimulationResponse = null!, stimulationModeHeading = null!, directControlHeading = null!, directControlExplanation = null!, directControlLabel = null!;
+        private static TextMeshProUGUI trainingHeading = null!, trainingStatusLabel = null!, trainingExplanation = null!;
+        private static Button stimulationMaster = null!, directControlToggle = null!;
+        private static Button mixedMode = null!, manualOnlyMode = null!, zeroManual = null!, returnToLive = null!;
+        private static Button trainingStart = null!, trainingEnd = null!, trainingPause = null!, trainingGood = null!, trainingBad = null!, trainingUndo = null!, trainingBest = null!, trainingReset = null!, trainingSave = null!, trainingLoad = null!;
 
-        public PersonConnectomeStatusDisplay(Transform anchor, ManualInputState inputState, StatusDisplayBindings? bindings = null)
+        public PersonConnectomeStatusDisplay(Transform anchor, ManualInputState inputState, StatusDisplayBindings? bindings = null, Transform? hostRoot = null, int configuredId = 0, StatusDisplayBodyKind bodyKind = StatusDisplayBodyKind.Person)
         {
+            this.anchor = anchor;
+            this.bodyKind = bodyKind;
             manualInput = inputState ?? new ManualInputState();
+            this.hostRoot = hostRoot;
+            this.configuredId = configuredId;
             this.isDirectFlyControlEnabled = bindings?.IsDirectFlyControlEnabled;
             this.setDirectFlyControl = bindings?.SetDirectFlyControl;
             this.trainingStatus = bindings?.TrainingStatus;
@@ -173,7 +190,7 @@ namespace Mod.UI
         {
             if (active && !displays.Contains(this))
             {
-                id = identities.Acquire(this);
+                id = configuredId > 0 ? configuredId : identities.Acquire(this);
                 displays.Add(this);
                 CreateWorldLabel();
             }
@@ -181,8 +198,7 @@ namespace Mod.UI
             {
                 displays.Remove(this);
                 ReleaseWorldLabel();
-                ReleaseUi();
-                identities.Release(this);
+                if (configuredId == 0) identities.Release(this);
                 id = 0;
                 Array.Clear(history, 0, history.Length);
                 historyIndex = historyCount = 0;
@@ -195,9 +211,11 @@ namespace Mod.UI
             }
             if (shared.Selected == null || !displays.Contains(shared.Selected))
             {
+                if (canvasObject != null) ReleaseMap();
                 shared.Selected = displays.Count == 0 ? null : displays[0];
                 shared.Selected?.refreshTimer = 0f;
             }
+            if (displays.Count == 0) ReleaseUi();
         }
 
         public void RecordTick(float sensorMs, float brainMs, float actuatorMs, float skippedSeconds, LifBrain source)
@@ -221,6 +239,20 @@ namespace Mod.UI
         {
             brain = source;
             adapter = personAdapter;
+            flyAdapter = null!;
+            UpdateDisplay(elapsedSeconds);
+        }
+
+        public void Update(float elapsedSeconds, LifBrain source, PeoplePlaygroundFlyAdapter bodyAdapter)
+        {
+            brain = source;
+            flyAdapter = bodyAdapter;
+            adapter = null!;
+            UpdateDisplay(elapsedSeconds);
+        }
+
+        private void UpdateDisplay(float elapsedSeconds)
+        {
             neuralEscapeFlash = Mathf.Max(0f, neuralEscapeFlash - Mathf.Max(0f, elapsedSeconds));
             UpdateWorldLabel();
             if (shared.Selected != this || Screen.width <= 0 || Screen.height <= 0) return;
@@ -236,6 +268,7 @@ namespace Mod.UI
         private void BuildUi()
         {
             canvasObject = new GameObject("Person Connectome Screen Telemetry", typeof(RectTransform));
+            if (hostRoot != null) canvasObject.transform.SetParent(hostRoot, false);
             canvas = canvasObject.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = short.MaxValue;
@@ -245,7 +278,7 @@ namespace Mod.UI
             background.color = Background;
             // The panel is an ordinary UI raycast target, including its blank space.
             background.raycastTarget = true;
-            title = CreateText(panel, "Person Connectome | #" + id, 18f, Accent);
+            title = CreateText(panel, BodyTitle + " | #" + id, 18f, Accent);
             titleDragArea = CreateDragArea(panel, "Move panel", MovePanel);
             toggle = CreateButton(panel, "Collapse", ToggleCollapse, out toggleLabel);
             expanded = CreateRect(panel, "Expanded controls");
@@ -355,58 +388,58 @@ namespace Mod.UI
             stimulationPerson = AddText(stimulationElements, "", Foreground);
             stimulationStatus = AddText(stimulationElements, "", Accent);
             stimulationExplanation = AddText(stimulationElements, "Overrides neural input stimulation, not the body's physical state.", Foreground);
-            stimulationMaster = CreateToggleButton(content, "Manual override", () => manualInput.OverrideEnabled, value =>
+            stimulationMaster = CreateToggleButton(content, "Manual override", () => SelectedManualInput?.OverrideEnabled ?? false, value =>
             {
-                manualInput.SetOverrideEnabled(value);
-                refreshTimer = 0f;
+                SelectedManualInput?.SetOverrideEnabled(value);
+                RefreshSelected();
             }, out _);
             stimulationElements.Add(stimulationMaster.gameObject);
             stimulationModeHeading = AddText(stimulationElements, "Input mode | Mixed or Manual only", Accent);
             mixedMode = CreateButton(content, "Mixed", () =>
             {
-                manualInput.SetMode(ManualInputMode.Mixed);
-                refreshTimer = 0f;
+                SelectedManualInput?.SetMode(ManualInputMode.Mixed);
+                RefreshSelected();
             }, out _);
             manualOnlyMode = CreateButton(content, "Manual only", () =>
             {
-                manualInput.SetMode(ManualInputMode.ManualOnly);
-                refreshTimer = 0f;
+                SelectedManualInput?.SetMode(ManualInputMode.ManualOnly);
+                RefreshSelected();
             }, out _);
             stimulationElements.Add(mixedMode.gameObject);
             stimulationElements.Add(manualOnlyMode.gameObject);
             zeroManual = CreateButton(content, "Zero manual values", () =>
             {
-                manualInput.ZeroManualValues();
-                refreshTimer = 0f;
+                SelectedManualInput?.ZeroManualValues();
+                RefreshSelected();
             }, out _);
             returnToLive = CreateButton(content, "Return to live", () =>
             {
-                manualInput.ReturnToLive();
-                refreshTimer = 0f;
+                SelectedManualInput?.ReturnToLive();
+                RefreshSelected();
             }, out _);
             stimulationElements.Add(zeroManual.gameObject);
             stimulationElements.Add(returnToLive.gameObject);
             directControlHeading = AddText(stimulationElements, "NATIVE BALANCE ASSISTS", Accent);
             directControlExplanation = AddText(stimulationElements, "Fly wing, leg and flight channels are always adapted to available joints. This toggle only disables native upright, stumble and pose-force helpers. Gravity, joints and collisions remain active.", Foreground);
-            directControlToggle = CreateToggleButton(content, "Direct fly control", () => isDirectFlyControlEnabled?.Invoke() ?? false, value =>
+            directControlToggle = CreateToggleButton(content, "Direct fly control", () => shared.Selected?.isDirectFlyControlEnabled?.Invoke() ?? false, value =>
             {
-                setDirectFlyControl?.Invoke(value);
-                refreshTimer = 0f;
+                shared.Selected?.setDirectFlyControl?.Invoke(value);
+                RefreshSelected();
             }, out directControlLabel);
             stimulationElements.Add(directControlToggle.gameObject);
             trainingHeading = AddText(stimulationElements, "TEACH MODE", Accent);
             trainingStatusLabel = AddText(stimulationElements, "", Foreground);
             trainingExplanation = AddText(stimulationElements, "One person at a time. Posture is observed without applying a standing or pose helper. Good/Bad reinforces recently eligible connectome edges; no Human action is injected. Movement must come through the ordinary brain-to-Human motor mapping.", Foreground);
-            trainingStart = CreateButton(content, "Start / retry trial", () => { startTraining?.Invoke(); refreshTimer = 0f; }, out _);
-            trainingEnd = CreateButton(content, "End training", () => { endTraining?.Invoke(); refreshTimer = 0f; }, out _);
-            trainingPause = CreateButton(content, "Pause learning", () => { toggleTrainingPause?.Invoke(); refreshTimer = 0f; }, out _);
-            trainingGood = CreateButton(content, "Good", () => { givePositiveTrainingFeedback?.Invoke(); refreshTimer = 0f; }, out _);
-            trainingBad = CreateButton(content, "Bad", () => { giveNegativeTrainingFeedback?.Invoke(); refreshTimer = 0f; }, out _);
-            trainingUndo = CreateButton(content, "Undo", () => { undoTrainingFeedback?.Invoke(); refreshTimer = 0f; }, out _);
-            trainingBest = CreateButton(content, "Restore best", () => { restoreBestTrainingVersion?.Invoke(); refreshTimer = 0f; }, out _);
-            trainingReset = CreateButton(content, "Reset skill", () => { resetTrainingSkill?.Invoke(); refreshTimer = 0f; }, out _);
-            trainingSave = CreateButton(content, "Save profile", () => { saveTrainingProfile?.Invoke(); refreshTimer = 0f; }, out _);
-            trainingLoad = CreateButton(content, "Load profile", () => { loadTrainingProfile?.Invoke(); refreshTimer = 0f; }, out _);
+            trainingStart = CreateButton(content, "Start / retry trial", () => InvokeSelected(display => display.startTraining?.Invoke()), out _);
+            trainingEnd = CreateButton(content, "End training", () => InvokeSelected(display => display.endTraining?.Invoke()), out _);
+            trainingPause = CreateButton(content, "Pause learning", () => InvokeSelected(display => display.toggleTrainingPause?.Invoke()), out _);
+            trainingGood = CreateButton(content, "Good", () => InvokeSelected(display => display.givePositiveTrainingFeedback?.Invoke()), out _);
+            trainingBad = CreateButton(content, "Bad", () => InvokeSelected(display => display.giveNegativeTrainingFeedback?.Invoke()), out _);
+            trainingUndo = CreateButton(content, "Undo", () => InvokeSelected(display => display.undoTrainingFeedback?.Invoke()), out _);
+            trainingBest = CreateButton(content, "Restore best", () => InvokeSelected(display => display.restoreBestTrainingVersion?.Invoke()), out _);
+            trainingReset = CreateButton(content, "Reset skill", () => InvokeSelected(display => display.resetTrainingSkill?.Invoke()), out _);
+            trainingSave = CreateButton(content, "Save profile", () => InvokeSelected(display => display.saveTrainingProfile?.Invoke()), out _);
+            trainingLoad = CreateButton(content, "Load profile", () => InvokeSelected(display => display.loadTrainingProfile?.Invoke()), out _);
             foreach (var button in new[] { trainingStart, trainingEnd, trainingPause, trainingGood, trainingBad, trainingUndo, trainingBest, trainingReset, trainingSave, trainingLoad })
             {
                 stimulationElements.Add(button.gameObject);
@@ -448,43 +481,43 @@ namespace Mod.UI
             row.Name = CreateText(row.Root.transform, descriptor.Label, 13f, Accent);
             row.Details = CreateText(row.Root.transform, descriptor.Details, 11f, Foreground);
             row.ManualLabel = CreateText(row.Root.transform, "MANUAL", 10f, Accent);
-            row.Override = CreateToggleButton(row.Root.transform, "Override", () => manualInput.IsSelected(channel), value =>
+            row.Override = CreateToggleButton(row.Root.transform, "Override", () => SelectedManualInput?.IsSelected(channel) ?? false, value =>
             {
-                manualInput.SetSelected(channel, value);
-                refreshTimer = 0f;
+                SelectedManualInput?.SetSelected(channel, value);
+                RefreshSelected();
             }, out _);
             row.Strength = CreateSlider(row.Root.transform, 0f, 1f, value =>
             {
-                manualInput.SetValue(channel, value);
-                refreshTimer = 0f;
+                SelectedManualInput?.SetValue(channel, value);
+                RefreshSelected();
             });
             row.Value = CreateNumericField(row.Root.transform, value =>
             {
-                if (TryParseUnit(value, out var parsed)) manualInput.SetValue(channel, parsed);
-                refreshTimer = 0f;
+                if (TryParseUnit(value, out var parsed)) SelectedManualInput?.SetValue(channel, parsed);
+                RefreshSelected();
             });
             row.LiveEffective = CreateText(row.Root.transform, "", 11f, Foreground);
             if (descriptor.Directional) AddDirectionalControls(row, channel);
             row.Continuous = CreateButton(row.Root.transform, "Continuous", () =>
             {
-                manualInput.SetWaveform(channel, ManualInputWaveform.Continuous);
-                refreshTimer = 0f;
+                SelectedManualInput?.SetWaveform(channel, ManualInputWaveform.Continuous);
+                RefreshSelected();
             }, out _);
             row.Pulse = CreateButton(row.Root.transform, "Pulse", () =>
             {
-                manualInput.SetWaveform(channel, ManualInputWaveform.Pulse);
-                refreshTimer = 0f;
+                SelectedManualInput?.SetWaveform(channel, ManualInputWaveform.Pulse);
+                RefreshSelected();
             }, out _);
             row.PulseLength = CreateNumericField(row.Root.transform, value =>
             {
-                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.CurrentCulture, out var parsed)) manualInput.SetPulseLength(channel, parsed);
-                refreshTimer = 0f;
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.CurrentCulture, out var parsed)) SelectedManualInput?.SetPulseLength(channel, parsed);
+                RefreshSelected();
             });
             row.PulseHint = CreateText(row.Root.transform, "ticks", 11f, Foreground);
             row.Trigger = CreateButton(row.Root.transform, "Fire pulse", () =>
             {
-                manualInput.TriggerPulse(channel);
-                refreshTimer = 0f;
+                SelectedManualInput?.TriggerPulse(channel);
+                RefreshSelected();
             }, out _);
             return row;
         }
@@ -494,8 +527,8 @@ namespace Mod.UI
             row.DirectionLabel = CreateText(row.Root.transform, "DIRECTION", 10f, Accent);
             row.Direction = CreateSlider(row.Root.transform, -1f, 1f, value =>
             {
-                manualInput.SetDirection(channel, value);
-                refreshTimer = 0f;
+                SelectedManualInput?.SetDirection(channel, value);
+                RefreshSelected();
             });
             row.DirectionValue = CreateText(row.Root.transform, "", 11f, Foreground);
         }
@@ -509,11 +542,68 @@ namespace Mod.UI
 
         private string StimulationStatusText()
         {
-            if (!adapter.HasSample) return "INACTIVE | waiting for native sample";
-            if (adapter.IsTerminal) return "SUSPENDED | native terminal state";
-            if (adapter.LiveState.IndexOf("INVALID", StringComparison.OrdinalIgnoreCase) >= 0) return "SUSPENDED | native health data unavailable";
+            if (!CurrentHasSample) return "INACTIVE | waiting for native sample";
+            if (CurrentIsTerminal) return "SUSPENDED | native terminal state";
+            if (!IsFly && adapter.LiveState.IndexOf("INVALID", StringComparison.OrdinalIgnoreCase) >= 0) return "SUSPENDED | native health data unavailable";
             if (!manualInput.OverrideEnabled) return "INACTIVE | live input";
             return "ACTIVE | " + (manualInput.Mode == ManualInputMode.ManualOnly ? "Manual only" : "Mixed");
+        }
+
+        private static ManualInputState? SelectedManualInput => shared.Selected?.manualInput;
+
+        private static void RefreshSelected()
+        {
+            if (shared.Selected != null) shared.Selected.refreshTimer = 0f;
+        }
+
+        private static void InvokeSelected(Action<PersonConnectomeStatusDisplay> action)
+        {
+            var selected = shared.Selected;
+            if (selected == null) return;
+            action(selected);
+            selected.refreshTimer = 0f;
+        }
+
+        private bool IsFly => bodyKind == StatusDisplayBodyKind.Fly;
+        private string BodyTitle => IsFly ? "Fly Connectome" : "Person Connectome";
+        private Transform? CurrentAnchor => IsFly ? flyAdapter?.StatusAnchor ?? anchor : adapter?.StatusAnchor ?? anchor;
+        private bool CurrentHasSample => IsFly ? flyAdapter != null && flyAdapter.HasSample && flyAdapter.IsUsable : adapter != null && adapter.HasSample && adapter.IsUsable;
+        private bool CurrentIsTerminal => IsFly ? flyAdapter != null && flyAdapter.IsTerminal : adapter != null && adapter.IsTerminal;
+        private float CurrentThreat => IsFly || adapter == null ? 0f : adapter.LiveThreat;
+
+        private string FlyBodySummary()
+        {
+            if (flyAdapter == null || !flyAdapter.HasSample) return "FLY BODY\nstate=waiting for physics sample";
+            var frame = flyAdapter.LastFrame;
+            return "FLY BODY\n" +
+                "alive=" + (frame.Alive ? "1.00" : "0.00") + "  health=" + Format(frame.Health) + "  oxygen=" + Format(frame.Oxygen) + "  conscious=" + Format(frame.Consciousness) + "\n" +
+                "velocity=" + Format(frame.Velocity) + "  velocity-x=" + FormatSigned(frame.VelocityX) + "  velocity-y=" + FormatSigned(frame.VelocityY) + "  angular-velocity=" + FormatSigned(frame.AngularVelocity);
+        }
+
+        private string FlySenseSummary()
+        {
+            if (flyAdapter == null || !flyAdapter.HasSample) return "FLY SENSES\nstate=waiting for physics sample";
+            var frame = flyAdapter.LastFrame;
+            return "FLY SENSES\n" +
+                "fall=" + Format(frame.Fall) + "  tilt=" + FormatSigned(frame.SignedTilt) + "  speed=" + Format(frame.Velocity) + "\n" +
+                "vision=" + (frame.VisionLimited ? "limited" : Format(frame.Vision)) + "  light=" + (frame.LightValid ? Format(frame.Light) : "unavailable") + "  touch=" + Format(frame.Touch) + "  sound=" + Format(frame.Sound);
+        }
+
+        private string FlyMotorSummary()
+        {
+            if (brain == null) return "FLY MOTOR OUTPUT\nrequest=unavailable";
+            var command = brain.LastCommand;
+            return "FLY MOTOR OUTPUT\n" +
+                "flight-power=" + FormatSigned(command.FlyFlightPower) + "  wing=" + FormatSigned(command.FlyWingMotor) + "  legs=" + FormatSigned(command.FlyLegMotor) + "  asymmetry=" + FormatSigned(command.FlyLegMotorAsym) + "\n" +
+                "forward=" + FormatSigned(command.FlyForward) + "  backward=" + FormatSigned(command.FlyBackward) + "  yaw=" + FormatSigned(command.FlyYaw) + "  escape=" + Format(command.FlyEscape) + "\n" +
+                "groom-antenna=" + Format(command.FlyGroomAntenna) + "  groom-head=" + Format(command.FlyGroomHead) + "  groom-leg=" + Format(command.FlyGroomLeg);
+        }
+
+        private string FlyHeaderSignal()
+        {
+            if (flyAdapter == null || !flyAdapter.HasSample) return "WAITING FOR NATIVE SAMPLE";
+            var frame = flyAdapter.LastFrame;
+            return "FLIGHT | VELOCITY " + FormatSigned(frame.VelocityX) + ", " + FormatSigned(frame.VelocityY);
         }
 
         private static string BodyThreatStatus(bool hasSample, bool terminal, float threat)
@@ -545,7 +635,7 @@ namespace Mod.UI
         private void LayoutStimulationHeader(float width, ref float y)
         {
             PlaceText(stimulationHeading, 0f, ref y, width, stimulationHeading.text);
-            PlaceText(stimulationPerson, 0f, ref y, width, "Editing person #" + id + " | settings are session-local and independent");
+            PlaceText(stimulationPerson, 0f, ref y, width, "Editing " + (IsFly ? "fly" : "person") + " #" + id + " | settings are session-local and independent");
             var statusText = StimulationStatusText();
             PlaceText(stimulationStatus, 0f, ref y, width, statusText);
             PlaceText(stimulationExplanation, 0f, ref y, width, stimulationExplanation.text);
@@ -561,6 +651,17 @@ namespace Mod.UI
             SetRect((RectTransform)zeroManual.transform, 0f, y, width * .48f, 26f);
             SetRect((RectTransform)returnToLive.transform, width * .52f, y, width * .48f, 26f);
             y += 34f;
+            if (IsFly)
+            {
+                PlaceText(stimulationResponse, 0f, ref y, width, FormatStimulationResponse());
+                return;
+            }
+
+            LayoutPersonStimulationControls(width, ref y);
+        }
+
+        private void LayoutPersonStimulationControls(float width, ref float y)
+        {
             PlaceText(directControlHeading, 0f, ref y, width, directControlHeading.text);
             PlaceText(directControlExplanation, 0f, ref y, width, directControlExplanation.text);
             var directControlOn = isDirectFlyControlEnabled?.Invoke() ?? false;
@@ -590,6 +691,26 @@ namespace Mod.UI
             SetButtonColor(trainingStart, teachAvailable ? ActiveControl : Track);
             y += 34f;
             PlaceText(stimulationResponse, 0f, ref y, width, FormatStimulationResponse());
+        }
+
+        private void SetPersonOnlyStimulationVisible(bool visible)
+        {
+            directControlHeading.gameObject.SetActive(visible);
+            directControlExplanation.gameObject.SetActive(visible);
+            directControlToggle.gameObject.SetActive(visible);
+            trainingHeading.gameObject.SetActive(visible);
+            trainingStatusLabel.gameObject.SetActive(visible);
+            trainingExplanation.gameObject.SetActive(visible);
+            trainingStart.gameObject.SetActive(visible);
+            trainingEnd.gameObject.SetActive(visible);
+            trainingPause.gameObject.SetActive(visible);
+            trainingGood.gameObject.SetActive(visible);
+            trainingBad.gameObject.SetActive(visible);
+            trainingUndo.gameObject.SetActive(visible);
+            trainingBest.gameObject.SetActive(visible);
+            trainingReset.gameObject.SetActive(visible);
+            trainingSave.gameObject.SetActive(visible);
+            trainingLoad.gameObject.SetActive(visible);
         }
 
         private void SetTrainingButtonsEnabled(bool enabled)
@@ -690,7 +811,7 @@ namespace Mod.UI
 
         private void RefreshUi()
         {
-            var hasSample = adapter != null && adapter.HasSample && adapter.IsUsable && lastSampleTime >= 0f;
+            var hasSample = CurrentHasSample && lastSampleTime >= 0f;
             var layout = CurrentLayout();
             canvas.scaleFactor = layout.Scale;
             var width = layout.Width;
@@ -716,7 +837,7 @@ namespace Mod.UI
             ApplyPanelPosition(layout);
             panel.sizeDelta = new Vector2(width, height);
             SetRect(title.rectTransform, 12f, 10f, width - 110f, 28f);
-            title.text = "Person Connectome | #" + id + (manualInput.OverrideEnabled ? " | MANUAL INPUT" : "");
+            title.text = BodyTitle + " | #" + id + (manualInput.OverrideEnabled ? " | MANUAL INPUT" : "");
             SetRect(titleDragArea, 0f, 0f, width - 100f, 48f);
             SetRect((RectTransform)toggle.transform, width - 92f, 9f, 80f, 28f);
             toggleLabel.text = shared.Collapsed ? "Expand" : "Collapse";
@@ -729,31 +850,33 @@ namespace Mod.UI
                 SetRect((RectTransform)smaller.transform, width - 78f, 0f, 28f, 28f);
                 SetRect((RectTransform)larger.transform, width - 44f, 0f, 28f, 28f);
                 SetRect(location.rectTransform, 124f, 0f, width - 210f, 32f);
-                var anchor = adapter?.StatusAnchor;
-                location.text = displays.Count + " controlled" + (anchor == null ? "" : " | at " + anchor.position.x.ToString("0.0") + ", " + anchor.position.y.ToString("0.0"));
+                var currentAnchor = CurrentAnchor;
+                location.text = displays.Count + " controlled" + (currentAnchor == null ? "" : " | at " + currentAnchor.position.x.ToString("0.0") + ", " + currentAnchor.position.y.ToString("0.0"));
             }
         }
 
         private float LayoutHeader(bool hasSample, float width, float y)
         {
-            var neuralEscapeVisible = hasSample && !adapter.IsTerminal && neuralEscapeFlash > 0f;
-            var bodyThreatVisible = hasSample && adapter.LiveThreat > .05f;
-            var terminal = hasSample && adapter.IsTerminal;
+            var neuralEscapeVisible = hasSample && !CurrentIsTerminal && neuralEscapeFlash > 0f;
+            var bodyThreatVisible = hasSample && CurrentThreat > .05f;
+            var terminal = hasSample && CurrentIsTerminal;
             state.color = bodyThreatVisible || terminal ? new Color(1f, .63f, .5f) : Accent;
             escapeState.color = neuralEscapeVisible ? new Color(1f, .35f, .78f) : Accent;
             var statusWidth = (width - 36f) * .5f;
             var bodyY = y;
             var escapeY = y;
-            PlaceText(state, 12f, ref bodyY, statusWidth, "BODY THREAT: " + BodyThreatStatus(hasSample, terminal, bodyThreatVisible ? adapter.LiveThreat : 0f));
+            var bodyStatus = IsFly ? (!hasSample ? "waiting" : terminal ? "lost" : "active") : BodyThreatStatus(hasSample, terminal, bodyThreatVisible ? CurrentThreat : 0f);
+            PlaceText(state, 12f, ref bodyY, statusWidth, (IsFly ? "FLY BODY: " : "BODY THREAT: ") + bodyStatus);
             PlaceText(escapeState, 24f + statusWidth, ref escapeY, statusWidth, "NEURAL ESCAPE: " + NeuralEscapeStatus(hasSample, terminal, neuralEscapeVisible));
             y = Mathf.Max(bodyY, escapeY);
-            var nativeSignal = !hasSample ? "WAITING FOR NATIVE SAMPLE" : adapter.LiveState + " | " + adapter.LiveSignal + " " + adapter.LiveSignalValue.ToString("0.00");
+            var nativeSignal = !hasSample ? "WAITING FOR NATIVE SAMPLE" : IsFly ? FlyHeaderSignal() : adapter.LiveState + " | " + adapter.LiveSignal + " " + adapter.LiveSignalValue.ToString("0.00");
             var manualIndicator = manualInput.OverrideEnabled ? " | MANUAL INPUT ACTIVE" : "";
             var age = lastSampleTime < 0f ? "not sampled" : (Time.unscaledTime - lastSampleTime).ToString("0.00") + " s ago";
             PlaceText(timing, 12f, ref y, width - 24f, nativeSignal + manualIndicator + "\nInput: " + age + " | loop " + stepMilliseconds.ToString("0.0") + " ms (sensor " + sensorMilliseconds.ToString("0.0") + " / brain " + brainMilliseconds.ToString("0.0") + " / actuator " + actuatorMilliseconds.ToString("0.0") + ") | UI " + uiMilliseconds.ToString("0.0") + " ms\nSkipped game time: " + droppedSeconds.ToString("0.000") + " s | scroll below for more");
             for (var i = 0; i < tabs.Length; i++)
             {
                 SetRect((RectTransform)tabs[i].transform, 12f + i * (width - 24f) / Pages.Length, y, (width - 24f) / Pages.Length - 4f, 30f);
+                tabs[i].interactable = true;
                 tabLabels[i].color = shared.Page == i ? Accent : Foreground;
             }
             return y + 38f;
@@ -766,6 +889,7 @@ namespace Mod.UI
             SetVisible(motorElements, hasSample && brain != null && shared.Page == 0);
             SetVisible(brainElements, hasSample && brain != null && shared.Page == 2);
             SetVisible(stimulationElements, showStimulation);
+            if (showStimulation) SetPersonOnlyStimulationVisible(!IsFly);
             SetVisible(telemetryElements, !showStimulation);
             body.gameObject.SetActive(!showStimulation);
             BuildTelemetrySections(hasSample, out var telemetryIntro, out var telemetrySections);
@@ -789,8 +913,25 @@ namespace Mod.UI
             sections = new List<string>();
             if (!hasSample)
             {
-                intro = "No native sample available.\n" + (brain == null ? "The connectome is unavailable; active control is disabled. Check the game mod log." : "Waiting for a usable person and its first physics sample.");
+                intro = "No native sample available.\n" + (brain == null ? "The connectome is unavailable; active control is disabled. Check the game mod log." : "Waiting for a usable " + (IsFly ? "fly" : "person") + " and its first physics sample.");
                 return;
+            }
+            if (IsFly)
+            {
+                if (shared.Page == 0)
+                {
+                    sections.Add(FlyBodySummary());
+                    sections.Add(FlySenseSummary());
+                    sections.Add(FlyMotorSummary());
+                    return;
+                }
+                if (shared.Page == 1)
+                {
+                    sections.Add("NORMALIZED FLY READINGS\n" + FlyBodySummary().Substring("FLY BODY\n".Length));
+                    sections.Add(FlySenseSummary());
+                    sections.Add("SENSOR LIMITS\nThe articulated fly currently exposes rigidbody motion plus bounded baseline life-state signals. Vision, lighting, touch and sound remain unavailable until native fly sensors are added.");
+                    return;
+                }
             }
             if (shared.Page == 0)
             {
@@ -1056,14 +1197,14 @@ namespace Mod.UI
             var imageWidth = view.width;
             var imageHeight = imageWidth * MapHeight / MapWidth;
             mapPan = ClampMapPan(mapPan, view.width, view.height, imageWidth * mapZoom, imageHeight * mapZoom);
-            RefreshUi();
+            shared.Selected?.RefreshUi();
         }
 
         private void ResetMapView()
         {
             mapZoom = 1f;
             mapPan = Vector2.zero;
-            RefreshUi();
+            shared.Selected?.RefreshUi();
         }
 
         private static Vector2 ClampMapPan(Vector2 pan, float viewportWidth, float viewportHeight, float imageWidth, float imageHeight)
@@ -1092,7 +1233,7 @@ namespace Mod.UI
             var after = CurrentLayout();
             // Keep the left edge stable while dragging the lower-right corner.
             shared.PanelX += (after.Width * after.Scale - before.Width * before.Scale) * .5f;
-            RefreshUi();
+            shared.Selected?.RefreshUi();
         }
 
         private static RectTransform CreateDragArea(Transform parent, string name, Action<BaseEventData> drag)
@@ -1403,15 +1544,15 @@ namespace Mod.UI
             foreach (var element in elements) if (element.activeSelf != visible) element.SetActive(visible);
         }
 
-        private void ToggleCollapse() { shared.Collapsed = !shared.Collapsed; refreshTimer = 0f; }
-        private void ResizeText(float change) { shared.TextScale = Mathf.Clamp(shared.TextScale + change, .8f, 1.6f); refreshTimer = 0f; }
+        private void ToggleCollapse() { shared.Collapsed = !shared.Collapsed; RefreshSelected(); }
+        private void ResizeText(float change) { shared.TextScale = Mathf.Clamp(shared.TextScale + change, .8f, 1.6f); RefreshSelected(); }
         private void ChangePage(int index)
         {
             shared.Page = index;
             if (shared.Page != 2) ReleaseMap();
             scroll.StopMovement();
             content.anchoredPosition = Vector2.zero;
-            refreshTimer = 0f;
+            RefreshSelected();
         }
 
         private static void Select(int direction)
@@ -1419,7 +1560,7 @@ namespace Mod.UI
             if (displays.Count == 0) return;
             var currentIndex = shared.Selected == null ? 0 : displays.IndexOf(shared.Selected);
             var nextIndex = (currentIndex + direction + displays.Count) % displays.Count;
-            shared.Selected?.ReleaseUi();
+            shared.Selected?.ReleaseMap();
             shared.Selected = displays[nextIndex];
             shared.Selected.refreshTimer = 0f;
         }
@@ -1429,7 +1570,8 @@ namespace Mod.UI
         private void CreateWorldLabel()
         {
             if (worldLabelObject != null) return;
-            worldLabelObject = new GameObject("Person Connectome Hover Label #" + id, typeof(RectTransform));
+            worldLabelObject = new GameObject(BodyTitle + " Hover Label #" + id, typeof(RectTransform));
+            if (hostRoot != null) worldLabelObject.transform.SetParent(hostRoot, false);
             var labelCanvas = worldLabelObject.AddComponent<Canvas>();
             labelCanvas.renderMode = RenderMode.WorldSpace;
             labelCanvas.sortingOrder = short.MaxValue;
@@ -1448,7 +1590,7 @@ namespace Mod.UI
         private void UpdateWorldLabel()
         {
             if (worldLabelObject == null) return;
-            var currentAnchor = adapter?.StatusAnchor;
+            var currentAnchor = CurrentAnchor;
             if (currentAnchor == null)
             {
                 if (worldLabelObject.activeSelf) worldLabelObject.SetActive(false);
@@ -1457,7 +1599,7 @@ namespace Mod.UI
             }
 
             if (!worldLabelObject.activeSelf) worldLabelObject.SetActive(true);
-            var position = currentAnchor.position + new Vector3(0f, 1.35f, 0f);
+            var position = currentAnchor.position + new Vector3(0f, IsFly ? .65f : 1.35f, 0f);
             if (!hasWorldLabelPosition || (lastWorldLabelPosition - position).sqrMagnitude > .000001f)
             {
                 worldLabelObject.transform.position = position;

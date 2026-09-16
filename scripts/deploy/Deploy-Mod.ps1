@@ -179,11 +179,6 @@ foreach ($script in $manifest.Scripts) {
 
     $files += [pscustomobject]@{ SourcePath = $scriptPath; RelativePath = $script }
 }
-$manifestScriptPaths = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-foreach ($script in $manifest.Scripts) {
-    [void]$manifestScriptPaths.Add(([string]$script).Replace('/', '\'))
-}
-
 # The game-side loader consumes only the PNG through ModAPI.LoadTexture. The
 # raw FLYB/GZip payload remains a repository input for Build-ConnectomeCarrier.
 $carrierPath = Join-Path $assetRoot 'connectome\malecns-v1.0.png'
@@ -200,6 +195,11 @@ if (-not [String]::IsNullOrWhiteSpace($manifest.ThumbnailPath)) {
     }
 
 $files += [pscustomobject]@{ SourcePath = $thumbnailPath; RelativePath = $manifest.ThumbnailPath }
+}
+
+$managedRelativePaths = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+foreach ($file in $files) {
+    [void]$managedRelativePaths.Add(([string]$file.RelativePath).Replace('/', '\'))
 }
 
 try {
@@ -222,18 +222,22 @@ if ($PSCmdlet.ShouldProcess($targetDirectory, 'deploy Person Connectome mod file
         }
     }
 
-    # The manifest is the source of truth. Remove only C# source files that are
-    # no longer listed there; other target-owned assets and files are preserved.
-    $prunedSourceCount = 0
-    foreach ($candidate in @(Get-ChildItem -LiteralPath $targetDirectory -File -Filter '*.cs' -Recurse)) {
+    # The assembled file set is the source of truth for managed mod outputs.
+    # Remove obsolete source/metadata/image files without naming legacy files;
+    # unrelated files with other extensions remain untouched.
+    $prunableExtensions = @('.cs', '.png', '.json', '.txt')
+    $prunedFileCount = 0
+    foreach ($candidate in @(Get-ChildItem -LiteralPath $targetDirectory -File -Recurse)) {
         $relativePath = $candidate.FullName.Substring($targetDirectory.Length + 1).Replace('/', '\')
-        if (-not $manifestScriptPaths.Contains($relativePath) -and $PSCmdlet.ShouldProcess($candidate.FullName, 'remove unlisted mod source')) {
+        if ($prunableExtensions -contains $candidate.Extension.ToLowerInvariant() -and
+            -not $managedRelativePaths.Contains($relativePath) -and
+            $PSCmdlet.ShouldProcess($candidate.FullName, 'remove obsolete managed mod file')) {
             Remove-Item -LiteralPath $candidate.FullName -Force
-            $prunedSourceCount++
+            $prunedFileCount++
         }
     }
-    if ($prunedSourceCount -gt 0) {
-        Write-Host "Pruned $prunedSourceCount unlisted C# source file(s) from the deployed mod directory."
+    if ($prunedFileCount -gt 0) {
+        Write-Host "Pruned $prunedFileCount obsolete managed file(s) from the deployed mod directory."
     }
 
     $verificationFailures = @()

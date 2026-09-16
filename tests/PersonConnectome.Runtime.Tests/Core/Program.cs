@@ -95,6 +95,7 @@ var tests = new (string Name, Action Run)[]
     ("motor reversals are rate limited", MotorReversalsAreRateLimited),
     ("R7 R8 variants receive light drive", RetinaVariantsReceiveLightDrive),
     ("bundled payload identity", BundledPayloadIdentity),
+    ("bundled ambient light produces real graph spikes", BundledAmbientLightProducesSpikes),
     ("food gameplay cues reach only supported sensory populations", FoodSensoryRoutes),
     ("bundled sensory and locomotor annotations resolve", BundledSensoryMappings),
     ("modalities reach distinct input populations with signed lateralization", SensoryModalities),
@@ -949,6 +950,14 @@ static void RetinaVariantsReceiveLightDrive()
     brain.Step(Healthy(light: .25f));
     Equal(.25f, brain.TestPotentialValue(0));
     Equal(.25f, brain.TestPotentialValue(1));
+}
+
+static void BundledAmbientLightProducesSpikes()
+{
+    var brain = LifBrain.TryCreate(out var status); True(brain is not null, status);
+    brain.Step(Healthy(light: 1f));
+    True(brain.FiredCount > 0, "valid ambient light must produce activity in the bundled graph");
+    True(brain.DisplayInputSummary.Contains("light=1.00"));
 }
 
 static void BundledSensoryMappings()

@@ -33,11 +33,13 @@
     <Compile Include="../../src/Adapters/LiquidAndStatusReader.cs" Link="src/Adapters/LiquidAndStatusReader.cs" />
     <Compile Include="../../src/Adapters/PeoplePlaygroundFlyAdapter.cs" Link="src/Adapters/PeoplePlaygroundFlyAdapter.cs" />
     <Compile Include="../../src/Mod/PersonConnectomeController.cs" Link="src/Mod/PersonConnectomeController.cs" />
+    <Compile Include="../../src/Mod/FlyConnectomeController.cs" Link="src/Mod/FlyConnectomeController.cs" />
     <Compile Include="../../src/Core/IBodyActuator.cs" Link="src/Core/IBodyActuator.cs" />
     <Compile Include="../../src/Core/IBodySensor.cs" Link="src/Core/IBodySensor.cs" />
     <Compile Include="../../src/Core/FlyMotorCommand.cs" Link="src/Core/FlyMotorCommand.cs" />
     <Compile Include="../../src/Core/ConnectomeLearningMode.cs" Link="src/Core/ConnectomeLearningMode.cs" />
     <Compile Include="../../src/Core/SensoryFrame.cs" Link="src/Core/SensoryFrame.cs" />
     <Compile Include="../../src/UI/ManualInputState.cs" Link="src/UI/ManualInputState.cs" />
+    <Compile Include="../../src/UI/ConnectomeStatusHost.cs" Link="src/UI/ConnectomeStatusHost.cs" />
   </ItemGroup>
 </Project>

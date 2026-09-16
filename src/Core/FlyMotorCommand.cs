@@ -14,4 +14,11 @@ namespace Mod.Core
         public float FlyGroomAntenna, FlyGroomHead, FlyGroomLeg, FlyGroomAbdomen;
         public float FlyFeed, FlyCourtship, FlySong, FlySongPulse, FlyLegMotor, FlyLegMotorAsym;
     }
+
+    /// <summary>Optional Unity-side body rig that can receive fly-native commands.</summary>
+    internal interface IFlyBodyRig
+    {
+        bool IsUsable { get; }
+        void Apply(FlyMotorCommand command, float elapsedSeconds);
+    }
 }

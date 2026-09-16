@@ -78,6 +78,7 @@ public sealed class AdapterScenarioTests
             yield return Case("suspension clears transient events", "SuspensionClearsTransientEvents");
             yield return Case("initially disabled controllers reject events", "InitiallyDisabledControllersRejectEvents");
             yield return Case("disabled controllers do not claim telemetry", "DisabledControllersDoNotClaimTelemetry");
+            yield return Case("fly controller joins the shared telemetry display lifecycle", "FlyControllerUsesSharedTelemetry");
             yield return Case("regeneration ownership and cleanup", "Chemistry");
             yield return Case("front-back hierarchy routes separate channels", "SideRouting");
             yield return Case("missing grip and joint do not interrupt other limbs", "OptionalControls");
@@ -97,6 +98,8 @@ public sealed class AdapterScenarioTests
             yield return Case("hazard walking keeps the native pose gate", "HazardWalkingKeepsNativeGate");
             yield return Case("chemistry interventions scale with elapsed time", "ChemistryScalesWithElapsedTime");
             yield return Case("future fly adapter reports unsupported capabilities safely", "FlyAdapterIsDisabled");
+            yield return Case("fly adapter projects connectome flight channels onto a rigidbody", "FlyAdapterDrivesRigidbody");
+            yield return Case("fly adapter supplies ambient light and orientation to the connectome", "FlyAdapterReadsNeuralSensors");
             yield return Case("vision radius updates the live adapter without recreation", "VisionRadiusUpdates");
             yield return Case("standing controller is deterministic and rate bounded", "StandingControllerDeterministic");
             yield return Case("standing controller gives individual joints distinct targets", "StandingControllerDifferentiatesJoints");

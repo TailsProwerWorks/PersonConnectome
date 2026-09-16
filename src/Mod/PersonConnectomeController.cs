@@ -71,7 +71,7 @@ namespace Mod
             adapter = new PeoplePlaygroundPersonAdapter(gameObject, VisionRadius, RegisterCollision, RegisterProjectile);
             sensor = adapter;
             actuator = adapter;
-            statusDisplay = new PersonConnectomeStatusDisplay(adapter.StatusAnchor, manualInput,
+            statusDisplay = ConnectomeStatusHost.RegisterPerson(adapter.StatusAnchor, manualInput,
                 new StatusDisplayBindings
                 {
                     IsDirectFlyControlEnabled = () => directFlyControl,

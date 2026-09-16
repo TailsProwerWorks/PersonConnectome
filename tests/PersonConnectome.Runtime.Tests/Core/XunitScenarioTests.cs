@@ -48,6 +48,7 @@ public sealed class RuntimeScenarioTests
             yield return Case("motor reversals are rate limited", "MotorReversalsAreRateLimited");
             yield return Case("R7 R8 variants receive light drive", "RetinaVariantsReceiveLightDrive");
             yield return Case("bundled payload identity", "BundledPayloadIdentity");
+            yield return Case("bundled ambient light produces real graph spikes", "BundledAmbientLightProducesSpikes");
             yield return Case("food gameplay cues reach only supported sensory populations", "FoodSensoryRoutes");
             yield return Case("bundled sensory and locomotor annotations resolve", "BundledSensoryMappings");
             yield return Case("modalities reach distinct input populations with signed lateralization", "SensoryModalities");

@@ -139,7 +139,7 @@ namespace UnityEngine
     }
     public enum RigidbodyType2D { Dynamic, Kinematic, Static }
     public struct Bounds { public Vector3 center, extents; }
-    public class Rigidbody2D : Component { public Vector2 velocity; public float angularVelocity; public RigidbodyType2D bodyType = RigidbodyType2D.Dynamic; }
+    public class Rigidbody2D : Component { public Vector2 velocity; public float angularVelocity, rotation; public RigidbodyType2D bodyType = RigidbodyType2D.Dynamic; }
     public class HingeJoint2D : Component
     {
         public Rigidbody2D connectedBody;
@@ -314,6 +314,12 @@ public class GripBehaviour
 }
 namespace Mod
 {
+    internal enum StatusDisplayBodyKind
+    {
+        Person,
+        Fly
+    }
+
     internal sealed class StatusDisplayBindings
     {
         public Func<bool> IsDirectFlyControlEnabled;
@@ -327,13 +333,15 @@ namespace Mod
     {
         public int StepCount;
         public float LastElapsed;
+        public SensoryFrame LastFrame;
+        public ManualInputState LastManualInput;
         public string Status => "test";
         public string LearningStatusText => "PLASTICITY: test";
         public int LearnedSynapseCount => 0;
         public static LifBrain TryCreate(out string status) { status = "test"; return new(); }
         public FlyMotorCommand Step(SensoryFrame frame) => default;
         public FlyMotorCommand Step(SensoryFrame frame, float elapsed) { StepCount++; LastElapsed = elapsed; return default; }
-        public FlyMotorCommand Step(SensoryFrame frame, float elapsed, ManualInputState manualInput) { StepCount++; LastElapsed = elapsed; return default; }
+        public FlyMotorCommand Step(SensoryFrame frame, float elapsed, ManualInputState manualInput) { StepCount++; LastElapsed = elapsed; LastFrame = frame; LastManualInput = manualInput; return default; }
         public void SetLearningMode(Mod.Core.ConnectomeLearningMode mode) { }
         public void AdvanceLearningTime(float elapsedSeconds) { }
         public int ApplyReinforcement(float reward, float elapsedSeconds = .05f) => 0;
@@ -344,7 +352,7 @@ namespace Mod
         public bool TryLoadLearnedMemory(string serialized) => false;
         public void Stop() { }
     }
-    internal class PersonConnectomeStatusDisplay
+    internal class PersonConnectomeStatusDisplay : IDisposable
     {
         private static int activeCount;
         private static int renderedUpdates;
@@ -352,10 +360,11 @@ namespace Mod
         public static int ActiveCount => activeCount;
         public static int RenderedUpdates => renderedUpdates;
         public static void ResetForTest() { activeCount = 0; renderedUpdates = 0; }
-        public PersonConnectomeStatusDisplay(UnityEngine.Transform anchor, ManualInputState manualInput, StatusDisplayBindings bindings = null)
+        public PersonConnectomeStatusDisplay(UnityEngine.Transform anchor, ManualInputState manualInput, StatusDisplayBindings bindings = null, UnityEngine.Transform hostRoot = null, int configuredId = 0, StatusDisplayBodyKind bodyKind = StatusDisplayBodyKind.Person)
         {
         }
         public void Update(float elapsed, LifBrain brain, PeoplePlaygroundPersonAdapter adapter) { if (active) renderedUpdates++; }
+        public void Update(float elapsed, LifBrain brain, PeoplePlaygroundFlyAdapter adapter) { if (active) renderedUpdates++; }
         public void SetActive(bool value)
         {
             if (active == value) return;

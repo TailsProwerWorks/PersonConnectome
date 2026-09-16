@@ -75,6 +75,7 @@ internal static class Program
             ("suspension clears transient events", SuspensionClearsTransientEvents),
             ("initially disabled controllers reject events", InitiallyDisabledControllersRejectEvents),
             ("disabled controllers do not claim telemetry", DisabledControllersDoNotClaimTelemetry),
+            ("fly controller joins the shared telemetry display lifecycle", FlyControllerUsesSharedTelemetry),
             ("regeneration ownership and cleanup", Chemistry),
             ("front-back hierarchy routes separate channels", SideRouting),
             ("missing grip and joint do not interrupt other limbs", OptionalControls),
@@ -94,6 +95,8 @@ internal static class Program
             ("hazard walking keeps the native pose gate", HazardWalkingKeepsNativeGate),
             ("chemistry interventions scale with elapsed time", ChemistryScalesWithElapsedTime),
             ("future fly adapter reports unsupported capabilities safely", FlyAdapterIsDisabled),
+            ("fly adapter projects connectome flight channels onto a rigidbody", FlyAdapterDrivesRigidbody),
+            ("fly adapter supplies ambient light and orientation to the connectome", FlyAdapterReadsNeuralSensors),
             ("vision radius updates the live adapter without recreation", VisionRadiusUpdates),
             ("standing controller is deterministic and rate bounded", StandingControllerDeterministic),
             ("standing controller gives individual joints distinct targets", StandingControllerDifferentiatesJoints),
@@ -127,6 +130,89 @@ internal static class Program
         True(!adapter.Read().HealthValid);
         adapter.Apply(default, true, 30f, 2f, .05f);
         adapter.RefreshWalkingRequest(); adapter.Suspend(); adapter.Stop();
+    }
+
+    private static void FlyAdapterDrivesRigidbody()
+    {
+        var root = new GameObject("Fly body");
+        var body = root.AddComponent<Rigidbody2D>();
+        using var adapter = new PeoplePlaygroundFlyAdapter(root);
+        True(adapter.IsUsable);
+        adapter.Apply(new FlyMotorCommand
+        {
+            FlyForward = 1f,
+            FlyFlightPower = 1f,
+            FlyWingMotor = 1f
+        }, false, 0f, 0f, .1f);
+        True(body.velocity.x > 0f && body.velocity.y > 0f);
+        var frame = adapter.Read();
+        True(frame.Alive && frame.HealthValid && frame.VelocityValid);
+        Equal(frame.VelocityX, adapter.LastFrame.VelocityX);
+    }
+
+    private static void FlyAdapterReadsNeuralSensors()
+    {
+        var previousAmbient = RenderSettings.ambientLight;
+        try
+        {
+            RenderSettings.ambientLight = new Color(.5f, .5f, .5f, 1f);
+            var root = new GameObject("Sensing fly");
+            var body = root.AddComponent<Rigidbody2D>();
+            body.rotation = 90f;
+            using var adapter = new PeoplePlaygroundFlyAdapter(root);
+
+            var frame = adapter.Read();
+
+            True(frame.LightValid);
+            Equal(.5f, frame.Light);
+            Equal(.5f, frame.AmbientLight);
+            True(frame.TiltValid);
+            Equal(.5f, frame.SignedTilt);
+        }
+        finally
+        {
+            RenderSettings.ambientLight = previousAmbient;
+        }
+    }
+
+    private static void FlyControllerUsesSharedTelemetry()
+    {
+        PersonConnectomeStatusDisplay.ResetForTest();
+        var previousAmbient = RenderSettings.ambientLight;
+        var previousFixedDeltaTime = Time.fixedDeltaTime;
+        try
+        {
+            RenderSettings.ambientLight = new Color(1f, 1f, 1f, 1f);
+            Time.fixedDeltaTime = .05f;
+            var root = new GameObject("Shared telemetry fly");
+            root.AddComponent<Rigidbody2D>();
+            var controller = root.AddComponent<FlyConnectomeController>();
+            var flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+            var type = typeof(FlyConnectomeController);
+            type.GetMethod("Awake", flags).Invoke(controller, null);
+            Equal(0, PersonConnectomeStatusDisplay.ActiveCount);
+            type.GetMethod("OnEnable", flags).Invoke(controller, null);
+            Equal(1, PersonConnectomeStatusDisplay.ActiveCount);
+            var manualInput = (ManualInputState)type.GetField("manualInput", flags).GetValue(controller);
+            manualInput.SetOverrideEnabled(true);
+            type.GetMethod("FixedUpdate", flags).Invoke(controller, null);
+            var brain = (LifBrain)type.GetField("brain", flags).GetValue(controller);
+            True(System.Object.ReferenceEquals(manualInput, brain.LastManualInput));
+            True(brain.LastFrame.LightValid && brain.LastFrame.Light > 0f);
+            type.GetMethod("LateUpdate", flags).Invoke(controller, null);
+            Equal(1, PersonConnectomeStatusDisplay.RenderedUpdates);
+            type.GetMethod("OnDisable", flags).Invoke(controller, null);
+            Equal(0, PersonConnectomeStatusDisplay.ActiveCount);
+            True(!manualInput.OverrideEnabled);
+            type.GetMethod("OnDestroy", flags).Invoke(controller, null);
+            Equal(0, PersonConnectomeStatusDisplay.ActiveCount);
+        }
+        finally
+        {
+            RenderSettings.ambientLight = previousAmbient;
+            Time.fixedDeltaTime = previousFixedDeltaTime;
+            PersonConnectomeStatusDisplay.ResetForTest();
+        }
     }
 
     private static void StandingControllerDeterministic()
