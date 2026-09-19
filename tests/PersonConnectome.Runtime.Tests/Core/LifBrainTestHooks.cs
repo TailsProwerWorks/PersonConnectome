@@ -1,4 +1,4 @@
-namespace Mod.Core
+namespace ShadowNineX.PersonConnectome.Core
 {
     internal sealed partial class LifBrain
     {

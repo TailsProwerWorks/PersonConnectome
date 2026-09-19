@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
-using Mod.Core;
+using ShadowNineX.PersonConnectome.Core;
 
-namespace Mod.Adapters
+namespace ShadowNineX.PersonConnectome.Adapters
 {
     /// <summary>
     /// People Playground implementation of the shared body adapter contract.
@@ -18,20 +18,20 @@ namespace Mod.Adapters
         private const float MinimumWalkingRequest = .55f;
         private const float ChemistryChangePerSecond = 1f;
         private const string Unknown = "unknown";
-        private static readonly string[] HeadNames = ["head", "neck", "brain", "skull"];
-        private static readonly string[] ArmNames = ["hand", "finger", "thumb", "palm", "wrist", "arm", "elbow"];
-        private static readonly string[] FootNames = ["foot", "toe", "ankle"];
-        private static readonly string[] LegNames = ["foot", "toe", "ankle", "leg", "knee", "thigh"];
-        private static readonly string[] CoreNames = ["body", "chest", "torso", "pelvis", "hip", "stomach", "waist"];
+        private static readonly string[] HeadNames = { "head", "neck", "brain", "skull" };
+        private static readonly string[] ArmNames = { "hand", "finger", "thumb", "palm", "wrist", "arm", "elbow" };
+        private static readonly string[] FootNames = { "foot", "toe", "ankle" };
+        private static readonly string[] LegNames = { "foot", "toe", "ankle", "leg", "knee", "thigh" };
+        private static readonly string[] CoreNames = { "body", "chest", "torso", "pelvis", "hip", "stomach", "waist" };
         private readonly GameObject root;
         private readonly PersonBehaviour person;
         private readonly SpawnableAsset? pumpkinAsset;
-        private readonly List<LimbBehaviour> limbs = [];
-        private readonly HashSet<LimbBehaviour> limbMembership = [];
-        private readonly List<PersonConnectomeLimbController> limbControllers = [];
-        private readonly List<LimbBehaviour> discoveredLimbs = [];
-        private readonly Dictionary<CirculationBehaviour, float> bloodBaselines = [];
-        private readonly Dictionary<LimbBehaviour, LimbHealthSample> healthSamples = [];
+        private readonly List<LimbBehaviour> limbs = new();
+        private readonly HashSet<LimbBehaviour> limbMembership = new();
+        private readonly List<PersonConnectomeLimbController> limbControllers = new();
+        private readonly List<LimbBehaviour> discoveredLimbs = new();
+        private readonly Dictionary<CirculationBehaviour, float> bloodBaselines = new();
+        private readonly Dictionary<LimbBehaviour, LimbHealthSample> healthSamples = new();
         private readonly Action<float> reportCollision;
         private readonly Action<float>? reportProjectile;
         private float appliedWalk;
@@ -42,18 +42,18 @@ namespace Mod.Adapters
         private float visionRadius;
         private readonly Collider2D[] nearbyColliders = new Collider2D[128];
         private readonly NearbyScanState nearbyScanState = new();
-        private readonly HashSet<PhysicalBehaviour> lightOwners = [];
-        private readonly HashSet<SpriteRenderer> sampledLightSprites = [];
-        private readonly List<LightSprite> nativeLightSprites = [];
-        private readonly List<SpriteRenderer> lightSpriteBuffer = [];
-        private readonly List<SpriteRenderer> groupSpriteBuffer = [];
-        private readonly List<FlashlightAttachmentBehaviour> flashlightAttachments = [];
-        private readonly Dictionary<PhysicalBehaviour, ComponentDiscovery> componentCache = [];
-        private readonly List<PhysicalBehaviour> componentCacheOwners = [];
-        private readonly Queue<PhysicalBehaviour> discoveryRefreshQueue = [];
-        private readonly HashSet<PhysicalBehaviour> queuedDiscoveryOwners = [];
-        private readonly HashSet<PhysicalBehaviour> sampledOwners = [];
-        private readonly List<Component> componentBuffer = [];
+        private readonly HashSet<PhysicalBehaviour> lightOwners = new();
+        private readonly HashSet<SpriteRenderer> sampledLightSprites = new();
+        private readonly List<LightSprite> nativeLightSprites = new();
+        private readonly List<SpriteRenderer> lightSpriteBuffer = new();
+        private readonly List<SpriteRenderer> groupSpriteBuffer = new();
+        private readonly List<FlashlightAttachmentBehaviour> flashlightAttachments = new();
+        private readonly Dictionary<PhysicalBehaviour, ComponentDiscovery> componentCache = new();
+        private readonly List<PhysicalBehaviour> componentCacheOwners = new();
+        private readonly Queue<PhysicalBehaviour> discoveryRefreshQueue = new();
+        private readonly HashSet<PhysicalBehaviour> queuedDiscoveryOwners = new();
+        private readonly HashSet<PhysicalBehaviour> sampledOwners = new();
+        private readonly List<Component> componentBuffer = new();
         private int componentCacheSweepIndex;
         private int componentDiscoveryExpiryCursor;
         private int currentDiscoveryRefreshBudget;
@@ -92,8 +92,8 @@ namespace Mod.Adapters
         private string visionTargetSummary = "none";
         private readonly float[] spectrumBuffer = new float[512];
         private AudioSource? winningAudioSource;
-        private readonly List<AudioSource> nearbyAudioSources = [];
-        private readonly HashSet<AudioSource> sampledAudioSources = [];
+        private readonly List<AudioSource> nearbyAudioSources = new();
+        private readonly HashSet<AudioSource> sampledAudioSources = new();
         private const int MaxAudioSourcesPerSample = 64;
         private readonly Dictionary<string, LiquidReading> liquidReadings = new(StringComparer.Ordinal);
         private int readableLiquidContainers;
@@ -193,7 +193,7 @@ namespace Mod.Adapters
         {
             get
             {
-                return "HUMAN ADAPTATION REQUEST:\n  walk=" + lastMotorCommand.Walk.ToString("0.00") +
+                return "HUMAN ADAPTATION REQUEST:\n  action=" + motorMapper.Activity + "\n  walk=" + lastMotorCommand.Walk.ToString("0.00") +
                     "  arms=" + lastMotorCommand.LeftArm.ToString("0.00") + "/" + lastMotorCommand.RightArm.ToString("0.00") +
                     "  legs=" + lastMotorCommand.LeftLeg.ToString("0.00") + "/" + lastMotorCommand.RightLeg.ToString("0.00") +
                     "  head=" + lastMotorCommand.Head.ToString("0.00") + "  core=" + lastMotorCommand.Core.ToString("0.00") +
@@ -834,7 +834,7 @@ namespace Mod.Adapters
             // lost native movement permission, and explicit shutdown. A future
             // valid sample must not revive retained mapper filters, locomotion
             // mode, or an escape burst from before the stop.
-            motorMapper.Reset();
+            motorMapper.Reset(suspended: true);
             lastMotorCommand = default;
             // Unconscious/frozen bodies still receive sensor samples. Only an
             // actual sensing suspension or invalid/terminal read resets history.
@@ -1128,7 +1128,7 @@ namespace Mod.Adapters
             frame.Infection = Mathf.Max(frame.Infection, limb.IsZombie ? 1f : 0f);
         }
 
-        private void ReadRegionalTouch(ref SensoryFrame frame, LimbBehaviour limb)
+        private static void ReadRegionalTouch(ref SensoryFrame frame, LimbBehaviour limb)
         {
             var physical = limb.PhysicalBehaviour;
             var contact = limb.IsOnFloor || (physical != null && (physical.IsTouchingSomething || physical.beingHeldByGripper));
@@ -1400,7 +1400,10 @@ namespace Mod.Adapters
         private void ApplyWalking(float walk)
         {
             appliedWalk = IsFinite(walk) ? Mathf.Clamp(walk, -1f, 1f) : 0f;
-            person?.DesiredWalkingDirection = appliedWalk;
+            if (person != null)
+            {
+                person.DesiredWalkingDirection = appliedWalk;
+            }
         }
 
         private static float ResolveWalkingRequest(PersonMotorCommand command, float walkingRequestGain)
@@ -1683,10 +1686,10 @@ namespace Mod.Adapters
             public float LastRefreshTime;
             public float LastObservedTime;
             public bool TopologyDirty;
-            public LightSprite[] NativeLightSprites = [];
-            public FlashlightAttachmentBehaviour[] FlashlightAttachments = [];
-            public SpriteRenderer[] GroupLightSprites = [];
-            public AudioSource[] AudioSources = [];
+            public LightSprite[] NativeLightSprites = Array.Empty<LightSprite>();
+            public FlashlightAttachmentBehaviour[] FlashlightAttachments = Array.Empty<FlashlightAttachmentBehaviour>();
+            public SpriteRenderer[] GroupLightSprites = Array.Empty<SpriteRenderer>();
+            public AudioSource[] AudioSources = Array.Empty<AudioSource>();
             public GlowtubeBehaviour? Glowtube;
             public BulbBehaviour? Bulb;
             public LEDBulbBehaviour? Led;
@@ -1975,7 +1978,7 @@ namespace Mod.Adapters
             return false;
         }
 
-        private string ClassifyVisualTarget(PhysicalBehaviour? physical, Collider2D collider)
+        private static string ClassifyVisualTarget(PhysicalBehaviour? physical, Collider2D collider)
         {
             if (physical == null)
             {

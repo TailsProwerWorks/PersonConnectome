@@ -20,7 +20,7 @@ REQUEST (WALK IDLE) now explicitly names walking mode: head requests may exist w
 
 ## Files and verification
 
-- src/Adapters/PeoplePlaygroundPersonAdapter.cs: head frame, bounded visible-target selection, sweep and telemetry.
+- src/Adapters/Person/PeoplePlaygroundPersonAdapter.cs: head frame, bounded visible-target selection, sweep and telemetry.
 - src/Core/SensoryFrame.cs + src/Core/FlyMotorCommand.cs: head observation/validity fields.
 - src/Core/LifBrain.cs: visual side weighting and walking-mode label.
 - tests/PersonConnectome.Adapter.Tests/Adapters/Program.cs and GameDoubles.cs: rotation/mirroring, invalid/missing head, target visibility, budgets and relative sweep.

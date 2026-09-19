@@ -5,10 +5,10 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
-using Mod.Adapters;
-using Mod.Core;
+using ShadowNineX.PersonConnectome.Adapters;
+using ShadowNineX.PersonConnectome.Core;
 
-namespace Mod.UI
+namespace ShadowNineX.PersonConnectome.UI
 {
     internal enum StatusDisplayBodyKind
     {
@@ -16,28 +16,33 @@ namespace Mod.UI
         Fly
     }
 
+    internal sealed class TrainingControlBindings
+    {
+        public Func<string>? Status;
+        public Action? Start;
+        public Action? End;
+        public Action? TogglePause;
+        public Action? Good;
+        public Action? Bad;
+        public Action? Undo;
+        public Action? RestoreBest;
+        public Action? Reset;
+        public Action? Save;
+        public Action? Load;
+    }
+
     internal sealed class StatusDisplayBindings
     {
         public Func<bool>? IsDirectFlyControlEnabled;
         public Action<bool>? SetDirectFlyControl;
-        public Func<string>? TrainingStatus;
-        public Action? StartTraining;
-        public Action? EndTraining;
-        public Action? ToggleTrainingPause;
-        public Action? GivePositiveTrainingFeedback;
-        public Action? GiveNegativeTrainingFeedback;
-        public Action? UndoTrainingFeedback;
-        public Action? RestoreBestTrainingVersion;
-        public Action? ResetTrainingSkill;
-        public Action? SaveTrainingProfile;
-        public Action? LoadTrainingProfile;
+        public TrainingControlBindings? Training;
     }
 
     // Use only UI assemblies included in People Playground's mod compiler.
     // A screen-space overlay never enters the world's lighting or depth pass.
     internal sealed class PersonConnectomeStatusDisplay : IDisposable
     {
-        private static readonly List<PersonConnectomeStatusDisplay> displays = [];
+        private static readonly List<PersonConnectomeStatusDisplay> displays = new();
         private static readonly SharedDisplayState shared = new();
         private static readonly TelemetryIdentityPool identities = new();
         private int id;
@@ -62,9 +67,9 @@ namespace Mod.UI
         private static ScrollRect scroll = null!;
         private static Scrollbar scrollbar = null!;
         private static TextMeshProUGUI title = null!, toggleLabel = null!, location = null!, state = null!, escapeState = null!, timing = null!, body = null!;
-        private static readonly List<TextMeshProUGUI> telemetryHeadings = [];
-        private static readonly List<TelemetryRow> telemetryRows = [];
-        private static readonly List<GameObject> telemetryElements = [];
+        private static readonly List<TextMeshProUGUI> telemetryHeadings = new();
+        private static readonly List<TelemetryRow> telemetryRows = new();
+        private static readonly List<GameObject> telemetryElements = new();
         private static readonly TextMeshProUGUI[] tabLabels = new TextMeshProUGUI[4];
         private static readonly Button[] tabs = new Button[4];
         private static Button toggle = null!, previous = null!, next = null!, smaller = null!, larger = null!;
@@ -78,30 +83,20 @@ namespace Mod.UI
         private static readonly TextMeshProUGUI[] populationLabels = new TextMeshProUGUI[8];
         private static readonly Image[] populationTracks = new Image[8], populationFills = new Image[8];
         private static readonly Image[] spikeBars = new Image[120];
-        private static readonly List<TextMeshProUGUI> legendLabels = [];
-        private static readonly List<Image> legendColors = [];
+        private static readonly List<TextMeshProUGUI> legendLabels = new();
+        private static readonly List<Image> legendColors = new();
         private static readonly float[] motorValues = new float[21];
-        private static readonly List<GameObject> motorElements = [];
-        private static readonly List<GameObject> brainElements = [];
-        private static readonly List<GameObject> stimulationElements = [];
-        private static readonly List<TextMeshProUGUI> stimulationSections = [];
+        private static readonly List<GameObject> motorElements = new();
+        private static readonly List<GameObject> brainElements = new();
+        private static readonly List<GameObject> stimulationElements = new();
+        private static readonly List<TextMeshProUGUI> stimulationSections = new();
         private static readonly StimulationRow[] stimulationRows = new StimulationRow[(int)ManualInputChannel.Count];
         private readonly ManualInputState manualInput;
         private readonly Transform? hostRoot;
         private readonly int configuredId;
         private readonly Func<bool>? isDirectFlyControlEnabled;
         private readonly Action<bool>? setDirectFlyControl;
-        private readonly Func<string>? trainingStatus;
-        private readonly Action? startTraining;
-        private readonly Action? endTraining;
-        private readonly Action? toggleTrainingPause;
-        private readonly Action? givePositiveTrainingFeedback;
-        private readonly Action? giveNegativeTrainingFeedback;
-        private readonly Action? undoTrainingFeedback;
-        private readonly Action? restoreBestTrainingVersion;
-        private readonly Action? resetTrainingSkill;
-        private readonly Action? saveTrainingProfile;
-        private readonly Action? loadTrainingProfile;
+        private readonly TrainingControlBindings? training;
         private GameObject worldLabelObject = null!;
         private TextMeshProUGUI worldLabel = null!;
         private Vector3 lastWorldLabelPosition;
@@ -120,14 +115,15 @@ namespace Mod.UI
         private const int MapWidth = 256, MapHeight = 320;
         private const byte MapFlashLifetime = 4;
         private const float NeuralEscapeFlashSeconds = .35f;
-        private static readonly string[] Pages = ["Overview", "Senses", "Brain", "Stimulation"];
+        private const string Unavailable = "unavailable";
+        private static readonly string[] Pages = { "Overview", "Senses", "Brain", "Stimulation" };
         private static readonly string[] MotorNames =
-        [
+        {
             "Forward", "Yaw", "Backward", "Halt", "Brake", "Jump", "Takeoff", "Landing",
             "Flight power", "Flight yaw", "Wing motor", "Groom antenna", "Groom head", "Groom leg",
             "Groom abdomen", "Feed", "Courtship", "Song", "Song pulse", "Leg motor", "Leg asymmetry"
-        ];
-        private static readonly string[] PopulationNames = ["type:DNp09", "type:MDN", "type:DNp01", "type:MN9", "type:LC4", "type:LPLC2", "type:R1-R6", "motor"];
+        };
+        private static readonly string[] PopulationNames = { "type:DNp09", "type:MDN", "type:DNp01", "type:MN9", "type:LC4", "type:LPLC2", "type:R1-R6", "motor" };
         private static readonly Color Background = new(.035f, .055f, .075f, 1f);
         private static readonly Color Track = new(.1f, .15f, .19f, 1f);
         private static readonly Color Foreground = new(.91f, .95f, .97f, 1f);
@@ -137,11 +133,11 @@ namespace Mod.UI
         private static readonly Color EmptyBar = new(.12f, .25f, .3f, 1f);
         private static readonly Color ActiveControl = new(.18f, .55f, .65f, 1f);
         private static readonly Color[] MapFamilyColors =
-        [
+        {
             new Color(.18f, .65f, .66f), new Color(.52f, .6f, .82f),
             new Color(.78f, .59f, .28f), new Color(.7f, .38f, .67f),
             new Color(.35f, .78f, .5f), new Color(.86f, .4f, .32f), new Color(.42f, .48f, .54f)
-        ];
+        };
 
         // These preferences intentionally remain shared while the selected
         // person's panel changes, but keeping them behind a state object avoids
@@ -173,47 +169,50 @@ namespace Mod.UI
             this.configuredId = configuredId;
             this.isDirectFlyControlEnabled = bindings?.IsDirectFlyControlEnabled;
             this.setDirectFlyControl = bindings?.SetDirectFlyControl;
-            this.trainingStatus = bindings?.TrainingStatus;
-            this.startTraining = bindings?.StartTraining;
-            this.endTraining = bindings?.EndTraining;
-            this.toggleTrainingPause = bindings?.ToggleTrainingPause;
-            this.givePositiveTrainingFeedback = bindings?.GivePositiveTrainingFeedback;
-            this.giveNegativeTrainingFeedback = bindings?.GiveNegativeTrainingFeedback;
-            this.undoTrainingFeedback = bindings?.UndoTrainingFeedback;
-            this.restoreBestTrainingVersion = bindings?.RestoreBestTrainingVersion;
-            this.resetTrainingSkill = bindings?.ResetTrainingSkill;
-            this.saveTrainingProfile = bindings?.SaveTrainingProfile;
-            this.loadTrainingProfile = bindings?.LoadTrainingProfile;
+            training = bindings?.Training;
         }
 
         public void SetActive(bool active)
         {
-            if (active && !displays.Contains(this))
-            {
-                id = configuredId > 0 ? configuredId : identities.Acquire(this);
-                displays.Add(this);
-                CreateWorldLabel();
-            }
-            if (!active)
-            {
-                displays.Remove(this);
-                ReleaseWorldLabel();
-                if (configuredId == 0) identities.Release(this);
-                id = 0;
-                Array.Clear(history, 0, history.Length);
-                historyIndex = historyCount = 0;
-                stepMilliseconds = droppedSeconds = 0f;
-                sensorMilliseconds = brainMilliseconds = actuatorMilliseconds = uiMilliseconds = 0f;
-                neuralEscapeFlash = 0f;
-                lastSampleTime = -1f;
-                capturedTick = 0;
-                refreshTimer = 0f;
-            }
+            if (active) Activate();
+            else Deactivate();
+            SelectAvailableDisplay();
+        }
+
+        private void Activate()
+        {
+            if (displays.Contains(this)) return;
+            id = configuredId > 0 ? configuredId : identities.Acquire(this);
+            displays.Add(this);
+            CreateWorldLabel();
+        }
+
+        private void Deactivate()
+        {
+            displays.Remove(this);
+            ReleaseWorldLabel();
+            if (configuredId == 0) identities.Release(this);
+            id = 0;
+            Array.Clear(history, 0, history.Length);
+            historyIndex = historyCount = 0;
+            stepMilliseconds = droppedSeconds = 0f;
+            sensorMilliseconds = brainMilliseconds = actuatorMilliseconds = uiMilliseconds = 0f;
+            neuralEscapeFlash = 0f;
+            lastSampleTime = -1f;
+            capturedTick = 0;
+            refreshTimer = 0f;
+        }
+
+        private static void SelectAvailableDisplay()
+        {
             if (shared.Selected == null || !displays.Contains(shared.Selected))
             {
                 if (canvasObject != null) ReleaseMap();
                 shared.Selected = displays.Count == 0 ? null : displays[0];
-                shared.Selected?.refreshTimer = 0f;
+                if (shared.Selected != null)
+                {
+                    shared.Selected.refreshTimer = 0f;
+                }
             }
             if (displays.Count == 0) ReleaseUi();
         }
@@ -256,7 +255,7 @@ namespace Mod.UI
             neuralEscapeFlash = Mathf.Max(0f, neuralEscapeFlash - Mathf.Max(0f, elapsedSeconds));
             UpdateWorldLabel();
             if (shared.Selected != this || Screen.width <= 0 || Screen.height <= 0) return;
-            if (canvasObject == null) BuildUi();
+            if (canvasObject == null) BuildUi(this);
             refreshTimer -= Mathf.Max(0f, elapsedSeconds);
             if (refreshTimer > 0f) return;
             refreshTimer = .1f;
@@ -265,10 +264,10 @@ namespace Mod.UI
             uiMilliseconds = (Time.realtimeSinceStartup - uiStarted) * 1000f;
         }
 
-        private void BuildUi()
+        private static void BuildUi(PersonConnectomeStatusDisplay owner)
         {
             canvasObject = new GameObject("Person Connectome Screen Telemetry", typeof(RectTransform));
-            if (hostRoot != null) canvasObject.transform.SetParent(hostRoot, false);
+            if (owner.hostRoot != null) canvasObject.transform.SetParent(owner.hostRoot, false);
             canvas = canvasObject.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
             canvas.sortingOrder = short.MaxValue;
@@ -278,7 +277,7 @@ namespace Mod.UI
             background.color = Background;
             // The panel is an ordinary UI raycast target, including its blank space.
             background.raycastTarget = true;
-            title = CreateText(panel, BodyTitle + " | #" + id, 18f, Accent);
+            title = CreateText(panel, owner.BodyTitle + " | #" + owner.id, 18f, Accent);
             titleDragArea = CreateDragArea(panel, "Move panel", MovePanel);
             toggle = CreateButton(panel, "Collapse", ToggleCollapse, out toggleLabel);
             expanded = CreateRect(panel, "Expanded controls");
@@ -379,10 +378,10 @@ namespace Mod.UI
             var resizeLabel = CreateText(resizeArea, "//", 16f, Accent);
             resizeLabel.alignment = TextAlignmentOptions.Center;
             SetRect(resizeLabel.rectTransform, 0f, 0f, 28f, 24f);
-            refreshTimer = 0f;
+            owner.refreshTimer = 0f;
         }
 
-        private void BuildStimulationUi()
+        private static void BuildStimulationUi()
         {
             stimulationHeading = AddText(stimulationElements, "MANUAL INPUT STIMULATION", Accent);
             stimulationPerson = AddText(stimulationElements, "", Foreground);
@@ -429,17 +428,17 @@ namespace Mod.UI
             stimulationElements.Add(directControlToggle.gameObject);
             trainingHeading = AddText(stimulationElements, "TEACH MODE", Accent);
             trainingStatusLabel = AddText(stimulationElements, "", Foreground);
-            trainingExplanation = AddText(stimulationElements, "One person at a time. Posture is observed without applying a standing or pose helper. Good/Bad reinforces recently eligible connectome edges; no Human action is injected. Movement must come through the ordinary brain-to-Human motor mapping.", Foreground);
-            trainingStart = CreateButton(content, "Start / retry trial", () => InvokeSelected(display => display.startTraining?.Invoke()), out _);
-            trainingEnd = CreateButton(content, "End training", () => InvokeSelected(display => display.endTraining?.Invoke()), out _);
-            trainingPause = CreateButton(content, "Pause learning", () => InvokeSelected(display => display.toggleTrainingPause?.Invoke()), out _);
-            trainingGood = CreateButton(content, "Good", () => InvokeSelected(display => display.givePositiveTrainingFeedback?.Invoke()), out _);
-            trainingBad = CreateButton(content, "Bad", () => InvokeSelected(display => display.giveNegativeTrainingFeedback?.Invoke()), out _);
-            trainingUndo = CreateButton(content, "Undo", () => InvokeSelected(display => display.undoTrainingFeedback?.Invoke()), out _);
-            trainingBest = CreateButton(content, "Restore best", () => InvokeSelected(display => display.restoreBestTrainingVersion?.Invoke()), out _);
-            trainingReset = CreateButton(content, "Reset skill", () => InvokeSelected(display => display.resetTrainingSkill?.Invoke()), out _);
-            trainingSave = CreateButton(content, "Save profile", () => InvokeSelected(display => display.saveTrainingProfile?.Invoke()), out _);
-            trainingLoad = CreateButton(content, "Load profile", () => InvokeSelected(display => display.loadTrainingProfile?.Invoke()), out _);
+            trainingExplanation = AddText(stimulationElements, "Shared feedback training for the selected body. Good/Bad reinforces recently eligible connectome edges; it never injects an action. Movement continues through the ordinary neural decoder and body adapter.", Foreground);
+            trainingStart = CreateButton(content, "Start / retry trial", () => InvokeSelected(display => display.training?.Start?.Invoke()), out _);
+            trainingEnd = CreateButton(content, "End training", () => InvokeSelected(display => display.training?.End?.Invoke()), out _);
+            trainingPause = CreateButton(content, "Pause learning", () => InvokeSelected(display => display.training?.TogglePause?.Invoke()), out _);
+            trainingGood = CreateButton(content, "Good", () => InvokeSelected(display => display.training?.Good?.Invoke()), out _);
+            trainingBad = CreateButton(content, "Bad", () => InvokeSelected(display => display.training?.Bad?.Invoke()), out _);
+            trainingUndo = CreateButton(content, "Undo", () => InvokeSelected(display => display.training?.Undo?.Invoke()), out _);
+            trainingBest = CreateButton(content, "Restore best", () => InvokeSelected(display => display.training?.RestoreBest?.Invoke()), out _);
+            trainingReset = CreateButton(content, "Reset skill", () => InvokeSelected(display => display.training?.Reset?.Invoke()), out _);
+            trainingSave = CreateButton(content, "Save profile", () => InvokeSelected(display => display.training?.Save?.Invoke()), out _);
+            trainingLoad = CreateButton(content, "Load profile", () => InvokeSelected(display => display.training?.Load?.Invoke()), out _);
             foreach (var button in new[] { trainingStart, trainingEnd, trainingPause, trainingGood, trainingBad, trainingUndo, trainingBest, trainingReset, trainingSave, trainingLoad })
             {
                 stimulationElements.Add(button.gameObject);
@@ -449,7 +448,7 @@ namespace Mod.UI
             BuildStimulationRows();
         }
 
-        private void BuildStimulationRows()
+        private static void BuildStimulationRows()
         {
             for (var i = 0; i < ManualInputCatalog.All.Length; i++)
             {
@@ -460,7 +459,7 @@ namespace Mod.UI
             }
         }
 
-        private void AddStimulationSectionIfNeeded(int index)
+        private static void AddStimulationSectionIfNeeded(int index)
         {
             var heading = index switch
             {
@@ -474,7 +473,7 @@ namespace Mod.UI
             if (heading != null) AddStimulationSection(heading);
         }
 
-        private StimulationRow CreateStimulationRow(ManualInputChannelDescriptor descriptor)
+        private static StimulationRow CreateStimulationRow(ManualInputChannelDescriptor descriptor)
         {
             var channel = descriptor.Channel;
             var row = new StimulationRow(content, descriptor);
@@ -522,7 +521,7 @@ namespace Mod.UI
             return row;
         }
 
-        private void AddDirectionalControls(StimulationRow row, ManualInputChannel channel)
+        private static void AddDirectionalControls(StimulationRow row, ManualInputChannel channel)
         {
             row.DirectionLabel = CreateText(row.Root.transform, "DIRECTION", 10f, Accent);
             row.Direction = CreateSlider(row.Root.transform, -1f, 1f, value =>
@@ -533,7 +532,7 @@ namespace Mod.UI
             row.DirectionValue = CreateText(row.Root.transform, "", 11f, Foreground);
         }
 
-        private void AddStimulationSection(string text)
+        private static void AddStimulationSection(string text)
         {
             var heading = AddText(stimulationElements, text, Accent);
             heading.fontSize = 12f;
@@ -576,8 +575,10 @@ namespace Mod.UI
             if (flyAdapter == null || !flyAdapter.HasSample) return "FLY BODY\nstate=waiting for physics sample";
             var frame = flyAdapter.LastFrame;
             return "FLY BODY\n" +
-                "alive=" + (frame.Alive ? "1.00" : "0.00") + "  health=" + Format(frame.Health) + "  oxygen=" + Format(frame.Oxygen) + "  conscious=" + Format(frame.Consciousness) + "\n" +
-                "velocity=" + Format(frame.Velocity) + "  velocity-x=" + FormatSigned(frame.VelocityX) + "  velocity-y=" + FormatSigned(frame.VelocityY) + "  angular-velocity=" + FormatSigned(frame.AngularVelocity);
+                "action=" + flyAdapter.Activity + "  alive=" + (frame.Alive ? "yes" : "no") + "  health=" + Format(frame.Health) +
+                "  damage=" + Format(frame.Damage) + "  min-limb-health=" + Format(frame.Vitality) + "\n" +
+                "velocity=" + Format(frame.Velocity) + "  velocity-x=" + FormatSigned(frame.VelocityX) + "  velocity-y=" + FormatSigned(frame.VelocityY) + "  angular-velocity=" + FormatSigned(frame.AngularVelocity) + "\n" +
+                "regions=" + flyAdapter.LimbHealthSummary;
         }
 
         private string FlySenseSummary()
@@ -586,7 +587,11 @@ namespace Mod.UI
             var frame = flyAdapter.LastFrame;
             return "FLY SENSES\n" +
                 "fall=" + Format(frame.Fall) + "  tilt=" + FormatSigned(frame.SignedTilt) + "  speed=" + Format(frame.Velocity) + "\n" +
-                "vision=" + (frame.VisionLimited ? "limited" : Format(frame.Vision)) + "  light=" + (frame.LightValid ? Format(frame.Light) : "unavailable") + "  touch=" + Format(frame.Touch) + "  sound=" + Format(frame.Sound);
+                "vision=" + Format(frame.Vision) + (frame.VisionLimited ? " (partial scan)" : "") + "  light=" + (frame.LightValid ? Format(frame.Light) : Unavailable) + "\n" +
+                "touch=" + Format(frame.Touch) + "  sound=" + Format(frame.Sound) + "  heat=" + Format(Math.Max(frame.Heat, frame.AmbientHeat)) + "\n" +
+                "food-nearby=" + (frame.FoodCuesValid ? Format(frame.FoodNearbyCue) : Unavailable) + "  food-contact=" + Format(frame.FoodContactCue) +
+                "  learned-threat=" + (frame.LearnedThreatValid ? Format(frame.LearnedThreat) : "clear") + "\n" +
+                "last-harmful-object=" + flyAdapter.LastHarmfulObject + "  memories=" + flyAdapter.LearnedThreatSummary;
         }
 
         private string FlyMotorSummary()
@@ -603,7 +608,7 @@ namespace Mod.UI
         {
             if (flyAdapter == null || !flyAdapter.HasSample) return "WAITING FOR NATIVE SAMPLE";
             var frame = flyAdapter.LastFrame;
-            return "FLIGHT | VELOCITY " + FormatSigned(frame.VelocityX) + ", " + FormatSigned(frame.VelocityY);
+            return flyAdapter.Activity.ToUpperInvariant() + " | VELOCITY " + FormatSigned(frame.VelocityX) + ", " + FormatSigned(frame.VelocityY);
         }
 
         private static string BodyThreatStatus(bool hasSample, bool terminal, float threat)
@@ -651,16 +656,15 @@ namespace Mod.UI
             SetRect((RectTransform)zeroManual.transform, 0f, y, width * .48f, 26f);
             SetRect((RectTransform)returnToLive.transform, width * .52f, y, width * .48f, 26f);
             y += 34f;
-            if (IsFly)
+            if (!IsFly)
             {
-                PlaceText(stimulationResponse, 0f, ref y, width, FormatStimulationResponse());
-                return;
+                LayoutNativeAssistControls(width, ref y);
             }
-
-            LayoutPersonStimulationControls(width, ref y);
+            LayoutTrainingControls(width, ref y);
+            PlaceText(stimulationResponse, 0f, ref y, width, FormatStimulationResponse());
         }
 
-        private void LayoutPersonStimulationControls(float width, ref float y)
+        private void LayoutNativeAssistControls(float width, ref float y)
         {
             PlaceText(directControlHeading, 0f, ref y, width, directControlHeading.text);
             PlaceText(directControlExplanation, 0f, ref y, width, directControlExplanation.text);
@@ -669,8 +673,12 @@ namespace Mod.UI
             SetRect((RectTransform)directControlToggle.transform, 0f, y, width, 26f);
             SetButtonColor(directControlToggle, directControlOn ? ActiveControl : Track);
             y += 34f;
+        }
+
+        private void LayoutTrainingControls(float width, ref float y)
+        {
             PlaceText(trainingHeading, 0f, ref y, width, trainingHeading.text);
-            PlaceText(trainingStatusLabel, 0f, ref y, width, trainingStatus?.Invoke() ?? "TEACH: unavailable");
+            PlaceText(trainingStatusLabel, 0f, ref y, width, training?.Status?.Invoke() ?? "TEACH: unavailable");
             PlaceText(trainingExplanation, 0f, ref y, width, trainingExplanation.text);
             SetRect((RectTransform)trainingStart.transform, 0f, y, width * .32f, 26f);
             SetRect((RectTransform)trainingEnd.transform, width * .34f, y, width * .32f, 26f);
@@ -686,34 +694,32 @@ namespace Mod.UI
             y += 30f;
             SetRect((RectTransform)trainingLoad.transform, 0f, y, width * .32f, 26f);
             y += 34f;
-            var teachAvailable = trainingStatus != null;
+            var teachAvailable = training?.Status != null;
             SetTrainingButtonsEnabled(teachAvailable);
             SetButtonColor(trainingStart, teachAvailable ? ActiveControl : Track);
-            y += 34f;
-            PlaceText(stimulationResponse, 0f, ref y, width, FormatStimulationResponse());
         }
 
-        private void SetPersonOnlyStimulationVisible(bool visible)
+        private static void SetBodySpecificStimulationVisible(bool isPerson, bool trainingAvailable)
         {
-            directControlHeading.gameObject.SetActive(visible);
-            directControlExplanation.gameObject.SetActive(visible);
-            directControlToggle.gameObject.SetActive(visible);
-            trainingHeading.gameObject.SetActive(visible);
-            trainingStatusLabel.gameObject.SetActive(visible);
-            trainingExplanation.gameObject.SetActive(visible);
-            trainingStart.gameObject.SetActive(visible);
-            trainingEnd.gameObject.SetActive(visible);
-            trainingPause.gameObject.SetActive(visible);
-            trainingGood.gameObject.SetActive(visible);
-            trainingBad.gameObject.SetActive(visible);
-            trainingUndo.gameObject.SetActive(visible);
-            trainingBest.gameObject.SetActive(visible);
-            trainingReset.gameObject.SetActive(visible);
-            trainingSave.gameObject.SetActive(visible);
-            trainingLoad.gameObject.SetActive(visible);
+            directControlHeading.gameObject.SetActive(isPerson);
+            directControlExplanation.gameObject.SetActive(isPerson);
+            directControlToggle.gameObject.SetActive(isPerson);
+            trainingHeading.gameObject.SetActive(trainingAvailable);
+            trainingStatusLabel.gameObject.SetActive(trainingAvailable);
+            trainingExplanation.gameObject.SetActive(trainingAvailable);
+            trainingStart.gameObject.SetActive(trainingAvailable);
+            trainingEnd.gameObject.SetActive(trainingAvailable);
+            trainingPause.gameObject.SetActive(trainingAvailable);
+            trainingGood.gameObject.SetActive(trainingAvailable);
+            trainingBad.gameObject.SetActive(trainingAvailable);
+            trainingUndo.gameObject.SetActive(trainingAvailable);
+            trainingBest.gameObject.SetActive(trainingAvailable);
+            trainingReset.gameObject.SetActive(trainingAvailable);
+            trainingSave.gameObject.SetActive(trainingAvailable);
+            trainingLoad.gameObject.SetActive(trainingAvailable);
         }
 
-        private void SetTrainingButtonsEnabled(bool enabled)
+        private static void SetTrainingButtonsEnabled(bool enabled)
         {
             trainingStart.interactable = enabled;
             trainingEnd.interactable = enabled;
@@ -865,21 +871,49 @@ namespace Mod.UI
             var statusWidth = (width - 36f) * .5f;
             var bodyY = y;
             var escapeY = y;
-            var bodyStatus = IsFly ? (!hasSample ? "waiting" : terminal ? "lost" : "active") : BodyThreatStatus(hasSample, terminal, bodyThreatVisible ? CurrentThreat : 0f);
+            var threat = bodyThreatVisible ? CurrentThreat : 0f;
+            var bodyStatus = IsFly
+                ? FlyBodyStatus(hasSample, terminal)
+                : BodyThreatStatus(hasSample, terminal, threat);
             PlaceText(state, 12f, ref bodyY, statusWidth, (IsFly ? "FLY BODY: " : "BODY THREAT: ") + bodyStatus);
             PlaceText(escapeState, 24f + statusWidth, ref escapeY, statusWidth, "NEURAL ESCAPE: " + NeuralEscapeStatus(hasSample, terminal, neuralEscapeVisible));
             y = Mathf.Max(bodyY, escapeY);
-            var nativeSignal = !hasSample ? "WAITING FOR NATIVE SAMPLE" : IsFly ? FlyHeaderSignal() : adapter.LiveState + " | " + adapter.LiveSignal + " " + adapter.LiveSignalValue.ToString("0.00");
+            var nativeSignal = NativeHeaderSignal(hasSample);
             var manualIndicator = manualInput.OverrideEnabled ? " | MANUAL INPUT ACTIVE" : "";
-            var age = lastSampleTime < 0f ? "not sampled" : (Time.unscaledTime - lastSampleTime).ToString("0.00") + " s ago";
+            var age = SampleAgeText();
             PlaceText(timing, 12f, ref y, width - 24f, nativeSignal + manualIndicator + "\nInput: " + age + " | loop " + stepMilliseconds.ToString("0.0") + " ms (sensor " + sensorMilliseconds.ToString("0.0") + " / brain " + brainMilliseconds.ToString("0.0") + " / actuator " + actuatorMilliseconds.ToString("0.0") + ") | UI " + uiMilliseconds.ToString("0.0") + " ms\nSkipped game time: " + droppedSeconds.ToString("0.000") + " s | scroll below for more");
+            LayoutTabs(width, y);
+            return y + 38f;
+        }
+
+        private static string FlyBodyStatus(bool hasSample, bool terminal)
+        {
+            if (!hasSample) return "waiting";
+            return terminal ? "lost" : "active";
+        }
+
+        private string NativeHeaderSignal(bool hasSample)
+        {
+            if (!hasSample) return "WAITING FOR NATIVE SAMPLE";
+            if (IsFly) return FlyHeaderSignal();
+            return adapter.LiveState + " | " + adapter.LiveSignal + " " + adapter.LiveSignalValue.ToString("0.00");
+        }
+
+        private string SampleAgeText()
+        {
+            return lastSampleTime < 0f
+                ? "not sampled"
+                : (Time.unscaledTime - lastSampleTime).ToString("0.00") + " s ago";
+        }
+
+        private static void LayoutTabs(float width, float y)
+        {
             for (var i = 0; i < tabs.Length; i++)
             {
                 SetRect((RectTransform)tabs[i].transform, 12f + i * (width - 24f) / Pages.Length, y, (width - 24f) / Pages.Length - 4f, 30f);
                 tabs[i].interactable = true;
                 tabLabels[i].color = shared.Page == i ? Accent : Foreground;
             }
-            return y + 38f;
         }
 
         private float LayoutPageContent(bool hasSample, float contentWidth)
@@ -889,7 +923,7 @@ namespace Mod.UI
             SetVisible(motorElements, hasSample && brain != null && shared.Page == 0);
             SetVisible(brainElements, hasSample && brain != null && shared.Page == 2);
             SetVisible(stimulationElements, showStimulation);
-            if (showStimulation) SetPersonOnlyStimulationVisible(!IsFly);
+            if (showStimulation) SetBodySpecificStimulationVisible(!IsFly, training != null);
             SetVisible(telemetryElements, !showStimulation);
             body.gameObject.SetActive(!showStimulation);
             BuildTelemetrySections(hasSample, out var telemetryIntro, out var telemetrySections);
@@ -901,7 +935,7 @@ namespace Mod.UI
             {
                 HideTelemetryRows();
             }
-            if (hasSample && brain != null && shared.Page == 0) LayoutMotors(contentWidth, ref contentY);
+            if (hasSample && brain != null && shared.Page == 0) LayoutMotors(brain, contentWidth, ref contentY);
             if (hasSample && brain != null && shared.Page == 2) LayoutBrain(contentWidth, ref contentY);
             if (showStimulation) LayoutStimulation(contentWidth, ref contentY);
             return contentY;
@@ -913,32 +947,59 @@ namespace Mod.UI
             sections = new List<string>();
             if (!hasSample)
             {
-                intro = "No native sample available.\n" + (brain == null ? "The connectome is unavailable; active control is disabled. Check the game mod log." : "Waiting for a usable " + (IsFly ? "fly" : "person") + " and its first physics sample.");
+                intro = MissingSampleText();
                 return;
             }
             if (IsFly)
             {
-                if (shared.Page == 0)
-                {
-                    sections.Add(FlyBodySummary());
-                    sections.Add(FlySenseSummary());
-                    sections.Add(FlyMotorSummary());
-                    return;
-                }
-                if (shared.Page == 1)
-                {
-                    sections.Add("NORMALIZED FLY READINGS\n" + FlyBodySummary().Substring("FLY BODY\n".Length));
-                    sections.Add(FlySenseSummary());
-                    sections.Add("SENSOR LIMITS\nThe articulated fly currently exposes rigidbody motion plus bounded baseline life-state signals. Vision, lighting, touch and sound remain unavailable until native fly sensors are added.");
-                    return;
-                }
+                BuildFlyTelemetrySections(sections);
+                return;
             }
+            BuildPersonTelemetrySections(sections);
+        }
+
+        private string MissingSampleText()
+        {
+            if (brain == null)
+                return "No native sample available.\nThe connectome is unavailable; active control is disabled. Check the game mod log.";
+            return "No native sample available.\nWaiting for a usable " + (IsFly ? "fly" : "person") + " and its first physics sample.";
+        }
+
+        private void BuildFlyTelemetrySections(List<string> sections)
+        {
+            if (shared.Page == 0)
+            {
+                sections.Add(FlyBodySummary());
+                sections.Add(FlySenseSummary());
+                sections.Add(FlyMotorSummary());
+                sections.Add(FlyConnectomeSummary());
+                return;
+            }
+            if (shared.Page == 1)
+            {
+                sections.Add("NORMALIZED FLY READINGS\n" + FlyBodySummary().Substring("FLY BODY\n".Length));
+                sections.Add(FlySenseSummary());
+                sections.Add("TRY IT\nMove an object toward the head, touch the body, place a Fly Treat or Pumpkin nearby, or change the light. After an object hurts the fly, bring another item of the same spawn category into view and watch learned-threat, neural escape and the defensive front-leg guard.");
+                sections.Add("SENSOR LIMITS\nVision uses nearby colliders and line of sight. Food is a gameplay marker, not measured smell, taste or eating. Harm memory associates the game's spawnable category with pain; it is bounded aversion learning, not semantic object or gun comprehension. Regional health responds to impacts and physical hazards; oxygen and consciousness are not simulated. Legs and wings show motor programs, not individual muscle physics.");
+            }
+        }
+
+        private string FlyConnectomeSummary()
+        {
+            if (brain == null) return "FLY CONNECTOME\nunavailable; active neural control is disabled";
+            var trainingStatus = training?.Status?.Invoke();
+            return "FLY CONNECTOME\n" + brain.Status + "\n" + brain.LearningStatusText +
+                (String.IsNullOrEmpty(trainingStatus) ? String.Empty : "\n" + trainingStatus);
+        }
+
+        private void BuildPersonTelemetrySections(List<string> sections)
+        {
             if (shared.Page == 0)
             {
                 sections.Add(adapter.LiveBodySummary);
                 sections.Add(adapter.LiveLimbSummary);
                 sections.Add(adapter.LiveMotorSummary);
-                sections.Add(brain == null ? "REQUEST: unavailable" : brain.DisplayMotorSummary);
+                sections.Add(brain == null ? "REQUEST: " + Unavailable : brain.DisplayMotorSummary);
                 return;
             }
             if (shared.Page == 1)
@@ -948,10 +1009,11 @@ namespace Mod.UI
                 sections.Add(adapter.LiveEnvironmentSummary);
                 sections.Add(adapter.LiveLiquidSummary);
                 sections.Add(adapter.LiveAudioSummary);
+                sections.Add("TRY IT\nCompare contact, light, sound and a stock Pumpkin in Senses. Neural grooming requests now produce small arm/head/body gestures while idle; feeding gestures also require food at the head. Overview labels the requested action. These are Human adaptations, not eating or learned behavior.");
                 sections.Add("DERIVED PROXIES\nDamage/blood loss, temperature bands, falling, vibration, proprioception and submerged hypoxia combine native readings.\nVision is nearest-collider line of sight combined with ambient + nearby light proxy. Local light uses enabled native light sprites and an approximate footprint; no texture/shadow sampling. Audio is external object playback. No semantic sight or smell.\nMin-limb-health is the lowest valid normalized health among connected limbs; it is not native Vitality.");
                 return;
             }
-            sections.Add(brain == null ? "NEURAL: unavailable" : brain.DisplaySummary);
+            sections.Add(brain == null ? "NEURAL: " + Unavailable : brain.DisplaySummary);
             if (brain != null) sections.Add("DERIVED INPUT DRIVES\n" + brain.DisplayInputSummary);
         }
 
@@ -1006,10 +1068,10 @@ namespace Mod.UI
                 if (field.Length > 0) fields.Add(field);
                 if (i < line.Length)
                 {
-                    var next = i + 1;
-                    while (next < line.Length && line[next] == ' ') next++;
-                    start = next;
-                    i = next;
+                    var nextFieldStart = i + 1;
+                    while (nextFieldStart < line.Length && line[nextFieldStart] == ' ') nextFieldStart++;
+                    start = nextFieldStart;
+                    i = nextFieldStart;
                     continue;
                 }
                 i++;
@@ -1033,14 +1095,14 @@ namespace Mod.UI
         private static bool IsUnavailableValue(string value)
         {
             return value.Equals("unknown", StringComparison.OrdinalIgnoreCase) ||
-                value.Equals("unavailable", StringComparison.OrdinalIgnoreCase) ||
+                value.Equals(Unavailable, StringComparison.OrdinalIgnoreCase) ||
                 value.Equals("invalid", StringComparison.OrdinalIgnoreCase) ||
                 value.StartsWith("unknown ", StringComparison.OrdinalIgnoreCase) ||
-                value.StartsWith("unavailable ", StringComparison.OrdinalIgnoreCase) ||
+                value.StartsWith(Unavailable + " ", StringComparison.OrdinalIgnoreCase) ||
                 value.StartsWith("invalid ", StringComparison.OrdinalIgnoreCase);
         }
 
-        private void LayoutTelemetry(string intro, List<string> sections, float width, ref float y)
+        private static void LayoutTelemetry(string intro, List<string> sections, float width, ref float y)
         {
             body.gameObject.SetActive(!String.IsNullOrEmpty(intro));
             if (!String.IsNullOrEmpty(intro)) PlaceText(body, 0f, ref y, width, FormatTelemetryText(intro));
@@ -1073,7 +1135,7 @@ namespace Mod.UI
             for (var i = rowIndex; i < telemetryRows.Count; i++) telemetryRows[i].Root.SetActive(false);
         }
 
-        private void LayoutTelemetryLine(string line, float width, Color sectionColor, ref int rowIndex, ref int stripeIndex, ref float y)
+        private static void LayoutTelemetryLine(string line, float width, Color sectionColor, ref int rowIndex, ref int stripeIndex, ref float y)
         {
             var fields = SplitTelemetryFields(line);
             var fieldCount = 0;
@@ -1115,7 +1177,7 @@ namespace Mod.UI
             y += detailHeight + 8f;
         }
 
-        private TelemetryRow TakeTelemetryRow(ref int rowIndex)
+        private static TelemetryRow TakeTelemetryRow(ref int rowIndex)
         {
             if (rowIndex >= telemetryRows.Count) telemetryRows.Add(new TelemetryRow(content));
             var row = telemetryRows[rowIndex++];
@@ -1123,7 +1185,7 @@ namespace Mod.UI
             return row;
         }
 
-        private void HideTelemetryRows()
+        private static void HideTelemetryRows()
         {
             foreach (var row in telemetryRows) row.Root.SetActive(false);
         }
@@ -1149,14 +1211,14 @@ namespace Mod.UI
             return Accent;
         }
 
-        private void ApplyPanelPosition(TelemetryLayout layout)
+        private static void ApplyPanelPosition(TelemetryLayout layout)
         {
             shared.PanelX = layout.ClampHorizontal(Screen.width, shared.PanelX);
             shared.PanelTop = layout.ClampVertical(Screen.height, shared.PanelTop);
             panel.anchoredPosition = new Vector2(shared.PanelX / layout.Scale, -shared.PanelTop / layout.Scale);
         }
 
-        private void PanMap(BaseEventData data)
+        private static void PanMap(BaseEventData data)
         {
             var pointer = data as PointerEventData;
             if (pointer == null || pointer.button != PointerEventData.InputButton.Left || mapViewport == null || mapImage == null || !mapImage.enabled) return;
@@ -1168,14 +1230,14 @@ namespace Mod.UI
             SetRect(mapImage.rectTransform, mapPan.x, mapPan.y, image.width, image.height);
         }
 
-        private void SetMapZoom(float zoom)
+        private static void SetMapZoom(float zoom)
         {
             if (mapViewport == null || mapImage == null) return;
             var view = mapViewport.rect;
             ApplyMapZoom(zoom, new Vector2(view.width, view.height) * .5f);
         }
 
-        private void ZoomMapFromScroll(BaseEventData data)
+        private static void ZoomMapFromScroll(BaseEventData data)
         {
             var pointer = data as PointerEventData;
             if (pointer == null || mapViewport == null || mapImage == null || !mapImage.enabled) return;
@@ -1187,7 +1249,7 @@ namespace Mod.UI
             ApplyMapZoom(mapZoom + Mathf.Sign(amount) * .25f, focus);
         }
 
-        private void ApplyMapZoom(float zoom, Vector2 focus)
+        private static void ApplyMapZoom(float zoom, Vector2 focus)
         {
             var view = mapViewport.rect;
             var oldZoom = Mathf.Max(.01f, mapZoom);
@@ -1200,7 +1262,7 @@ namespace Mod.UI
             shared.Selected?.RefreshUi();
         }
 
-        private void ResetMapView()
+        private static void ResetMapView()
         {
             mapZoom = 1f;
             mapPan = Vector2.zero;
@@ -1214,7 +1276,7 @@ namespace Mod.UI
             return new Vector2(Mathf.Clamp(pan.x, minX, 0f), Mathf.Clamp(pan.y, minY, 0f));
         }
 
-        private void MovePanel(BaseEventData data)
+        private static void MovePanel(BaseEventData data)
         {
             var pointer = data as PointerEventData;
             if (pointer == null || pointer.button != PointerEventData.InputButton.Left) return;
@@ -1223,7 +1285,7 @@ namespace Mod.UI
             ApplyPanelPosition(CurrentLayout());
         }
 
-        private void ResizePanel(BaseEventData data)
+        private static void ResizePanel(BaseEventData data)
         {
             var pointer = data as PointerEventData;
             if (pointer == null || pointer.button != PointerEventData.InputButton.Left) return;
@@ -1247,10 +1309,10 @@ namespace Mod.UI
             return rect;
         }
 
-        private void LayoutMotors(float width, ref float y)
+        private static void LayoutMotors(LifBrain source, float width, ref float y)
         {
             PlaceText(motorHeading, 0f, ref y, width, motorHeading.text);
-            var command = brain.LastCommand;
+            var command = source.LastCommand;
             motorValues[0] = command.FlyForward; motorValues[1] = command.FlyYaw; motorValues[2] = command.FlyBackward;
             motorValues[3] = command.FlyHalt; motorValues[4] = command.FlyBrake; motorValues[5] = command.FlyJump;
             motorValues[6] = command.FlyTakeoff; motorValues[7] = command.FlyLanding; motorValues[8] = command.FlyFlightPower;
@@ -1300,10 +1362,7 @@ namespace Mod.UI
             SetRect(mapViewport, (width - imageWidth) * .5f, y, imageWidth, previewHeight);
             var scaledWidth = imageWidth * mapZoom;
             var scaledHeight = imageHeight * mapZoom;
-            mapPan = ClampMapPan(mapPan, imageWidth, previewHeight, scaledWidth, scaledHeight);
-            SetRect(mapImage.rectTransform, mapPan.x, mapPan.y, scaledWidth, scaledHeight);
-            mapImage.texture = mapTexture;
-            mapImage.enabled = mapTexture != null;
+            PlaceMapImage(imageWidth, previewHeight, scaledWidth, scaledHeight);
             y += previewHeight + 10f;
             PlaceText(mapCaption, 0f, ref y, width, "TICK " + capturedTick + " | " + latest.ToString("0") + " graph spikes\nDrag to pan | scroll or use - / + to zoom | 1:1 resets.");
             if (map != null)
@@ -1320,11 +1379,19 @@ namespace Mod.UI
                 var members = brain.PopulationCount(PopulationNames[i]);
                 var fired = brain.PopulationFiredCount(PopulationNames[i]);
                 var rowY = y;
-                PlaceText(populationLabels[i], 0f, ref y, width * .6f, PopulationNames[i].Replace("type:", "") + "  " + (members == 0 ? "unavailable" : fired + " / " + members));
+                PlaceText(populationLabels[i], 0f, ref y, width * .6f, PopulationNames[i].Replace("type:", "") + "  " + (members == 0 ? Unavailable : fired + " / " + members));
                 SetRect(populationTracks[i].rectTransform, width * .61f, rowY + 4f, width * .39f, 10f);
                 SetRect(populationFills[i].rectTransform, width * .61f, rowY + 4f, members == 0 ? 0f : width * .39f * fired / members, 10f);
             }
             PlaceText(provenance, 0f, ref y, width, provenance.text);
+        }
+
+        private static void PlaceMapImage(float imageWidth, float previewHeight, float scaledWidth, float scaledHeight)
+        {
+            mapPan = ClampMapPan(mapPan, imageWidth, previewHeight, scaledWidth, scaledHeight);
+            SetRect(mapImage.rectTransform, mapPan.x, mapPan.y, scaledWidth, scaledHeight);
+            mapImage.texture = mapTexture;
+            mapImage.enabled = mapTexture != null;
         }
 
         private static Button CreateToggleButton(Transform parent, string text, Func<bool> isOn, Action<bool> changed, out TextMeshProUGUI label)
@@ -1332,16 +1399,16 @@ namespace Mod.UI
             var rect = CreateRect(parent, text + " toggle");
             var background = rect.gameObject.AddComponent<Image>();
             background.color = Track;
-            var toggle = rect.gameObject.AddComponent<Button>();
-            toggle.targetGraphic = background;
+            var toggleButton = rect.gameObject.AddComponent<Button>();
+            toggleButton.targetGraphic = background;
             label = CreateText(rect, text, 12f, Foreground);
             label.alignment = TextAlignmentOptions.Center;
             label.rectTransform.anchorMin = Vector2.zero;
             label.rectTransform.anchorMax = Vector2.one;
             label.rectTransform.pivot = new Vector2(.5f, .5f);
             label.rectTransform.offsetMin = label.rectTransform.offsetMax = Vector2.zero;
-            toggle.onClick.AddListener(() => changed(!isOn()));
-            return toggle;
+            toggleButton.onClick.AddListener(() => changed(!isOn()));
+            return toggleButton;
         }
 
         private static Slider CreateSlider(Transform parent, float minimum, float maximum, Action<float> changed)
@@ -1395,20 +1462,20 @@ namespace Mod.UI
             var background = rect.gameObject.AddComponent<Image>();
             background.color = Track;
             var field = rect.gameObject.AddComponent<TMP_InputField>();
-            var viewport = CreateRect(rect, "Numeric text viewport");
-            viewport.anchorMin = Vector2.zero;
-            viewport.anchorMax = Vector2.one;
-            viewport.pivot = new Vector2(.5f, .5f);
-            viewport.offsetMin = new Vector2(4f, 2f);
-            viewport.offsetMax = new Vector2(-4f, -2f);
-            viewport.gameObject.AddComponent<RectMask2D>();
-            var text = CreateText(viewport, "", 12f, Foreground);
+            var textViewport = CreateRect(rect, "Numeric text viewport");
+            textViewport.anchorMin = Vector2.zero;
+            textViewport.anchorMax = Vector2.one;
+            textViewport.pivot = new Vector2(.5f, .5f);
+            textViewport.offsetMin = new Vector2(4f, 2f);
+            textViewport.offsetMax = new Vector2(-4f, -2f);
+            textViewport.gameObject.AddComponent<RectMask2D>();
+            var text = CreateText(textViewport, "", 12f, Foreground);
             text.alignment = TextAlignmentOptions.Center;
             text.enableWordWrapping = false;
             text.rectTransform.anchorMin = Vector2.zero;
             text.rectTransform.anchorMax = Vector2.one;
             text.rectTransform.offsetMin = text.rectTransform.offsetMax = Vector2.zero;
-            field.textViewport = viewport;
+            field.textViewport = textViewport;
             field.textComponent = text;
             field.lineType = TMP_InputField.LineType.SingleLine;
             field.contentType = TMP_InputField.ContentType.DecimalNumber;
@@ -1419,7 +1486,10 @@ namespace Mod.UI
         private static void SetButtonColor(Button button, Color color)
         {
             var image = button?.GetComponent<Image>();
-            image?.color = color;
+            if (image != null)
+            {
+                image.color = color;
+            }
         }
 
         private static bool TryParseUnit(string text, out float value)
@@ -1523,14 +1593,14 @@ namespace Mod.UI
             return button;
         }
 
-        private TextMeshProUGUI AddText(List<GameObject> group, string text, Color color)
+        private static TextMeshProUGUI AddText(List<GameObject> group, string text, Color color)
         {
             var label = CreateText(content, text, 14f, color);
             group.Add(label.gameObject);
             return label;
         }
 
-        private Image AddImage(List<GameObject> group, Color color)
+        private static Image AddImage(List<GameObject> group, Color color)
         {
             var image = CreateRect(content, "Telemetry bar").gameObject.AddComponent<Image>();
             image.color = color;
@@ -1544,9 +1614,9 @@ namespace Mod.UI
             foreach (var element in elements) if (element.activeSelf != visible) element.SetActive(visible);
         }
 
-        private void ToggleCollapse() { shared.Collapsed = !shared.Collapsed; RefreshSelected(); }
-        private void ResizeText(float change) { shared.TextScale = Mathf.Clamp(shared.TextScale + change, .8f, 1.6f); RefreshSelected(); }
-        private void ChangePage(int index)
+        private static void ToggleCollapse() { shared.Collapsed = !shared.Collapsed; RefreshSelected(); }
+        private static void ResizeText(float change) { shared.TextScale = Mathf.Clamp(shared.TextScale + change, .8f, 1.6f); RefreshSelected(); }
+        private static void ChangePage(int index)
         {
             shared.Page = index;
             if (shared.Page != 2) ReleaseMap();
@@ -1560,7 +1630,7 @@ namespace Mod.UI
             if (displays.Count == 0) return;
             var currentIndex = shared.Selected == null ? 0 : displays.IndexOf(shared.Selected);
             var nextIndex = (currentIndex + direction + displays.Count) % displays.Count;
-            shared.Selected?.ReleaseMap();
+            ReleaseMap();
             shared.Selected = displays[nextIndex];
             shared.Selected.refreshTimer = 0f;
         }
@@ -1626,7 +1696,7 @@ namespace Mod.UI
             lastWorldLabelManual = false;
         }
 
-        private void ReleaseUi()
+        private static void ReleaseUi()
         {
             if (canvasObject != null)
             {
@@ -1651,9 +1721,12 @@ namespace Mod.UI
             ReleaseMap();
         }
 
-        private void ReleaseMap()
+        private static void ReleaseMap()
         {
-            mapImage?.texture = null;
+            if (mapImage != null)
+            {
+                mapImage.texture = null;
+            }
             if (mapTexture != null) UnityEngine.Object.Destroy(mapTexture);
             mapTexture = null!;
             map = null!;
@@ -1676,20 +1749,20 @@ namespace Mod.UI
             EnsureMap(currentMap);
             AgeMapFlashes();
             Array.Copy(mapBackground, mapPixels, mapPixels.Length);
-            MarkFiredNeurons();
+            MarkFiredNeurons(brain);
             ApplyMapFlashColors();
             capturedTick = currentTick;
             mapTexture.SetPixels32(mapPixels);
             mapTexture.Apply(false, false);
         }
 
-        private void ResetMapFlashes()
+        private static void ResetMapFlashes()
         {
             Array.Clear(mapFlashAges, 0, mapFlashAges.Length);
             Array.Clear(mapFlashColors, 0, mapFlashColors.Length);
         }
 
-        private void EnsureMap(BrainMapSample currentMap)
+        private static void EnsureMap(BrainMapSample currentMap)
         {
             if (map == currentMap) return;
             map = currentMap;
@@ -1697,7 +1770,7 @@ namespace Mod.UI
             BuildMap();
         }
 
-        private void AgeMapFlashes()
+        private static void AgeMapFlashes()
         {
             for (var i = 0; i < mapFlashAges.Length; i++)
             {
@@ -1705,9 +1778,9 @@ namespace Mod.UI
             }
         }
 
-        private void MarkFiredNeurons()
+        private static void MarkFiredNeurons(LifBrain source)
         {
-            var firedNeurons = brain.FiredNeurons;
+            var firedNeurons = source.FiredNeurons;
             for (var i = 0; i < firedNeurons.Count; i++)
             {
                 var neuronId = firedNeurons[i];
@@ -1717,7 +1790,7 @@ namespace Mod.UI
             }
         }
 
-        private void ApplyMapFlashColors()
+        private static void ApplyMapFlashColors()
         {
             for (var i = 0; i < mapPixels.Length; i++)
             {
@@ -1725,7 +1798,7 @@ namespace Mod.UI
             }
         }
 
-        private void BuildMap()
+        private static void BuildMap()
         {
             if (mapTexture != null) UnityEngine.Object.Destroy(mapTexture);
             mapTexture = new Texture2D(MapWidth, MapHeight, TextureFormat.RGBA32, false);
@@ -1761,7 +1834,7 @@ namespace Mod.UI
             }
         }
 
-        private void EnsureLegend()
+        private static void EnsureLegend()
         {
             if (map == null || legendLabels.Count == map.Classes.Length) return;
             for (var i = 0; i < legendLabels.Count; i++)
@@ -1816,7 +1889,7 @@ namespace Mod.UI
                 superclass.Contains("efferent");
         }
 
-        private void MarkMapFlash(int index, Color color)
+        private static void MarkMapFlash(int index, Color color)
         {
             var centerX = index % MapWidth;
             var centerY = index / MapWidth;
@@ -1829,7 +1902,7 @@ namespace Mod.UI
             }
         }
 
-        private void MarkMapFlashPixel(int centerX, int centerY, int x, int y, Color color)
+        private static void MarkMapFlashPixel(int centerX, int centerY, int x, int y, Color color)
         {
             if (x < 0 || x >= MapWidth || y < 0 || y >= MapHeight) return;
             var distance = Mathf.Abs(x - centerX) + Mathf.Abs(y - centerY);

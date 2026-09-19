@@ -4,22 +4,22 @@ using System.IO;
 using System.IO.Compression;
 using System.Text;
 using UnityEngine;
-using Mod.UI;
+using ShadowNineX.PersonConnectome.UI;
 
-namespace Mod.Core
+namespace ShadowNineX.PersonConnectome.Core
 {
     internal sealed partial class LifBrain
     {
         private sealed partial class ModAsset : IConnectomeAsset
         {
             public int NeuronCount, EdgeCount;
-            public int[] RowPointers = [], PostIndexes = [];
-            public float[] Weights = [];
-            public sbyte[] NtSigns = [];
-            public string[] Superclasses = [], Sides = [];
+            public int[] RowPointers = Array.Empty<int>(), PostIndexes = Array.Empty<int>();
+            public float[] Weights = Array.Empty<float>();
+            public sbyte[] NtSigns = Array.Empty<sbyte>();
+            public string[] Superclasses = Array.Empty<string>(), Sides = Array.Empty<string>();
             public BrainMapSample? BrainMap;
             internal readonly Dictionary<string, int[]> populations = new(StringComparer.OrdinalIgnoreCase);
-            private static readonly int[] EmptyPopulation = [];
+            private static readonly int[] EmptyPopulation = Array.Empty<int>();
             public IReadOnlyList<int> Population(string name)
             {
                 return populations.TryGetValue(name, out var ids) ? ids : EmptyPopulation;
@@ -98,7 +98,7 @@ namespace Mod.Core
             // cryptography namespace or privileged API. Tests compare this routine
             // with independent known vectors and the offline framework implementation.
             private static readonly uint[] Sha256RoundConstants =
-            [
+            {
                 0x428a2f98u, 0x71374491u, 0xb5c0fbcfu, 0xe9b5dba5u, 0x3956c25bu, 0x59f111f1u, 0x923f82a4u, 0xab1c5ed5u,
                 0xd807aa98u, 0x12835b01u, 0x243185beu, 0x550c7dc3u, 0x72be5d74u, 0x80deb1feu, 0x9bdc06a7u, 0xc19bf174u,
                 0xe49b69c1u, 0xefbe4786u, 0x0fc19dc6u, 0x240ca1ccu, 0x2de92c6fu, 0x4a7484aau, 0x5cb0a9dcu, 0x76f988dau,
@@ -107,12 +107,12 @@ namespace Mod.Core
                 0xa2bfe8a1u, 0xa81a664bu, 0xc24b8b70u, 0xc76c51a3u, 0xd192e819u, 0xd6990624u, 0xf40e3585u, 0x106aa070u,
                 0x19a4c116u, 0x1e376c08u, 0x2748774cu, 0x34b0bcb5u, 0x391c0cb3u, 0x4ed8aa4au, 0x5b9cca4fu, 0x682e6ff3u,
                 0x748f82eeu, 0x78a5636fu, 0x84c87814u, 0x8cc70208u, 0x90befffau, 0xa4506cebu, 0xbef9a3f7u, 0xc67178f2u
-            ];
+            };
 
             internal static string ComputePayloadSha256(byte[] data)
             {
                 if (data == null) throw new ArgumentNullException(nameof(data));
-                uint[] state = [0x6a09e667u, 0xbb67ae85u, 0x3c6ef372u, 0xa54ff53au, 0x510e527fu, 0x9b05688cu, 0x1f83d9abu, 0x5be0cd19u];
+                uint[] state = { 0x6a09e667u, 0xbb67ae85u, 0x3c6ef372u, 0xa54ff53au, 0x510e527fu, 0x9b05688cu, 0x1f83d9abu, 0x5be0cd19u };
                 var words = new uint[64];
                 var paddedLength = ((long)data.Length + 9 + 63) / 64 * 64;
                 var bitLength = (ulong)data.Length * 8;

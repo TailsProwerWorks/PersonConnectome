@@ -1,13 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net48</TargetFramework>
-    <!-- PPGModCompiler 1.0.0 parses mod sources with Roslyn CSharp14. -->
-    <LangVersion>14.0</LangVersion>
+    <!-- Supported game builds may compile loose mod scripts as C# 9. -->
+    <LangVersion>9.0</LangVersion>
     <ImplicitUsings>disable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <AssemblyName>PersonConnectome</AssemblyName>
-    <RootNamespace>Mod</RootNamespace>
+    <RootNamespace>ShadowNineX.PersonConnectome</RootNamespace>
     <OutputPath>bin\$(Configuration)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <PeoplePlaygroundInstall Condition="'$(PeoplePlaygroundInstall)' == ''">C:\Program Files (x86)\Steam\steamapps\common\People Playground</PeoplePlaygroundInstall>

@@ -1,11 +1,14 @@
 using System;
 using UnityEngine;
-using Mod.UI;
+using ShadowNineX.PersonConnectome.UI;
 
-namespace Mod
+namespace ShadowNineX.PersonConnectome
 {
     internal sealed class ConnectomeStatusHostBehaviour : MonoBehaviour
     {
+        // This marker component identifies the persistent Unity host object.
+        // Keeping the name here prevents registration code from duplicating it.
+        internal const string HostObjectName = "Person Connectome Status Host";
     }
 
     /// <summary>
@@ -26,9 +29,9 @@ namespace Mod
             return new PersonConnectomeStatusDisplay(anchor, input, bindings, EnsureRoot(), AllocateIdentity(), StatusDisplayBodyKind.Person);
         }
 
-        public static PersonConnectomeStatusDisplay RegisterFly(Transform anchor, ManualInputState input)
+        public static PersonConnectomeStatusDisplay RegisterFly(Transform anchor, ManualInputState input, StatusDisplayBindings bindings)
         {
-            return new PersonConnectomeStatusDisplay(anchor, input, null, EnsureRoot(), AllocateIdentity(), StatusDisplayBodyKind.Fly);
+            return new PersonConnectomeStatusDisplay(anchor, input, bindings, EnsureRoot(), AllocateIdentity(), StatusDisplayBodyKind.Fly);
         }
 
         public static void Unregister(IDisposable? display)
@@ -40,7 +43,7 @@ namespace Mod
         {
             if (hostObject == null)
             {
-                hostObject = new GameObject("Person Connectome Status Host");
+                hostObject = new GameObject(ConnectomeStatusHostBehaviour.HostObjectName);
                 hostObject.AddComponent<ConnectomeStatusHostBehaviour>();
             }
 

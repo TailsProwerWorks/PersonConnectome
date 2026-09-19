@@ -188,6 +188,21 @@ if (-not (Test-Path -LiteralPath $carrierPath -PathType Leaf)) {
 
 $files += [pscustomobject]@{ SourcePath = $carrierPath; RelativePath = 'connectome\malecns-v1.0.png' }
 
+$flyThumbnailPath = Join-Path $assetRoot 'fly-thumb.png'
+if (-not (Test-Path -LiteralPath $flyThumbnailPath -PathType Leaf)) {
+    throw "Fly thumbnail was not found: $flyThumbnailPath"
+}
+
+$files += [pscustomobject]@{ SourcePath = $flyThumbnailPath; RelativePath = 'fly-thumb.png' }
+foreach ($part in @('head', 'thorax', 'abdomen', 'wing', 'femur', 'tibia')) {
+    foreach ($layer in @('', '-flesh', '-bone')) {
+        $relative = 'fly\' + $part + $layer + '.png'
+        $sourcePath = Join-Path $assetRoot $relative
+        if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) { throw "Missing fly limb surface: $sourcePath" }
+        $files += [pscustomobject]@{ SourcePath = $sourcePath; RelativePath = $relative }
+    }
+}
+
 if (-not [String]::IsNullOrWhiteSpace($manifest.ThumbnailPath)) {
     $thumbnailPath = Join-Path $assetRoot 'thumb.png'
     if (-not (Test-Path -LiteralPath $thumbnailPath -PathType Leaf)) {

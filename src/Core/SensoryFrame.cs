@@ -1,4 +1,4 @@
-namespace Mod.Core
+namespace ShadowNineX.PersonConnectome.Core
 {
     /// <summary>Unity-free snapshot of body and environment observations consumed by the LIF runtime.</summary>
     internal struct SensoryFrame
@@ -15,6 +15,8 @@ namespace Mod.Core
         public bool LocalLightLimited;
         public bool FoodCuesValid;
         public float FoodNearbyCue, FoodContactCue;
+        public float LearnedThreat, LearnedThreatDirection;
+        public bool LearnedThreatValid;
         public float Consciousness, Adrenaline, Velocity, Rotation, Proprioception, Fall, Projectile, Unconscious;
         public float Balance, Heartbeat, BrainDamage, Seizure, Frozen, Paralysis, Numbness, Vitality, LungDamage;
         public float SoundDirection, VisionDirection, VisualApproach, SignedTilt, JointPosition, JointMotion, VelocityX, VelocityY;

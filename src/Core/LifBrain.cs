@@ -1,9 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
-using Mod.UI;
+using ShadowNineX.PersonConnectome.UI;
 
-namespace Mod.Core
+namespace ShadowNineX.PersonConnectome.Core
 {
     /// <summary>Validated graph contract shared by every body adapter.</summary>
     internal interface IConnectomeAsset
@@ -583,7 +583,12 @@ namespace Mod.Core
             var command = new FlyMotorCommand();
             var dnp01Activity = FiredMotorPopulation("type:DNp01");
             PopulateFlyRequests(ref command, dnp01Activity, halt, brake);
-            command.FlyEscape = DecodeFlyEscape(elapsedSeconds, dnp01Activity);
+            // A strong resolved looming signal is already neural input to LC4 /
+            // LPLC2. Qualify the same bounded, refractory escape reflex even if
+            // the sparse connectome does not happen to fire DNp01 on that exact
+            // scheduler tick; weaker cues still require descending-neuron output.
+            var strongVisualDanger = effectiveVisualThreatDrive >= .65f;
+            command.FlyEscape = DecodeFlyEscape(elapsedSeconds, dnp01Activity || strongVisualDanger);
             return command;
         }
 
@@ -804,6 +809,20 @@ namespace Mod.Core
             {
                 var direction = sensory.VisionHeadBearingValid ? Signed(sensory.VisionHeadBearingDegrees / 90f) : 0f;
                 AddVisualFeatures(new VisualObservation { Strength = sensory.Vision, Approach = sensory.VisualApproach, GeometryValid = sensory.VisualGeometryValid, AngularSize = sensory.VisualAngularSize, Expansion = sensory.VisualExpansion, AngularSpeed = sensory.VisualAngularSpeed }, direction, ref expansion, ref looming, ref small);
+            }
+            if (sensory.LearnedThreatValid)
+            {
+                var learnedThreat = Unit(sensory.LearnedThreat);
+                var learnedDirection = Signed(sensory.LearnedThreatDirection);
+                expansion.Add(learnedThreat, learnedDirection);
+                looming.Add(learnedThreat, learnedDirection);
+            }
+            var projectileThreat = Unit(sensory.Projectile);
+            if (projectileThreat > 0f)
+            {
+                var projectileDirection = sensory.VisionHeadBearingValid ?
+                    Signed(sensory.VisionHeadBearingDegrees / 90f) : 0f;
+                looming.Add(projectileThreat, projectileDirection);
             }
             smallVisualDrive = small.Amplitude;
             approachDrive = Math.Max(expansion.Amplitude, looming.Amplitude);

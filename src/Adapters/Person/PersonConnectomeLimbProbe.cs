@@ -1,7 +1,7 @@
 using System;
 using UnityEngine;
 
-namespace Mod.Adapters
+namespace ShadowNineX.PersonConnectome.Adapters
 {
     /// <summary>Forwards limb collision callbacks across the adapter boundary.</summary>
     public sealed class PersonConnectomeLimbProbe : MonoBehaviour

@@ -1,30 +1,36 @@
-<align="center"><b><color=#00E5FF>MaleCNS-derived Human controller</color></b></align>
+<align="center"><b><color=#00E5FF>MaleCNS Human & Fly</color></b></align>
 
 <b><color=#FFD700>PLAY</color></b>
-Enable Person Connectome with Shady Code Rejection enabled, then spawn Person Connectome (Active) from Entities. Stock Humans remain unchanged.
+Enable Person Connectome with Shady Code Rejection enabled. From Entities, spawn Person Connectome (Active), Person Connectome Fly [ShadowNineX], or Fly Treat [ShadowNineX]. Stock Humans remain unchanged.
 
-The screen panel starts at the top center. Prev / Next selects a person; freed numbers are reused by new spawns. Drag the title to move the panel and the bottom-right corner to resize it. A- / A+ changes text size; Collapse keeps a small header. Scroll each page to see all readings. Layout lasts this session.
+Prev / Next selects a body. Drag to move/resize; A- / A+ changes text size; Collapse keeps the header.
+
+FLY: icon/body are side view: one red eye/head left, striped abdomen right, wings above, legs below. Touch its mouth with Pumpkin or Fly Treat, approach with an object, or change light. Senses shows cues; shared Training/Good/Bad gives feedback. Wing activity can start bounded flight. Its 17 native physical limbs use joint-driven IK legs, wounds, blood and breakable parts. Flight remains engineered.
 
 <b><color=#FFD700>READ THE PANEL</color></b>
-Overview: native body state, local limb capability and requested movement. Requests are not measured motion; filtered neural activity is shown separately.
-Senses: native readings and proxies. Audio includes jukebox/attached playback; last heard persists with its age. Liquid percentages show peak tracked-limb concentration, not dose. Blood shows native amounts and maximum limb drop since its observed peak, not total lost blood.
-Brain: workload, actual spikes and all located source soma positions. The legend lists every superclass in the asset. Flashes mark captured spikes; dark points do not prove inactivity. Points may share pixels.
+Overview: body state and requested movement; a request is not measured motion.
+Senses: native readings/proxies. Liquids are peak limb concentration; blood is native amount/observed decline.
+Brain: workload, spikes and soma positions. Flashes are captured spikes; dark/shared pixels do not prove inactivity.
 
 <b><color=#FFD700>HOW IT WORKS</color></b>
-The unchanged MaleCNS-derived graph has 176,422 neurons and 6,287,749 retained connections. The map displays all 141,781 located neurons; all graph neurons remain in the simulation.
+The unchanged graph has 176,422 neurons and 6,287,749 retained connections; all remain simulated.
 
-Ambient/local lamp-light changes, external audio, regional contact, joint motion, hot/cold and geometric visual cues feed annotated populations. Sampled health drops and newly lost limbs supply engineered tactile injury events. The panel's pain and adrenaline values still come from the game, not a measured feeling.
+Light, audio, contact, joints, heat/cold and visual geometry feed annotated populations. Pain/adrenaline remain game readings, not measured feelings.
 
-Neural activity drives filtered movement requests through native game APIs. Walking bridges brief firing gaps. A qualified neural escape starts a 0.6-second walking burst; shooter direction is unknown. These are engineering settings, not biological calibration or guaranteed walking. Native poses and standing mechanics still contribute.
+Neural activity drives filtered game requests. Qualified escape starts a 0.6-second walking burst; shooter direction is unknown. Movement is not guaranteed or biologically calibrated.
 
-Stock Pumpkin supplies labeled nearby/head-contact gameplay cues to real food-related populations. Proximity includes walls. No eating, nutrition or measured smell/taste is added.
+Pumpkin supplies food cues. Fly Treat mouth contact gives bounded positive dopamine-style feedback; damage gives sparse negative feedback. No eating, nutrition, healing, smell/taste, or scripted action.
+
+After damage, a fly remembers a bounded set of spawnable categories. Seeing one again adds threat through normal visual/connectome routes; neural escape may guard with front legs. No gun recognition, attacker identity, intent, or crow-like cognition.
 
 <b><color=#FFD700>LIMITS</color></b>
-Fixed fly connections drive a game Human; it has no experience-based learning or complete fly mind. Vision samples five head-relative frontal bands using bounds, motion, line of sight and light; audio uses external playback and coarse frequency bands when available. Local light omits exact beam textures/shadows. No semantic sight, sound understanding, smell, taste, flight or biological swimming is claimed.
+Fly connections drive game bodies, not a complete mind. Vision uses frontal collider bands; fly audio uses nearby playback. Health includes total/regional head, thorax, abdomen, wings and legs; PPG physiology; no fly hunger or nutrition.
 
-Circulating liquids and native zombie state are observed separately. Exposure does not prove an effect or neural understanding. No liquid is injected. Existing restorative adjustments are engineered gameplay interventions, not neural healing.
+Liquids/zombie state are observed separately; exposure proves neither effect nor understanding. No liquid is injected.
 
-Water alone does not disable healthy limbs. Brain injury/unconsciousness is not death; terminal states and unavailable/low consciousness suppress active output. All active inputs are integrated; the 24,000-spike propagation cap can still drop excess spikes. No frame-rate or zero-latency guarantee is made.
+Water alone does not disable healthy limbs. Brain injury is not death. The 24,000-spike cap can drop excess work; frame time is not guaranteed.
+
+The shipped mod pins C# 9.0 for People Playground's loose-script compiler. A newer player .NET runtime/SDK cannot change the compiler bundled with the game.
 
 <b><color=#FFD700>SOURCE & ATTRIBUTION</color></b>
 Male CNS data: CC BY 4.0

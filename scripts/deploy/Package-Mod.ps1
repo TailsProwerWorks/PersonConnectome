@@ -90,6 +90,13 @@ foreach ($script in @($manifest.Scripts)) {
 
 $carrierPath = Join-Path $assetRoot 'connectome\malecns-v1.0.png'
 Add-PackageFile $files $carrierPath 'connectome\malecns-v1.0.png'
+Add-PackageFile $files (Join-Path $assetRoot 'fly-thumb.png') 'fly-thumb.png'
+foreach ($part in @('head', 'thorax', 'abdomen', 'wing', 'femur', 'tibia')) {
+    foreach ($layer in @('', '-flesh', '-bone')) {
+        $relative = 'fly\' + $part + $layer + '.png'
+        Add-PackageFile $files (Join-Path $assetRoot $relative) $relative
+    }
+}
 
 if (-not [String]::IsNullOrWhiteSpace([string]$manifest.ThumbnailPath)) {
     Add-PackageFile $files (Join-Path $assetRoot 'thumb.png') ([string]$manifest.ThumbnailPath)

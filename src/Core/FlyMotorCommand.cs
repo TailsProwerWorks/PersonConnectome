@@ -1,4 +1,4 @@
-namespace Mod.Core
+namespace ShadowNineX.PersonConnectome.Core
 {
     /// <summary>
     /// Unity-free motor decoder output from the fly connectome.
@@ -20,5 +20,15 @@ namespace Mod.Core
     {
         bool IsUsable { get; }
         void Apply(FlyMotorCommand command, float elapsedSeconds);
+    }
+
+    /// <summary>A joint-driven body: walking belongs to its legs, flight to the adapter.</summary>
+    internal interface IFlyPhysicalBodyRig : IFlyBodyRig
+    {
+        bool IsGrounded { get; }
+        float FlightCapacity { get; }
+        bool TryTurnAround();
+        void ApplyFlightVelocityChange(float deltaX, float deltaY);
+        void Release();
     }
 }

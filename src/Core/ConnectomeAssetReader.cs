@@ -3,9 +3,9 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using UnityEngine;
-using Mod.UI;
+using ShadowNineX.PersonConnectome.UI;
 
-namespace Mod.Core
+namespace ShadowNineX.PersonConnectome.Core
 {
     internal sealed partial class LifBrain
     {
@@ -243,7 +243,7 @@ namespace Mod.Core
 
                 if (!buckets.TryGetValue(key, out var list))
                 {
-                    list = [];
+                    list = new List<int>();
                     buckets[key] = list;
                 }
 

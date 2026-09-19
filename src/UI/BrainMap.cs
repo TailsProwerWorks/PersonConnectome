@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
-using Mod.Core;
+using ShadowNineX.PersonConnectome.Core;
 
-namespace Mod.UI
+namespace ShadowNineX.PersonConnectome.UI
 {
     // Diagnostics only. The sample never changes the simulated graph or its inputs.
     internal sealed class BrainMapSample
@@ -116,10 +116,20 @@ namespace Mod.UI
         }
     }
 
-    internal readonly struct BrainMapPoint(int neuronId, float x, float z, int category)
+    internal readonly struct BrainMapPoint
     {
-        public readonly int NeuronId = neuronId, Category = category;
-        public readonly float X = x, Z = z;
+        public readonly int NeuronId;
+        public readonly int Category;
+        public readonly float X;
+        public readonly float Z;
+
+        public BrainMapPoint(int neuronId, float x, float z, int category)
+        {
+            NeuronId = neuronId;
+            X = x;
+            Z = z;
+            Category = category;
+        }
     }
 
 }

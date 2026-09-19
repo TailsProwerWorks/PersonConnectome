@@ -1,4 +1,4 @@
-namespace Mod.Adapters
+namespace ShadowNineX.PersonConnectome.Adapters
 {
     /// <summary>Small, Unity-free validation helpers shared by liquid/status readers.</summary>
     internal static class LiquidAndStatusReader

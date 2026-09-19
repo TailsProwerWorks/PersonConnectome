@@ -1,7 +1,7 @@
 using System;
 using UnityEngine;
 
-namespace Mod.Adapters
+namespace ShadowNineX.PersonConnectome.Adapters
 {
     internal sealed class PersonConnectomeLimbController
     {
@@ -298,7 +298,10 @@ namespace Mod.Adapters
             }
             var heal = FiniteUnit(command.Heal);
             var circulation = limb.CirculationBehaviour;
-            circulation?.BloodRegenerationPerSecond = bloodRate.Apply(circulation.BloodRegenerationPerSecond, heal);
+            if (circulation != null)
+            {
+                circulation.BloodRegenerationPerSecond = bloodRate.Apply(circulation.BloodRegenerationPerSecond, heal);
+            }
             limb.RegenerationSpeed = limbRate.Apply(limb.RegenerationSpeed, heal);
             var physical = limb.PhysicalBehaviour;
             var extinguish = FiniteUnit(command.Extinguish);
@@ -310,7 +313,10 @@ namespace Mod.Adapters
         {
             if (limb == null) return;
             var circulation = limb.CirculationBehaviour;
-            circulation?.BloodRegenerationPerSecond = bloodRate.Restore(circulation.BloodRegenerationPerSecond);
+            if (circulation != null)
+            {
+                circulation.BloodRegenerationPerSecond = bloodRate.Restore(circulation.BloodRegenerationPerSecond);
+            }
             limb.RegenerationSpeed = limbRate.Restore(limb.RegenerationSpeed);
         }
 

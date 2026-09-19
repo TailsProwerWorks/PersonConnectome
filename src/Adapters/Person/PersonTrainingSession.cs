@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using UnityEngine;
 
-namespace Mod.Adapters
+namespace ShadowNineX.PersonConnectome.Adapters
 {
     /// <summary>
     /// Passive posture scoring and explicit-feedback bookkeeping for Teach mode.
@@ -14,7 +14,7 @@ namespace Mod.Adapters
         private const string ProfileVersion = "person-connectome-training-v4";
         private const int MaximumFeedbackEntries = 256;
         private const float StandingReferenceHeight = 1.1f;
-        private readonly List<int> feedbackHistory = [];
+        private readonly List<int> feedbackHistory = new();
         private float trialScore;
         private float bestScore = float.NegativeInfinity;
         private bool bestScoreImproved;

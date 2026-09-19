@@ -23,17 +23,29 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive; compile</IncludeAssets>
     </PackageReference>
-    <Compile Include="../../src/Adapters/PeoplePlaygroundPersonAdapter.cs" Link="src/Adapters/PeoplePlaygroundPersonAdapter.cs" />
-    <Compile Include="../../src/Adapters/PersonMotorCommand.cs" Link="src/Adapters/PersonMotorCommand.cs" />
-    <Compile Include="../../src/Adapters/PersonObservation.cs" Link="src/Adapters/PersonObservation.cs" />
-    <Compile Include="../../src/Adapters/PersonStandingController.cs" Link="src/Adapters/PersonStandingController.cs" />
-    <Compile Include="../../src/Adapters/PersonTrainingSession.cs" Link="src/Adapters/PersonTrainingSession.cs" />
-    <Compile Include="../../src/Adapters/PersonConnectomeLimbController.cs" Link="src/Adapters/PersonConnectomeLimbController.cs" />
-    <Compile Include="../../src/Adapters/PersonConnectomeLimbProbe.cs" Link="src/Adapters/PersonConnectomeLimbProbe.cs" />
-    <Compile Include="../../src/Adapters/LiquidAndStatusReader.cs" Link="src/Adapters/LiquidAndStatusReader.cs" />
-    <Compile Include="../../src/Adapters/PeoplePlaygroundFlyAdapter.cs" Link="src/Adapters/PeoplePlaygroundFlyAdapter.cs" />
+    <Compile Include="../../src/Adapters/Person/PeoplePlaygroundPersonAdapter.cs" Link="src/Adapters/Person/PeoplePlaygroundPersonAdapter.cs" />
+    <Compile Include="../../src/Adapters/Person/PersonMotorCommand.cs" Link="src/Adapters/Person/PersonMotorCommand.cs" />
+    <Compile Include="../../src/Adapters/Person/PersonObservation.cs" Link="src/Adapters/Person/PersonObservation.cs" />
+    <Compile Include="../../src/Adapters/Person/PersonStandingController.cs" Link="src/Adapters/Person/PersonStandingController.cs" />
+    <Compile Include="../../src/Adapters/Person/PersonTrainingSession.cs" Link="src/Adapters/Person/PersonTrainingSession.cs" />
+    <Compile Include="../../src/Adapters/Person/PersonConnectomeLimbController.cs" Link="src/Adapters/Person/PersonConnectomeLimbController.cs" />
+    <Compile Include="../../src/Adapters/Person/PersonConnectomeLimbProbe.cs" Link="src/Adapters/Person/PersonConnectomeLimbProbe.cs" />
+    <Compile Include="../../src/Adapters/Person/LiquidAndStatusReader.cs" Link="src/Adapters/Person/LiquidAndStatusReader.cs" />
+    <Compile Include="../../src/Adapters/Fly/PeoplePlaygroundFlyAdapter.cs" Link="src/Adapters/Fly/PeoplePlaygroundFlyAdapter.cs" />
+    <Compile Include="../../src/Adapters/Fly/FlyEnvironmentSensor.cs" Link="src/Adapters/Fly/FlyEnvironmentSensor.cs" />
+    <Compile Include="../../src/Adapters/Fly/FlyFoodMarker.cs" Link="src/Adapters/Fly/FlyFoodMarker.cs" />
+    <Compile Include="../../src/Adapters/Fly/FlyExperienceMemory.cs" Link="src/Adapters/Fly/FlyExperienceMemory.cs" />
+    <Compile Include="../../src/Adapters/Fly/FlyDopamineSystem.cs" Link="src/Adapters/Fly/FlyDopamineSystem.cs" />
+    <Compile Include="../../src/Adapters/Fly/FlyHealth.cs" Link="src/Adapters/Fly/FlyHealth.cs" />
+    <Compile Include="../../src/Adapters/Fly/FlyLimbDamageRelay.cs" Link="src/Adapters/Fly/FlyLimbDamageRelay.cs" />
+    <Compile Include="../../src/Core/FlyGait.cs" Link="src/Core/FlyGait.cs" />
     <Compile Include="../../src/Mod/PersonConnectomeController.cs" Link="src/Mod/PersonConnectomeController.cs" />
+    <Compile Include="../../src/Mod/ConnectomeTrainingSession.cs" Link="src/Mod/ConnectomeTrainingSession.cs" />
     <Compile Include="../../src/Mod/FlyConnectomeController.cs" Link="src/Mod/FlyConnectomeController.cs" />
+    <Compile Include="../../src/Mod/FlyPartAppearance.cs" Link="src/Mod/FlyPartAppearance.cs" />
+    <Compile Include="../../src/Mod/FlyPartAssets.cs" Link="src/Mod/FlyPartAssets.cs" />
+    <Compile Include="../../src/Mod/FlyBodyBootstrap.cs" Link="src/Mod/FlyBodyBootstrap.cs" />
+    <Compile Include="../../src/Mod/FlyBodyRig.cs" Link="src/Mod/FlyBodyRig.cs" />
     <Compile Include="../../src/Core/IBodyActuator.cs" Link="src/Core/IBodyActuator.cs" />
     <Compile Include="../../src/Core/IBodySensor.cs" Link="src/Core/IBodySensor.cs" />
     <Compile Include="../../src/Core/FlyMotorCommand.cs" Link="src/Core/FlyMotorCommand.cs" />

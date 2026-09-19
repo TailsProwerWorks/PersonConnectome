@@ -1,8 +1,10 @@
-using Mod;
-using Mod.Adapters;
-using Mod.Core;
-using Mod.UI;
+using ShadowNineX.PersonConnectome;
+using ShadowNineX.PersonConnectome.Adapters;
+using ShadowNineX.PersonConnectome.Core;
+using ShadowNineX.PersonConnectome.UI;
 using UnityEngine;
+
+namespace ShadowNineX.PersonConnectome.AdapterTests;
 
 internal static class Program
 {
@@ -115,6 +117,21 @@ internal static class Program
     private static void True(bool value) { if (!value) throw new Exception("assertion failed"); }
     private static void Equal(float expected, float actual) { if (float.IsNaN(actual) || MathF.Abs(expected - actual) > .00001f) throw new Exception($"expected {expected}, actual {actual}"); }
     private static void Equal(string expected, string actual) { if (expected != actual) throw new Exception($"expected {expected}, actual {actual}"); }
+    private static System.Reflection.FieldInfo RequiredInstanceField(Type type, string name) =>
+        type.GetField(name, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+        ?? throw new InvalidOperationException($"Required field not found: {type.FullName}.{name}");
+    private static System.Reflection.MethodInfo RequiredInstanceMethod(Type type, string name) =>
+        type.GetMethod(name, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+        ?? throw new InvalidOperationException($"Required method not found: {type.FullName}.{name}");
+    private static T RequiredReference<T>(object value, string description) where T : class =>
+        value as T ?? throw new InvalidOperationException($"Required {description} was null or had an unexpected type");
+    private static float RequiredFloatField(object instance, string name)
+    {
+        var value = RequiredInstanceField(instance.GetType(), name).GetValue(instance);
+        return value is float number
+            ? number
+            : throw new InvalidOperationException($"Required float field had an unexpected value: {name}");
+    }
     private static PersonMotorCommand Moving => new() { Walk = 1, RightArm = 1, LeftArm = -1, RightLeg = 1, LeftLeg = -1, Head = .5f, Core = .5f, RightGrip = 1, LeftGrip = 1, ReachGrab = 1, Heal = .8f, Avoid = 0, Freeze = 0, Stimulate = 0, Calm = 0, Extinguish = 0 };
     private static SensoryFrame ActiveMapperFrame => new()
     {
@@ -144,7 +161,7 @@ internal static class Program
             FlyFlightPower = 1f,
             FlyWingMotor = 1f
         }, false, 0f, 0f, .1f);
-        True(body.velocity.x > 0f && body.velocity.y > 0f);
+        True(body.velocity.x < 0f && body.velocity.y > 0f);
         var frame = adapter.Read();
         True(frame.Alive && frame.HealthValid && frame.VelocityValid);
         Equal(frame.VelocityX, adapter.LastFrame.VelocityX);
@@ -191,12 +208,22 @@ internal static class Program
             var type = typeof(FlyConnectomeController);
             type.GetMethod("Awake", flags).Invoke(controller, null);
             Equal(0, PersonConnectomeStatusDisplay.ActiveCount);
+            True(PersonConnectomeStatusDisplay.LastBodyKind == StatusDisplayBodyKind.Fly);
+            True(PersonConnectomeStatusDisplay.LastBindings?.Training != null);
             type.GetMethod("OnEnable", flags).Invoke(controller, null);
             Equal(1, PersonConnectomeStatusDisplay.ActiveCount);
             var manualInput = (ManualInputState)type.GetField("manualInput", flags).GetValue(controller);
             manualInput.SetOverrideEnabled(true);
             type.GetMethod("FixedUpdate", flags).Invoke(controller, null);
             var brain = (LifBrain)type.GetField("brain", flags).GetValue(controller);
+            True(brain.LearningMode == ConnectomeLearningMode.FrozenBaseline ||
+                brain.LearningMode == ConnectomeLearningMode.FrozenLearnedConnectome);
+            PersonConnectomeStatusDisplay.LastBindings.Training.Start();
+            PersonConnectomeStatusDisplay.LastBindings.Training.Good();
+            Equal(1, brain.FeedbackCalls);
+            PersonConnectomeStatusDisplay.LastBindings.Training.End();
+            True(brain.LearningMode == ConnectomeLearningMode.FrozenBaseline ||
+                brain.LearningMode == ConnectomeLearningMode.FrozenLearnedConnectome);
             True(System.Object.ReferenceEquals(manualInput, brain.LastManualInput));
             True(brain.LastFrame.LightValid && brain.LastFrame.Light > 0f);
             type.GetMethod("LateUpdate", flags).Invoke(controller, null);
@@ -204,6 +231,11 @@ internal static class Program
             type.GetMethod("OnDisable", flags).Invoke(controller, null);
             Equal(0, PersonConnectomeStatusDisplay.ActiveCount);
             True(!manualInput.OverrideEnabled);
+            type.GetMethod("OnEnable", flags).Invoke(controller, null);
+            var resumedAdapter = (PeoplePlaygroundFlyAdapter)type.GetField("adapter", flags).GetValue(controller);
+            resumedAdapter.Apply(new FlyMotorCommand { FlyForward = 1f }, false, 0f, 0f, .02f);
+            True(root.GetComponent<Rigidbody2D>().velocity.x < 0f);
+            type.GetMethod("OnDisable", flags).Invoke(controller, null);
             type.GetMethod("OnDestroy", flags).Invoke(controller, null);
             Equal(0, PersonConnectomeStatusDisplay.ActiveCount);
         }
@@ -373,7 +405,7 @@ internal static class Program
         session.GiveFeedback(true);
         True(session.FeedbackCount == 1);
         session.GiveFeedback(false);
-        True(session.TrialScore == 0f);
+        True(MathF.Abs(session.TrialScore) < .00001f);
         session.UndoLastFeedback();
         session.ToggleLearningPause();
         session.GiveFeedback(true);
@@ -572,13 +604,19 @@ internal static class Program
         Equal(0f, added.FakeUprightForce);
         Equal(0f, added.BalanceMuscleMovement);
         controller.JointAwareStandingControllerEnabled = true;
-        type.GetMethod("StartTrainingTrial", flags).Invoke(controller, null);
+        var trainingControls = PersonConnectomeStatusDisplay.LastBindings.Training;
+        True(trainingControls != null);
+        trainingControls.Start();
         True(!controller.JointAwareStandingControllerEnabled);
         type.GetMethod("SetDirectFlyControl", flags).Invoke(controller, [false]);
         True(controller.DirectFlyControlEnabled);
         Equal(0f, f.Limb.FakeUprightForce);
         Equal(0f, pose.UprightForceMultiplier);
-        type.GetMethod("EndTrainingTrial", flags).Invoke(controller, null);
+        trainingControls.End();
+        var trainingBrain = (LifBrain)type.GetField("brain", flags).GetValue(controller);
+        True(trainingBrain.LearningMode == ConnectomeLearningMode.FrozenBaseline);
+        type.GetMethod("FixedUpdate", flags).Invoke(controller, null);
+        True(trainingBrain.LearningMode == ConnectomeLearningMode.FrozenBaseline);
         type.GetMethod("SetDirectFlyControl", flags).Invoke(controller, [false]);
         Equal(12f, f.Limb.FakeUprightForce);
         Equal(2f, f.Limb.BalanceMuscleMovement);
@@ -808,6 +846,7 @@ internal static class Program
         terminalAdapter.Adapter.Read();
         terminalAdapter.Adapter.Apply(new FlyMotorCommand(), false, 30f, 2f, .05f);
         Equal(0f, terminalAdapter.Person.DesiredWalkingDirection);
+        True(terminalAdapter.Adapter.LiveMotorSummary.Contains("action=Suspended"));
         terminalAdapter.Person.Braindead = false;
         terminalAdapter.Person.AverageHealth = 1f;
         terminalAdapter.Adapter.Read();
@@ -979,17 +1018,17 @@ internal static class Program
         }
 
         Physics2D.Hits = colliders.ToArray(); Time.time = 0f; f.Adapter.Read();
-        var ownersField = typeof(PeoplePlaygroundPersonAdapter).GetField("componentCacheOwners", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
-        var owners = (List<PhysicalBehaviour>)ownersField.GetValue(f.Adapter)!;
+        var ownersField = RequiredInstanceField(typeof(PeoplePlaygroundPersonAdapter), "componentCacheOwners");
+        var owners = RequiredReference<List<PhysicalBehaviour>>(ownersField.GetValue(f.Adapter), "component cache owners");
         Equal(8, owners.Count);
-        var enqueue = typeof(PeoplePlaygroundPersonAdapter).GetMethod("EnqueueExpiredComponentDiscoveries", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
-        var refresh = typeof(PeoplePlaygroundPersonAdapter).GetMethod("RefreshQueuedComponentDiscoveries", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
-        var queueField = typeof(PeoplePlaygroundPersonAdapter).GetField("discoveryRefreshQueue", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var enqueue = RequiredInstanceMethod(typeof(PeoplePlaygroundPersonAdapter), "EnqueueExpiredComponentDiscoveries");
+        var refresh = RequiredInstanceMethod(typeof(PeoplePlaygroundPersonAdapter), "RefreshQueuedComponentDiscoveries");
+        var queueField = RequiredInstanceField(typeof(PeoplePlaygroundPersonAdapter), "discoveryRefreshQueue");
         Time.time = 4f; enqueue.Invoke(f.Adapter, null);
         foreach (var physical in physicals) physical.Destroyed = true;
         refresh.Invoke(f.Adapter, [4]);
-        Equal(4, ((Queue<PhysicalBehaviour>)queueField.GetValue(f.Adapter)!).Count); // Skipped queue entries still consume the inspection budget.
-        var prune = typeof(PeoplePlaygroundPersonAdapter).GetMethod("PruneComponentDiscoveryCache", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        Equal(4, RequiredReference<Queue<PhysicalBehaviour>>(queueField.GetValue(f.Adapter), "component discovery refresh queue").Count); // Skipped queue entries still consume the inspection budget.
+        var prune = RequiredInstanceMethod(typeof(PeoplePlaygroundPersonAdapter), "PruneComponentDiscoveryCache");
         prune.Invoke(f.Adapter, [4]);
         Equal(4, owners.Count); // Four destroyed entries, not the whole cache, are removed in one pass.
 
@@ -1011,13 +1050,13 @@ internal static class Program
         Time.time = 3f; True(f.Adapter.Read().Sound > 0f); // First four refresh.
         foreach (var child in children.Take(4)) child.GetComponent<AudioSource>().isPlaying = false;
         Time.time = 4f; True(f.Adapter.Read().Sound > 0f); // Remaining four are not starved.
-        var cacheField = typeof(PeoplePlaygroundPersonAdapter).GetField("componentCache", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
-        var cache = (System.Collections.IDictionary)cacheField.GetValue(f.Adapter)!;
-        var refreshTimes = cache.Values.Cast<object>().Select(value => (float)value.GetType().GetField("LastRefreshTime")!.GetValue(value)!).ToList();
+        var cacheField = RequiredInstanceField(typeof(PeoplePlaygroundPersonAdapter), "componentCache");
+        var cache = RequiredReference<System.Collections.IDictionary>(cacheField.GetValue(f.Adapter), "component cache");
+        var refreshTimes = cache.Values.Cast<object>().Select(value => RequiredFloatField(value, "LastRefreshTime")).ToList();
         Equal(4, refreshTimes.Count(time => time >= 4f));
         Time.time = 7f; f.Adapter.Read();
         Time.time = 8f; f.Adapter.Read();
-        refreshTimes = cache.Values.Cast<object>().Select(value => (float)value.GetType().GetField("LastRefreshTime")!.GetValue(value)!).ToList();
+        refreshTimes = cache.Values.Cast<object>().Select(value => RequiredFloatField(value, "LastRefreshTime")).ToList();
         Equal(8, refreshTimes.Count(time => time >= 7f)); // Multiple expiry cycles remain fair.
         Physics2D.Hits = []; Time.time = 0f;
         Physics2D.Hits = []; Time.time = 0f;
@@ -1032,12 +1071,12 @@ internal static class Program
         Physics2D.Hits = colliders.ToArray(); Time.time = 0f; f.Adapter.Read();
         foreach (var item in topologyItems) item.AddComponent<JukeboxBehaviour>();
         Time.time = 1f; f.Adapter.Read();
-        cacheField = typeof(PeoplePlaygroundPersonAdapter).GetField("componentCache", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
-        cache = (System.Collections.IDictionary)cacheField.GetValue(f.Adapter)!;
-        refreshTimes = cache.Values.Cast<object>().Select(value => (float)value.GetType().GetField("LastRefreshTime")!.GetValue(value)!).ToList();
-        Equal(4, refreshTimes.Count(time => time == 1f));
+        cacheField = RequiredInstanceField(typeof(PeoplePlaygroundPersonAdapter), "componentCache");
+        cache = RequiredReference<System.Collections.IDictionary>(cacheField.GetValue(f.Adapter), "component cache");
+        refreshTimes = cache.Values.Cast<object>().Select(value => RequiredFloatField(value, "LastRefreshTime")).ToList();
+        Equal(4, refreshTimes.Count(time => MathF.Abs(time - 1f) < .00001f));
         Time.time = 2f; f.Adapter.Read();
-        refreshTimes = cache.Values.Cast<object>().Select(value => (float)value.GetType().GetField("LastRefreshTime")!.GetValue(value)!).ToList();
+        refreshTimes = cache.Values.Cast<object>().Select(value => RequiredFloatField(value, "LastRefreshTime")).ToList();
         Equal(8, refreshTimes.Count(time => time >= 1f));
         Physics2D.Hits = []; Time.time = 0f;
 
@@ -1048,7 +1087,7 @@ internal static class Program
         var distantCollider = distant.AddComponent<Collider2D>(); distantCollider.Surface = new Vector2(2f, 0f);
         Physics2D.Hits = [distantCollider]; Time.time = 0f; f.Adapter.Read();
         Physics2D.Hits = []; Time.time = 20f; f.Adapter.Read();
-        owners = (List<PhysicalBehaviour>)ownersField.GetValue(f.Adapter)!;
+        owners = RequiredReference<List<PhysicalBehaviour>>(ownersField.GetValue(f.Adapter), "component cache owners");
         Equal(0, owners.Count);
     }
 
@@ -1215,7 +1254,7 @@ internal static class Program
     }
     private static void NumberedRootAudio()
     {
-        var f = new Fixture(); var source = SoundObject(out var audio);
+        var f = new Fixture(); var source = SoundObject(out _);
         source.Surface = new Vector2(2.19f, 0); Physics2D.Hits = [source];
         foreach (var name in new[] { "Root", "Root (3)", "Root (123)", "Root(Clone)", "Root (3)(Clone)", "Root(Clone) (3)", "root (3)" })
         {
@@ -1271,7 +1310,11 @@ internal static class Program
         var own = f.Limb.gameObject.AddComponent<Collider2D>(); callback.Invoke(probe, [new Collision2D { collider = own, relativeVelocity = new Vector2(10, 0) }]); Equal(0, f.Adapter.Read().Impact);
         var floor = new GameObject("Floor").AddComponent<Collider2D>(); callback.Invoke(probe, [new Collision2D { collider = floor, relativeVelocity = new Vector2(10, 0) }]);
         var frame = f.Adapter.Read(); Equal(.5f, frame.Impact); Equal(0, frame.Sound); Equal("CONTACT IMPACT", f.Adapter.LiveSignal);
-        for (var i = 0; i < 30; i++) frame = f.Adapter.Read(); True(frame.Impact < .001f);
+        for (var i = 0; i < 30; i++)
+        {
+            frame = f.Adapter.Read();
+        }
+        True(frame.Impact < .001f);
         var soft = new Fixture(); soft.Adapter.RegisterCollision(2); frame = soft.Adapter.Read(); Equal(.1f, frame.Impact); Equal("CONTACT", soft.Adapter.LiveSignal); Equal("SENSING", soft.Adapter.LiveState);
     }
     private static void DetachedOwnCollisions()
@@ -1348,7 +1391,7 @@ internal static class Program
         True(f.Adapter.LiveLiquidSummary.Contains("KNOCKOUT POISON"));
         f.Adapter.Apply(Moving, false);
         Equal(1f, f.Person.DesiredWalkingDirection);
-        True(detached.MotorSpeed == 0f);
+        True(MathF.Abs(detached.MotorSpeed) < .00001f);
     }
 
     private static void LocalDeadLimb()
@@ -1552,7 +1595,7 @@ internal static class Program
         var behind = Target("Behind", -.1f, 0); var blocked = Target("Blocked", 1, 0); var visible = Target("Visible", 3, 1);
         var wall = new GameObject("Wall").AddComponent<Collider2D>();
         Physics2D.Hits = [visible, behind, blocked];
-        Physics2D.LinecastHandler = (_, end) => [new RaycastHit2D { collider = end.x == 1 ? wall : visible }];
+        Physics2D.LinecastHandler = (_, end) => [new RaycastHit2D { collider = MathF.Abs(end.x - 1f) < .00001f ? wall : visible }];
         var frame = f.Adapter.Read(); True(frame.Vision > 0f && frame.VisionHeadBearingValid);
         Equal((1f - MathF.Sqrt(10f) / 8f), frame.Vision); Equal(2f, Physics2D.LinecastCalls);
         True(frame.Nearby > frame.Vision); // Proximity still reports the closest object, independently.
@@ -1623,20 +1666,36 @@ internal static class Program
         }
         var below = Target(-2, 3); var center = Target(0, 0); var above = Target(2, -3);
         Physics2D.Hits = [below, above, center];
-        Physics2D.LinecastHandler = (_, end) => [new RaycastHit2D { collider = end.y < 0 ? below : end.y > 0 ? above : center }];
+        Collider2D InitialTarget(float y)
+        {
+            if (y < 0)
+            {
+                return below;
+            }
+            return y > 0 ? above : center;
+        }
+        Physics2D.LinecastHandler = (_, end) => [new RaycastHit2D { collider = InitialTarget(end.y) }];
         var first = f.Adapter.Read(); True(first.VisualFieldValid);
         True(first.ViewClockwiseInner.Observed && first.ViewFront.Observed && first.ViewCounterclockwiseInner.Observed);
         Equal(0f, first.VisualApproach); // The nearest center object is stationary.
         True(first.ViewClockwiseInner.Expansion > 0f && first.ViewCounterclockwiseInner.Expansion > 0f);
         Equal(-45f, first.ViewClockwiseInner.BearingDegrees); Equal(45f, first.ViewCounterclockwiseInner.BearingDegrees);
         var wall = new GameObject("Occluder").AddComponent<Collider2D>();
-        Physics2D.LinecastHandler = (_, end) => [new RaycastHit2D { collider = end.y > 0 ? wall : end.y < 0 ? below : center }];
+        Collider2D UpdatedTarget(float y)
+        {
+            if (y > 0)
+            {
+                return wall;
+            }
+            return y < 0 ? below : center;
+        }
+        Physics2D.LinecastHandler = (_, end) => [new RaycastHit2D { collider = UpdatedTarget(end.y) }];
         var next = f.Adapter.Read(); True(!next.ViewCounterclockwiseInner.Observed && next.ViewClockwiseInner.Observed);
         True(first.ViewCounterclockwiseInner.Observed); // Later reads must not mutate retained snapshots.
         f.Limb.transform.RotationDegrees = 180; next = f.Adapter.Read();
         for (var i = 0; i < 5; i++) True(!next.ViewAt(i).Observed);
         f.Limb.transform.RotationDegrees = 0; RenderSettings.ambientLight = default; next = f.Adapter.Read();
-        for (var i = 0; i < 5; i++) True(!next.ViewAt(i).Observed && next.ViewAt(i).Strength == 0f);
+        for (var i = 0; i < 5; i++) True(!next.ViewAt(i).Observed && MathF.Abs(next.ViewAt(i).Strength) < .00001f);
         f.Limb.HasBrain = false; True(!f.Adapter.Read().VisualFieldValid);
     }
     private static void DirectionalSensors()

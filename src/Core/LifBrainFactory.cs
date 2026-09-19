@@ -1,4 +1,4 @@
-namespace Mod.Core
+namespace ShadowNineX.PersonConnectome.Core
 {
     /// <summary>Creates brains from the single validated, shared graph asset.</summary>
     internal sealed partial class LifBrain
@@ -6,7 +6,8 @@ namespace Mod.Core
         private static readonly object AssetLock = new();
         private static ModAsset? sharedAsset;
 
-        public static LifBrain? TryCreate(out string status)
+        /// <summary>Load while ModAPI has a Main/AfterSpawn context, before prefab Awake.</summary>
+        public static bool PrepareAsset(out string status)
         {
             lock (AssetLock)
             {
@@ -14,13 +15,22 @@ namespace Mod.Core
                 {
                     if (!ModAsset.TryLoad(out var loadedAsset, out status) || loadedAsset == null)
                     {
-                        return null;
+                        return false;
                     }
 
                     sharedAsset = loadedAsset;
                 }
 
                 status = "MaleCNS v1.0 loaded";
+                return sharedAsset != null;
+            }
+        }
+
+        public static LifBrain? TryCreate(out string status)
+        {
+            if (!PrepareAsset(out status)) return null;
+            lock (AssetLock)
+            {
                 var asset = sharedAsset;
                 return asset == null ? null : new LifBrain(asset);
             }

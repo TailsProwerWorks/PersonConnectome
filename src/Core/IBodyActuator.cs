@@ -1,6 +1,6 @@
 using System;
 
-namespace Mod.Core
+namespace ShadowNineX.PersonConnectome.Core
 {
     /// <summary>Actuation boundary from the runtime into a controlled body.</summary>
     internal interface IBodyActuator

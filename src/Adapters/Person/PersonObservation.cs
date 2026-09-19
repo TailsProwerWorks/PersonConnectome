@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace Mod.Adapters
+namespace ShadowNineX.PersonConnectome.Adapters
 {
     /// <summary>Coarse anatomical slot used by the person-only posture adapter.</summary>
     internal enum PersonLimbRole

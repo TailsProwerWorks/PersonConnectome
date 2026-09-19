@@ -1,201 +1,250 @@
 using System;
-using System.Collections.Generic;
-using Mod.Core;
+using ShadowNineX.PersonConnectome.Adapters;
+using ShadowNineX.PersonConnectome.Core;
 using UnityEngine;
 
-namespace Mod
+namespace ShadowNineX.PersonConnectome
 {
-    /// <summary>
-    /// Lightweight articulated fly body. The root carries flight physics and
-    /// each of the six legs has its own rigidbody and hinge attachment.
-    /// </summary>
-    internal sealed class FlyBodyRig : MonoBehaviour, IFlyBodyRig
+    /// <summary>Drives native, breakable PPG limb joints with a two-link tripod gait.</summary>
+    [DefaultExecutionOrder(1000)]
+    internal sealed class FlyBodyRig : MonoBehaviour, IFlyPhysicalBodyRig
     {
-        private readonly List<Rigidbody2D> legs = [];
-        private readonly List<Rigidbody2D> wings = [];
-        private readonly List<Rigidbody2D> groomingParts = [];
-        private Rigidbody2D? rootBody;
-        private Material? lineMaterial;
+        private LimbBehaviour[] uppers = Array.Empty<LimbBehaviour>();
+        private LimbBehaviour[] lowers = Array.Empty<LimbBehaviour>();
+        private LimbBehaviour[] wings = Array.Empty<LimbBehaviour>();
+        private LimbBehaviour? thorax;
+        private FlyHealth? health;
+        private float phase;
+        private float wingPhase;
+        private float driveFilter;
+        private float asymmetryFilter;
+        private float flightFilter;
+        private FlyMotorCommand pendingCommand;
+        private bool released = true;
 
-        public bool IsUsable => rootBody != null && legs.Count == 6;
-
-        public void Initialize()
+        public bool IsUsable => thorax != null && uppers.Length == 6 && lowers.Length == 6;
+        public bool IsGrounded
         {
-            rootBody = gameObject.GetComponent<Rigidbody2D>();
-            if (rootBody == null)
+            get
             {
-                rootBody = gameObject.AddComponent<Rigidbody2D>();
+                foreach (var lower in lowers)
+                    if (CanDrive(lower) && lower.IsOnFloor) return true;
+                return false;
             }
+        }
 
-            rootBody.mass = .05f;
-            rootBody.gravityScale = .2f;
-            rootBody.drag = .8f;
-            rootBody.angularDrag = .8f;
-            lineMaterial = CreateLineMaterial();
-            CreateBodyOutline();
-            CreateLegs();
+        public float FlightCapacity
+        {
+            get
+            {
+                if (wings.Length != 2 || !CanDrive(wings[0]) || !CanDrive(wings[1])) return 0f;
+                return Math.Min(Strength(wings[0]), Strength(wings[1]));
+            }
+        }
+
+        public void Initialize(LimbBehaviour body, LimbBehaviour[] upperLegs, LimbBehaviour[] lowerLegs, LimbBehaviour[] wingParts)
+        {
+            thorax = body;
+            health = GetComponent<FlyHealth>();
+            uppers = upperLegs;
+            lowers = lowerLegs;
+            wings = wingParts;
         }
 
         public void Apply(FlyMotorCommand command, float elapsedSeconds)
         {
-            if (!IsUsable || rootBody == null) return;
+            pendingCommand = command;
+            released = false;
+        }
 
-            var legDrive = ClampSigned(command.FlyLegMotor);
-            var asymmetry = ClampSigned(command.FlyLegMotorAsym);
-            var wingDrive = Unit(command.FlyWingMotor + command.FlySongPulse + command.FlySong);
-            var wingLift = wingDrive * .35f;
-            for (var i = 0; i < legs.Count; i++)
+        public bool TryTurnAround()
+        {
+            if (thorax == null || thorax.Person == null) return false;
+            var root = thorax.Person.transform;
+            var scale = root.localScale;
+            if (float.IsNaN(scale.x) || float.IsInfinity(scale.x) || Math.Abs(scale.x) < .001f) return false;
+
+            // Catalog Q/E facing uses this same root reflection. Flipping the
+            // complete Person keeps every collider, hinge, sprite, sensory ray,
+            // and local forward axis in agreement.
+            scale.x = -scale.x;
+            root.localScale = scale;
+            return true;
+        }
+
+        public void ApplyFlightVelocityChange(float deltaX, float deltaY)
+        {
+            if (thorax == null || thorax.Person == null ||
+                float.IsNaN(deltaX) || float.IsInfinity(deltaX) ||
+                float.IsNaN(deltaY) || float.IsInfinity(deltaY)) return;
+
+            // The adapter directly accelerates the thorax. Give every other
+            // still-attached dynamic part the same bounded velocity delta so
+            // sixteen gravity-affected bodies do not anchor that thorax to the
+            // floor through their hinges. Relative limb velocity is preserved.
+            foreach (var limb in thorax.Person.Limbs)
             {
+                if (limb == null || limb == thorax || limb.IsDismembered ||
+                    limb.Joint == null || limb.Joint.connectedBody == null ||
+                    limb.PhysicalBehaviour == null || limb.PhysicalBehaviour.isDisintegrated ||
+                    limb.PhysicalBehaviour.rigidbody == null ||
+                    limb.PhysicalBehaviour.rigidbody.bodyType != RigidbodyType2D.Dynamic ||
+                    (limb.CirculationBehaviour != null && limb.CirculationBehaviour.IsDisconnected)) continue;
+
+                var partBody = limb.PhysicalBehaviour.rigidbody;
+                var velocity = partBody.velocity;
+                if (float.IsNaN(velocity.x) || float.IsInfinity(velocity.x) ||
+                    float.IsNaN(velocity.y) || float.IsInfinity(velocity.y)) continue;
+                partBody.velocity = new Vector2(velocity.x + deltaX, velocity.y + deltaY);
+            }
+        }
+
+        private void FixedUpdate()
+        {
+            if (released) Release();
+            else DrivePose(pendingCommand, Time.fixedDeltaTime);
+        }
+
+        private void DrivePose(FlyMotorCommand command, float elapsedSeconds)
+        {
+            if (!IsUsable || thorax == null) return;
+            if (health == null || !health.IsAlive) { Release(); return; }
+            var dt = Unit(elapsedSeconds);
+            var requestedDrive = Signed(command.FlyLegMotor + Unit(command.FlyForward) - Unit(command.FlyBackward));
+            var requestedAsymmetry = Signed(command.FlyLegMotorAsym);
+            var requestedFlight = Unit(command.FlyFlightPower + command.FlyWingMotor + command.FlyTakeoff) * FlightCapacity;
+            // Motor populations are latest-tick readouts, not a continuous
+            // torque request. Rate limiting their body projection prevents a
+            // one-tick spike from reversing every joint and looking like a
+            // seizure in native physics.
+            driveFilter = MoveTowards(driveFilter, requestedDrive, 5f * dt);
+            asymmetryFilter = MoveTowards(asymmetryFilter, requestedAsymmetry, 6f * dt);
+            flightFilter = MoveTowards(flightFilter, requestedFlight, 4f * dt);
+            var drive = driveFilter;
+            var flight = flightFilter;
+            var airborne = !IsGrounded;
+            var poweredFlight = flight > .08f;
+            var grooming = FlyGait.GroomingIntent(command.FlyGroomAntenna, command.FlyGroomHead,
+                command.FlyGroomLeg, command.FlyGroomAbdomen, drive, flight, Unit(command.FlyEscape) > .5f);
+            if (!poweredFlight) phase = (phase + dt * Math.Abs(drive) * 2.5f) % 1f;
+            var wingFrequency = 3.5f + flight * 3.5f;
+            wingPhase = (wingPhase + dt * wingFrequency) % 1f;
+            for (var i = 0; i < uppers.Length; i++)
+            {
+                if (airborne && !poweredFlight)
+                {
+                    // A falling or recently landed body is not a walking
+                    // surface. Releasing the tripod servos prevents the legs
+                    // from fighting gravity and producing the seizure-like
+                    // folding seen when flight support ends.
+                    Release(uppers[i]);
+                    Release(lowers[i]);
+                    continue;
+                }
+
                 var side = i % 2 == 0 ? -1f : 1f;
-                var sideDrive = ClampSigned(legDrive + asymmetry * side);
-                var grooming = i % 3 == 0 ? Unit(command.FlyGroomLeg) : Unit(command.FlyGroomAbdomen);
-                var legVelocity = legs[i].velocity;
-                legVelocity.x = rootBody.velocity.x + sideDrive * 1.8f - side * grooming * .8f;
-                legVelocity.y = rootBody.velocity.y + wingLift - grooming * .5f;
-                legs[i].velocity = legVelocity;
+                var localDrive = poweredFlight ? 0f : Signed(drive + side * asymmetryFilter * .4f);
+                FlyGait.Pose(i, poweredFlight ? 0f : phase, localDrive, poweredFlight ? 1f : flight, grooming, out var upper, out var lower);
+                // FlyGait returns both segment headings in the thorax frame, but
+                // the knee hinge is connected to the femur. Convert the lower
+                // heading to a femur-relative angle before driving it.
+                if (!CanDrive(uppers[i])) { Release(uppers[i]); Release(lowers[i]); continue; }
+                // These torques carry the complete 17-body assembly at rest. The
+                // former .22/.12 caps were below the observed native contact load,
+                // so healthy legs folded even while the rest-pose IK was active.
+                var legTorque = poweredFlight ? .35f : 1f;
+                Drive(uppers[i], upper, FlyGait.UpperJointTorque * legTorque);
+                Drive(lowers[i], lower - upper, FlyGait.LowerJointTorque * legTorque);
+            }
+            for (var i = 0; i < wings.Length; i++)
+            {
+                if (flight <= .02f)
+                {
+                    Release(wings[i]);
+                    continue;
+                }
+
+                // Drive the hinge with a bounded angular velocity stroke. A
+                // position-error motor cannot keep up with a flapping target;
+                // it simply parks at a limit and looks like a dead wing.
+                var phase = wingPhase * Math.PI * 2d + i * .08f;
+                var frequency = wingFrequency * Math.PI * 2d;
+                var amplitude = 6f + flight * 24f + Unit(command.FlySong) * 3f;
+                DriveWingStroke(wings[i], (float)(Math.Cos(phase) * amplitude * frequency), FlyGait.WingJointTorque);
+            }
+            // Only grounded feet provide balance. Airborne legs cannot right the body.
+            if (IsGrounded && flight < .1f && thorax.PhysicalBehaviour != null)
+            {
+                var body = thorax.PhysicalBehaviour.rigidbody;
+                var correction = Mathf.DeltaAngle(body.rotation, 0f) * .006f - body.angularVelocity * .002f;
+                body.AddTorque(Mathf.Clamp(correction, -.12f, .12f));
+            }
+        }
+
+        private void Drive(LimbBehaviour limb, float degrees, float torque)
+        {
+            if (!CanDrive(limb) || thorax == null) { Release(limb); return; }
+            var joint = limb.Joint;
+            var connectedBody = joint.connectedBody;
+            if (connectedBody == null) { Release(limb); return; }
+            // Rigidbody2D.rotation excludes scale reflections. Hinge motor
+            // targets are relative to the connected body, so use that body's
+            // current world angle rather than always using the thorax.
+            var targetAngle = connectedBody.rotation + degrees;
+            var error = Mathf.DeltaAngle(limb.PhysicalBehaviour.rigidbody.rotation, targetAngle);
+            var motor = joint.motor;
+            motor.motorSpeed = Mathf.Clamp(error * 14f, -300f, 300f);
+            motor.maxMotorTorque = torque * Strength(limb);
+            limb.InfluenceMotorSpeed(motor.motorSpeed, 1f);
+            joint.motor = motor;
+            joint.useMotor = true;
+        }
+
+        private void DriveWingStroke(LimbBehaviour limb, float relativeSpeed, float torque)
+        {
+            if (!CanDrive(limb) || limb.Joint == null)
+            {
+                Release(limb);
+                return;
             }
 
-            for (var i = 0; i < wings.Count; i++)
-            {
-                var side = i == 0 ? -1f : 1f;
-                var wingVelocity = wings[i].velocity;
-                wingVelocity.x = rootBody.velocity.x + side * wingDrive * 1.2f;
-                wingVelocity.y = rootBody.velocity.y + wingLift;
-                wings[i].velocity = wingVelocity;
-            }
-
-            var antennaGroom = Unit(command.FlyGroomAntenna + command.FlyGroomHead);
-            var abdomenGroom = Unit(command.FlyGroomAbdomen);
-            for (var i = 0; i < groomingParts.Count; i++)
-            {
-                var groomingVelocity = groomingParts[i].velocity;
-                var drive = i < 2 ? antennaGroom : abdomenGroom;
-                groomingVelocity.x = rootBody.velocity.x + (i % 2 == 0 ? -drive : drive) * .75f;
-                groomingVelocity.y = rootBody.velocity.y + drive * .3f;
-                groomingParts[i].velocity = groomingVelocity;
-            }
+            var motor = limb.Joint.motor;
+            motor.motorSpeed = Mathf.Clamp(relativeSpeed, -720f, 720f);
+            motor.maxMotorTorque = torque * Strength(limb);
+            limb.InfluenceMotorSpeed(motor.motorSpeed, 1f);
+            limb.Joint.motor = motor;
+            limb.Joint.useMotor = true;
         }
 
-        private void CreateLegs()
+        public void Release()
         {
-            if (legs.Count == 6) return;
-            legs.Clear();
-            var positions = new[]
-            {
-                new Vector3(-.16f, .08f, 0f), new Vector3(.16f, .08f, 0f),
-                new Vector3(-.2f, 0f, 0f), new Vector3(.2f, 0f, 0f),
-                new Vector3(-.16f, -.08f, 0f), new Vector3(.16f, -.08f, 0f)
-            };
-
-            for (var i = 0; i < positions.Length; i++)
-            {
-                var legObject = new GameObject("Fly leg " + (i + 1));
-                legObject.transform.SetParent(transform);
-                legObject.transform.localPosition = positions[i];
-                legObject.transform.localScale = new Vector3(.18f, .42f, 1f);
-                var legSide = i % 2 == 0 ? -1f : 1f;
-                CreateLine(legObject, new[] { Vector3.zero, new Vector3(legSide * .42f, -.28f, 0f) }, .035f, new Color(.3f, .75f, .8f, .95f));
-                var legBody = legObject.AddComponent<Rigidbody2D>();
-                legBody.mass = .005f;
-                legBody.gravityScale = .2f;
-                legBody.drag = 1.5f;
-                var joint = legObject.AddComponent<HingeJoint2D>();
-                joint.connectedBody = rootBody;
-                legObject.AddComponent<CircleCollider2D>();
-                legs.Add(legBody);
-            }
-
-            CreateWing("Fly left wing", new Vector3(-.2f, .12f, 0f), -1f);
-            CreateWing("Fly right wing", new Vector3(.2f, .12f, 0f), 1f);
-            CreateGroomingPart("Fly left antenna", new Vector3(-.34f, .08f, 0f), new Vector3(.06f, .2f, 1f));
-            CreateGroomingPart("Fly right antenna", new Vector3(-.34f, -.08f, 0f), new Vector3(.06f, .2f, 1f));
-            CreateGroomingPart("Fly abdomen", new Vector3(0f, -.13f, 0f), new Vector3(.2f, .28f, 1f));
+            released = true;
+            pendingCommand = default;
+            driveFilter = asymmetryFilter = flightFilter = 0f;
+            foreach (var limb in uppers) Release(limb);
+            foreach (var limb in lowers) Release(limb);
+            foreach (var limb in wings) Release(limb);
         }
 
-        private void CreateWing(string name, Vector3 position, float side)
+        private static void Release(LimbBehaviour? limb)
         {
-            var wingObject = new GameObject(name);
-            wingObject.transform.SetParent(transform);
-            wingObject.transform.localPosition = position;
-            wingObject.transform.localScale = new Vector3(.42f, .12f, 1f);
-            CreateLine(wingObject, new[] { Vector3.zero, new Vector3(side * .42f, .13f, 0f) }, .055f, new Color(.45f, .85f, .95f, .65f));
-            var wingBody = wingObject.AddComponent<Rigidbody2D>();
-            wingBody.mass = .002f;
-            wingBody.gravityScale = 0f;
-            wingBody.drag = 2f;
-            var joint = wingObject.AddComponent<HingeJoint2D>();
-            joint.connectedBody = rootBody;
-            wingObject.AddComponent<CircleCollider2D>();
-            wings.Add(wingBody);
+            if (limb == null || limb.Joint == null) return;
+            limb.InfluenceMotorSpeed(0f, 1f);
+            limb.Joint.useMotor = false;
         }
 
-        private void CreateGroomingPart(string name, Vector3 position, Vector3 scale)
-        {
-            var partObject = new GameObject(name);
-            partObject.transform.SetParent(transform);
-            partObject.transform.localPosition = position;
-            partObject.transform.localScale = scale;
-            var end = position.x < -.3f
-                ? new Vector3(-.14f, position.y >= 0f ? .18f : -.18f, 0f)
-                : new Vector3(0f, -.18f, 0f);
-            CreateLine(partObject, new[] { Vector3.zero, end }, .03f, new Color(.2f, .6f, .7f, .85f));
-            var partBody = partObject.AddComponent<Rigidbody2D>();
-            partBody.mass = .003f;
-            partBody.gravityScale = .1f;
-            partBody.drag = 1.8f;
-            var joint = partObject.AddComponent<HingeJoint2D>();
-            joint.connectedBody = rootBody;
-            partObject.AddComponent<CircleCollider2D>();
-            groomingParts.Add(partBody);
-        }
+        private static bool CanDrive(LimbBehaviour? limb) => limb != null && limb.Health > 0f &&
+            (limb.Person == null || (!limb.Person.Braindead && limb.Person.Consciousness > .05f)) &&
+            !limb.IsDismembered && !limb.Broken && !limb.Frozen && !limb.IsParalysed &&
+            limb.Joint != null && limb.Joint.connectedBody != null &&
+            limb.PhysicalBehaviour != null && !limb.PhysicalBehaviour.isDisintegrated &&
+            (limb.CirculationBehaviour == null || !limb.CirculationBehaviour.IsDisconnected);
 
-        private void CreateBodyOutline()
-        {
-            CreateEllipse(new Vector3(-.27f, 0f, 0f), .13f, .13f, .1f, new Color(.16f, .32f, .5f, 1f));
-            CreateEllipse(new Vector3(-.02f, 0f, 0f), .24f, .18f, .12f, new Color(.12f, .24f, .4f, 1f));
-            CreateEllipse(new Vector3(.24f, 0f, 0f), .22f, .14f, .1f, new Color(.2f, .34f, .52f, 1f));
-            CreateEllipse(new Vector3(-.31f, .06f, 0f), .025f, .025f, .03f, new Color(.45f, .95f, 1f, 1f));
-            CreateEllipse(new Vector3(-.31f, -.06f, 0f), .025f, .025f, .03f, new Color(.45f, .95f, 1f, 1f));
-        }
-
-        private void CreateEllipse(Vector3 center, float radiusX, float radiusY, float width, Color color)
-        {
-            const int segments = 16;
-            var points = new Vector3[segments + 1];
-            for (var i = 0; i <= segments; i++)
-            {
-                var angle = i * Math.PI * 2d / segments;
-                points[i] = center + new Vector3((float)Math.Cos(angle) * radiusX, (float)Math.Sin(angle) * radiusY, 0f);
-            }
-
-            CreateLine(gameObject, points, width, color);
-        }
-
-        private LineRenderer CreateLine(GameObject owner, Vector3[] points, float width, Color color)
-        {
-            var lineObject = new GameObject(owner.name + " visual");
-            lineObject.transform.SetParent(owner.transform, false);
-            var line = lineObject.AddComponent<LineRenderer>();
-            line.positionCount = points.Length;
-            line.useWorldSpace = false;
-            line.startWidth = width;
-            line.endWidth = width;
-            line.startColor = color;
-            line.endColor = color;
-            line.material = lineMaterial;
-            line.sortingOrder = 100;
-            line.SetPositions(points);
-            return line;
-        }
-
-        private static Material? CreateLineMaterial()
-        {
-            var shader = Shader.Find("Sprites/Default");
-            return shader == null ? null : new Material(shader);
-        }
-
-        private static float Unit(float value) => IsFinite(value) ? Math.Min(1f, Math.Max(0f, value)) : 0f;
-        private static float ClampSigned(float value) => IsFinite(value) ? Math.Min(1f, Math.Max(-1f, value)) : 0f;
-        private static bool IsFinite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);
+        private static float Strength(LimbBehaviour limb) => Unit(limb.Health / Math.Max(.001f, limb.InitialHealth));
+        private static float MoveTowards(float value, float target, float step) =>
+            value + Math.Max(-step, Math.Min(step, target - value));
+        private static float Unit(float value) => float.IsNaN(value) || float.IsInfinity(value) ? 0f : Mathf.Clamp01(value);
+        private static float Signed(float value) => float.IsNaN(value) || float.IsInfinity(value) ? 0f : Mathf.Clamp(value, -1f, 1f);
+        private void OnDisable() => Release();
     }
 }

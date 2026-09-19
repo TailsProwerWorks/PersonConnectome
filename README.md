@@ -1,8 +1,23 @@
 # Person Connectome
 
-A People Playground Human variation controlled by a bounded neural simulation using a **MaleCNS v1.0-derived fly connectome**. The bundled graph has **176,422 neurons and 6,287,749 retained connections** (synapse weight ≥5). It is a thresholded derivative, not the full released graph or a biologically complete fly mind.
+A People Playground Human variation and an animated fly controlled by a bounded neural simulation using a **MaleCNS v1.0-derived fly connectome**. The bundled graph has **176,422 neurons and 6,287,749 retained connections** (synapse weight ≥5). It is a thresholded derivative, not the full released graph or a biologically complete fly mind.
 
 ## Play
+
+### Try the fly
+
+Spawn **Person Connectome Fly [ShadowNineX]** under **Entities**. Its menu icon and in-game rig are strict 2D side profiles: one visible red eye and head on the left, a brown thorax, striped abdomen to the right, wings above/behind, and six legs below. Flipping the object also flips its senses and movement.
+
+- Move a large object toward its head in a lit scene. Collider size and relative motion feed the visual populations; watch the brain and escape readout.
+- Put a stock **Pumpkin** nearby, or spawn **Fly Treat [ShadowNineX]** and touch the fly's mouth with it. Proximity and contact stimulate different food channels; Treat contact produces one bounded positive dopamine-style reinforcement event. A feeding request extends the proboscis. Neither item is consumed.
+- Touch the body, change ambient light, or bring a hot object or playing sound source near it. **Senses** shows what was detected; **Overview** labels the current body action.
+- Use **Stimulation** to compare individual channels or switch to manual-only inputs. Resting or weak movement is a valid neural outcome, not evidence that a canned behavior should run.
+
+The fly uses the existing graph and named neural readouts. An explicit game actuator supplies bounded walking, autonomous wing-request flight, flight support, braking and a contact-gated jump with a cooldown. The fly has 17 native physical limbs: head, thorax, abdomen, two wings, and six two-segment legs. Two-link IK drives breakable hip/knee joints; foot contact produces walking instead of sliding a single body. Native skin and circulation provide wounds, bleeding, burns, and dismemberment. The fly exposes overall health plus head, thorax, abdomen, wing, and individual-leg health; fatal head/thorax damage stops control. Health and oxygen use PPG physiology; fly-specific hunger and nutrition are not simulated. See [implementation and reference research](docs/fly-adapter-follow-up.md) and [body design](docs/fly-body-design.md).
+
+### Human variation
+
+The Human now also adapts neural grooming channels into restrained head, arm and body gestures while idle. A neural feeding request can produce a small gesture only with valid food contact at the head. Walking, escape, halt and safety stops take priority; the gestures do not force a grip, consume food or add rewards. **Overview** labels the current adaptation request so a stationary or resting body is easier to interpret.
 
 1. Copy the contents listed by `src/mod.json`, `assets/README.txt`, the thumbnail and the PNG carrier into `People Playground/Mods/PersonConnectome`, or use the deployment script below.
 2. Enable **Person Connectome** with **Shady Code Rejection enabled**.
@@ -20,7 +35,7 @@ The panel shows the age of the last input sample, measured control-loop time, an
 
 ## What controls the person
 
-The game supplies health, body, environment and contact data. The adapter normalizes those readings, supported sensory encoders pass selected signals to the single `src/Core/LifBrain.cs` implementation and pinned sparse graph, and the decoder exposes the fly's own descending/motor-neuron request channels (forward, yaw, flight, grooming, feeding, courtship and song). The current People Playground body still consumes a separate, explicitly labeled Human adaptation of those channels; that projection is implemented in `src/Adapters/PersonMotorCommand.cs` and never relabels fly requests as biological human joints. The Overview bars never relabel fly requests as human joints.
+The game supplies health, body, environment and contact data. The adapter normalizes those readings, supported sensory encoders pass selected signals to the single `src/Core/LifBrain.cs` implementation and pinned sparse graph, and the decoder exposes the fly's own descending/motor-neuron request channels (forward, yaw, flight, grooming, feeding, courtship and song). The current People Playground body still consumes a separate, explicitly labeled Human adaptation of those channels; that projection is implemented in `src/Adapters/Person/PersonMotorCommand.cs` and never relabels fly requests as biological human joints. The Overview bars never relabel fly requests as human joints.
 
 There is no independent water-paddling oscillator or sensor-only escape command. Motor requests change by at most eight normalized units per elapsed game second (elapsed time capped at 0.25 seconds per step). This damps abrupt reversals; it does not prove effective walking, balance or swimming. Terminal state and unavailable/low consciousness clear motor requests immediately. The Minecraft adaptation now includes injury-event input, regional contact, coarse audio frequency bands, geometric looming/small-object cues, body-rotation input and filtered locomotor/turning readout, alongside the existing light, joint and hot/cold routes. [Adaptation coverage](docs/minecraft-adaptation.md) explains what can transfer to a game Human and what remains unsupported. Their input scales and fly-to-human motor decoder remain engineering choices. See the [exact mapping, measurements and limits](docs/sensory-mapping.md).
 
@@ -28,9 +43,9 @@ Outside explicit Teach mode, the shared topology and base connection weights sta
 
 For native standing experiments, the spawned controller exposes an opt-in `JointAwareStandingControllerEnabled` setting. When enabled, the Human adapter adds bounded per-joint posture feedback from torso tilt/velocity, joint state and support contact between neural ticks. This is a deterministic, parameterized PD-style assist for actuator validation and is reported separately from neural learning; native physics testing is required before using it as a balance solution.
 
-The Stimulation page also includes Teach mode. Press **Start / retry trial** to enable plasticity while posture is measured passively. Direct fly control is forced on for the trial: the adapter does not restore native balance/pose helpers, run the optional standing controller, inject an action, or select a movement for the player. **Good** and **Bad** apply explicit positive/negative reward to recently eligible connectome edges; the standing score supplies the automatic objective. **Pause learning** blocks rewards while the connectome continues running, and **End training** freezes the learned deltas into read-only playback. Undo restores the prior synaptic profile; Restore best restores the neural profile captured at the best observed posture score; Reset clears learned neural memory; Save/Load persists the versioned neural profile and passive score metadata.
+The shared **Training** controls appear for both body types. Press **Start / retry trial** to enable explicit feedback learning; the Human additionally measures posture passively. **Good** and **Bad** apply positive/negative reward only to recently eligible existing connectome edges—never a hidden action, canned movement, or separate policy. **Pause learning** blocks reinforcement while the connectome continues running. For Humans, **End training** freezes learned deltas into read-only playback. The fly runs the bundled connectome in frozen-baseline inference by default; explicit **Start / retry trial** is required before dopamine or Good/Bad feedback can change weights. A new damage event or Fly Treat contact can still be reported as a bounded feedback event during that explicit session. Undo restores the prior explicit-feedback profile; Restore best restores the captured profile; Reset clears learned neural memory; Save/Load persists the versioned profile and objective metadata.
 
-This follows the standard three-factor idea of an activity eligibility trace gated by later reward, as described by [Florian (2007)](https://pubmed.ncbi.nlm.nih.gov/17444757/), but it remains an engineering prototype rather than a validated Drosophila learning model. The upstream project's [reference and limitations](https://github.com/blendi-remade/fly-brain-minecraft/blob/main/docs/REFERENCE.md) explicitly note that its model has no neuromodulation or spontaneous activity. Consequently, pure connectome training here can reinforce behavior the simulated brain actually produces, but it does not guarantee that an otherwise silent network will explore or discover an arbitrary requested action.
+This follows the standard three-factor idea of an activity eligibility trace gated by later reward, as described by [Florian (2007)](https://pubmed.ncbi.nlm.nih.gov/17444757/), but it remains an engineering prototype rather than a validated Drosophila learning model. Each fly also retains a small, bounded per-spawnable-category harm memory: after an observed damaging collision, seeing that category again adds a learned-threat drive through existing visual/threat routes. A resulting neural escape can raise the front legs into a defensive guard. This is not object understanding: the mod does not know what a gun or bowling ball means, identify an attacker, or provide crow-like semantic cognition. The upstream project's [reference and limitations](https://github.com/blendi-remade/fly-brain-minecraft/blob/main/docs/REFERENCE.md) explicitly note that its model has no neuromodulation or spontaneous activity. Consequently, reinforcement can change eligible weights only when the simulated brain has relevant activity; it does not guarantee discovery of an arbitrary requested action.
 
 Forward/backward and leg activity use 150 ms filters; turning uses 100 ms. Walking modes use hysteresis and a 250 ms minimum dwell, with immediate neural halt/brake and terminal suppression. An active walking mode has a 0.3 neural request floor; the adapter applies a 0.55 final request floor after modifiers so the native 0.5 gate retains a small decay margin. This is an actuator setting, not a raw neural reading. Filtered activity and the selected mode are displayed separately.
 
@@ -61,7 +76,7 @@ The mod does not synthesize random telemetry or neural commands. Mapped readings
 
 ## Build and verify
 
-Requires .NET 10 SDK, PowerShell 7 for the offline script checks, and installed People Playground assemblies for the `net48` game project. No NuGet packages are required.
+Requires .NET 10 SDK, PowerShell 7 for the offline script checks, and installed People Playground assemblies for the `net48` game project. The shipped mod project explicitly pins **C# 9.0** so loose-script compilers on supported People Playground installations do not require C# 12+ syntax. A player's newer .NET SDK/runtime does not upgrade the compiler embedded in the game. No NuGet packages are required.
 
 ```powershell
 dotnet format PersonConnectome.slnx --verify-no-changes --no-restore
@@ -105,11 +120,11 @@ The archive is written to `artifacts/PersonConnectome-Mod.zip` by default. Pass 
 For the contributor workflow, architecture guardrails, validation commands and recommended reasoning models, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 - `src/Core/LifBrain.cs`: single authoritative sparse LIF simulation and decoder.
-- `src/Adapters/PeoplePlaygroundPersonAdapter.cs` / `src/Adapters/PersonConnectomeLimbController.cs`: native sensing and local actuation.
+- `src/Adapters/Person/PeoplePlaygroundPersonAdapter.cs` / `src/Adapters/Person/PersonConnectomeLimbController.cs`: native sensing and local actuation.
 - `src/Mod/PersonConnectomeController.cs`: Unity lifecycle, timing and collision probes.
 - `src/Core/ConnectomeAsset.cs` and `src/Core/ConnectomeAssetReader.cs`: game texture-carrier/FLYB decoding and shared immutable graph data.
 - `src/UI/BrainMap.cs` / `src/UI/StatusDisplay.cs`: bounded diagnostic sample and screen overlay.
-- `src/Adapters/PeoplePlaygroundFlyAdapter.cs`: disabled future-body slot; see [fly adapter follow-up](docs/fly-adapter-follow-up.md).
+- `src/Adapters/Fly/PeoplePlaygroundFlyAdapter.cs`: fly sensing and bounded body actuation; see [fly adapter follow-up](docs/fly-adapter-follow-up.md).
 - `tests/`: shipped sources linked against narrow doubles. These verify contracts, not Unity physics/rendering.
 
 [Architecture](docs/architecture.md), [API compatibility](docs/api-compatibility.md), [provenance](docs/PROVENANCE.md) and [manual checks](docs/manual-game-test.md) describe the boundaries.

@@ -7,6 +7,8 @@ using Xunit.v3;
 
 [assembly: Parallelization(Mode = Xunit.Sdk.ParallelMode.None)]
 
+namespace ShadowNineX.PersonConnectome.AdapterTests;
+
 public sealed class AdapterScenarioTests
 {
     public static IEnumerable<object[]> Scenarios
@@ -120,7 +122,7 @@ public sealed class AdapterScenarioTests
         Physics2D.LinecastResult = default;
         Physics2D.LastOverlapRadius = 0f;
         var method = typeof(Program).GetMethod(methodName, BindingFlags.Static | BindingFlags.NonPublic);
-        if (method == null) throw new InvalidOperationException("Scenario method not found: " + methodName);
+        Assert.NotNull(method);
         try
         {
             method.Invoke(null, null);

@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-namespace Mod.Adapters
+namespace ShadowNineX.PersonConnectome.Adapters
 {
     /// <summary>
     /// Conservative, deterministic tuning for the optional person standing
@@ -101,7 +101,7 @@ namespace Mod.Adapters
     {
         private const float DefaultStepSeconds = .05f;
         private readonly PersonStandingControllerParameters parameters;
-        private readonly List<RateState> rateStates = [];
+        private readonly List<RateState> rateStates = new();
 
         private struct RateState
         {
@@ -213,7 +213,15 @@ namespace Mod.Adapters
 
         private float ResolveLimbSpeed(PersonLimbObservation limb, float posture, float walk, float sideBias)
         {
-            var side = limb.Side == PersonLimbSide.Left ? -1f : limb.Side == PersonLimbSide.Right ? 1f : 0f;
+            var side = 0f;
+            if (limb.Side == PersonLimbSide.Left)
+            {
+                side = -1f;
+            }
+            else if (limb.Side == PersonLimbSide.Right)
+            {
+                side = 1f;
+            }
             var speed = 0f;
             switch (limb.Role)
             {

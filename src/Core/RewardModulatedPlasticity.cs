@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
 
-namespace Mod.Core
+namespace ShadowNineX.PersonConnectome.Core
 {
     /// <summary>
     /// Engineering prototype of reward-modulated, pair-based eligibility
@@ -27,6 +27,17 @@ namespace Mod.Core
         private const float MaximumWeightScale = 2f;
         private const float TraceEpsilon = .00001f;
         private const float DeltaEpsilon = .0000001f;
+        private static readonly string[] LearnablePopulationNames =
+        {
+            "input:light", "type:Mi1", "type:L2", "type:L3", "input:auditory",
+            "input:touch-head", "input:touch-arms", "input:touch-legs", "input:touch-core",
+            "input:touch-other", "input:tactile", "input:gravity", "input:joint-position",
+            "input:joint-motion", "input:joint-load", "input:hot", "input:cold", "type:LC4",
+            "type:LPLC2", "type:LC11", "type:LC18", "input:optic-roll", "type:ORN_DM1",
+            "type:ORN_DM2", "type:ORN_VA2", "type:LB3b", "type:LB3c",
+            "type:DNp09", "type:DNg100", "type:DNge053", "type:DNg02", "type:MDN",
+            "type:DNa02", "type:DNa01", "type:DNp01", "motor", "motor:leg"
+        };
 
         private readonly IConnectomeAsset asset;
         private readonly int[] edgeIndexes;
@@ -42,8 +53,8 @@ namespace Mod.Core
         private readonly int[] incomingOffsets;
         private readonly int[] outgoingSlots;
         private readonly int[] incomingSlots;
-        private readonly List<int> activePreTrace = [];
-        private readonly List<int> activePostTrace = [];
+        private readonly List<int> activePreTrace = new();
+        private readonly List<int> activePostTrace = new();
         private readonly bool[] preTracePresent;
         private readonly bool[] postTracePresent;
         private ConnectomeLearningMode mode;
@@ -85,7 +96,7 @@ namespace Mod.Core
         public int ModifiedEdgeCount => modifiedEdgeCount;
         public float LastReinforcementFactor => lastReinforcementFactor;
         public float RewardBaseline => hasRewardBaseline ? rewardBaseline : 0f;
-        public string RuleName => "Experimental reward-modulated connectome plasticity";
+        public static string RuleName => "Experimental reward-modulated connectome plasticity";
 
         public string StatusText
         {
@@ -316,14 +327,19 @@ namespace Mod.Core
             }
 
             var sourceIds = new HashSet<int>();
-            AddPosturePopulations(sourceIds, asset);
-            SelectPostureEdges(selected, sourceIds, asset, budget);
+            AddLearnablePopulations(sourceIds, asset);
+            SelectLearnableEdges(selected, sourceIds, asset, budget);
 
             if (selected.Count == 0)
             {
                 SelectFallbackEdges(selected, asset.EdgeCount, budget);
             }
             return selected;
+        }
+
+        internal static int[] SelectDefaultEdgesForTest(IConnectomeAsset asset, int edgeBudget)
+        {
+            return SelectEdges(asset, edgeBudget, null).ToArray();
         }
 
         private static void SelectExplicitEdges(List<int> selected, IReadOnlyList<int> explicitEdges, int edgeCount, int budget)
@@ -335,26 +351,50 @@ namespace Mod.Core
             }
         }
 
-        private static void AddPosturePopulations(HashSet<int> sourceIds, IConnectomeAsset asset)
+        private static void AddLearnablePopulations(HashSet<int> sourceIds, IConnectomeAsset asset)
         {
-            AddPopulation(sourceIds, asset, "input:gravity");
-            AddPopulation(sourceIds, asset, "input:joint-position");
-            AddPopulation(sourceIds, asset, "input:joint-motion");
-            AddPopulation(sourceIds, asset, "input:joint-load");
-            AddPopulation(sourceIds, asset, "input:touch-legs");
+            for (var index = 0; index < LearnablePopulationNames.Length; index++)
+            {
+                AddPopulation(sourceIds, asset, LearnablePopulationNames[index]);
+            }
         }
 
-        private static void SelectPostureEdges(List<int> selected, HashSet<int> sourceIds, IConnectomeAsset asset, int budget)
+        private static void SelectLearnableEdges(List<int> selected, HashSet<int> sourceIds, IConnectomeAsset asset, int budget)
         {
-            foreach (var source in sourceIds)
-            {
-                if (asset.SignAt(source) == 0) continue;
-                for (var edge = asset.OutgoingStart(source); edge < asset.OutgoingEnd(source) && selected.Count < budget; edge++)
-                {
-                    if (asset.WeightAt(edge) > 0f) selected.Add(edge);
-                }
+            var sources = new List<int>(sourceIds);
+            sources.Sort();
+            var maximumDepth = MaximumOutgoingDepth(sources, asset);
 
-                if (selected.Count >= budget) return;
+            // Round-robin by outgoing depth so large populations cannot consume
+            // the whole bounded catalog before smaller fly sensory routes get a slot.
+            for (var depth = 0; depth < maximumDepth && selected.Count < budget; depth++)
+            {
+                SelectEdgesAtDepth(selected, sources, asset, budget, depth);
+            }
+            selected.Sort();
+        }
+
+        private static int MaximumOutgoingDepth(List<int> sources, IConnectomeAsset asset)
+        {
+            var maximumDepth = 0;
+            for (var index = 0; index < sources.Count; index++)
+            {
+                var source = sources[index];
+                if (asset.SignAt(source) == 0) continue;
+                maximumDepth = Math.Max(maximumDepth, asset.OutgoingEnd(source) - asset.OutgoingStart(source));
+            }
+            return maximumDepth;
+        }
+
+        private static void SelectEdgesAtDepth(List<int> selected, List<int> sources, IConnectomeAsset asset, int budget, int depth)
+        {
+            for (var index = 0; index < sources.Count && selected.Count < budget; index++)
+            {
+                var source = sources[index];
+                if (asset.SignAt(source) == 0) continue;
+                var edge = asset.OutgoingStart(source) + depth;
+                if (edge >= asset.OutgoingEnd(source)) continue;
+                if (asset.WeightAt(edge) > 0f) selected.Add(edge);
             }
         }
 

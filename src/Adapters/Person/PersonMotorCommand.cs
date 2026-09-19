@@ -1,8 +1,8 @@
 using System;
-using Mod.Core;
+using ShadowNineX.PersonConnectome.Core;
 using UnityEngine;
 
-namespace Mod.Adapters
+namespace ShadowNineX.PersonConnectome.Adapters
 {
     /// <summary>
     /// Person-specific request consumed by the People Playground limb and
@@ -36,9 +36,10 @@ namespace Mod.Adapters
         // its release threshold matches the forward request hysteresis.
         private const float BackwardEntryThreshold = .2f;
         private const float LocomotionReleaseThreshold = .04f;
+        private const float BehaviourThreshold = .1f;
+        private const string RestingActivity = "Resting";
         private float forwardFilter;
         private float backwardFilter;
-        private float yawFilter;
         private float leftLegFilter;
         private float rightLegFilter;
         private float locomotionDwell;
@@ -46,6 +47,13 @@ namespace Mod.Adapters
         private int escapeWalkDirection;
         private int locomotionMode;
         private PersonMotorCommand lastCommand;
+
+        /// <summary>
+        /// Human-readable summary of the currently projected fly decision.
+        /// This is mapper-owned so adapter telemetry describes the actual
+        /// person request after safety and locomotion arbitration.
+        /// </summary>
+        public string Activity { get; private set; } = RestingActivity;
 
         // Kept for small pure mapper tests. Runtime code owns one mapper per
         // person so filtering, locomotion hysteresis, and escape bursts are
@@ -91,6 +99,7 @@ namespace Mod.Adapters
                 // sampled body state and therefore still takes that path.
                 lastCommand = BodyState(frame, bodyThreat, freeze);
                 lastCommand.MotionStopRequested = stopRequested;
+                Activity = !movementPermitted ? "Suspended" : "Halting";
                 return lastCommand;
             }
 
@@ -106,7 +115,7 @@ namespace Mod.Adapters
             // decoder contract rather than a second adapter EMA.
             forwardFilter = forward;
             backwardFilter = backward;
-            yawFilter = Signed(command.FlyYaw);
+            var yaw = Signed(command.FlyYaw);
             var leftLeg = Unit(command.FlyLegMotor - asymmetry * .5f);
             var rightLeg = Unit(command.FlyLegMotor + asymmetry * .5f);
             leftLegFilter = Ema(leftLegFilter, leftLeg, smoothingElapsed, .15f);
@@ -123,17 +132,88 @@ namespace Mod.Adapters
             requested.RightArm = Signed(armSwing + wing * .8f + flightYaw * .2f);
             requested.LeftLeg = Signed(walk - sideBias * .2f + jump * .5f + takeoff * .25f - landing * .25f);
             requested.RightLeg = Signed(walk + sideBias * .2f + jump * .5f + takeoff * .25f - landing * .25f);
-            requested.Core = Signed(walk * .6f + center * .15f + yawFilter * .25f + flightPower * .35f + jump * .25f + takeoff * .2f - landing * .2f);
-            requested.Head = Signed(sideBias * .5f + yawFilter + flightYaw * .4f);
+            requested.Core = Signed(walk * .6f + center * .15f + yaw * .25f + flightPower * .35f + jump * .25f + takeoff * .2f - landing * .2f);
+            requested.Head = Signed(sideBias * .5f + yaw + flightYaw * .4f);
             requested.Avoid = bodyThreat > .5f || Unit(command.FlyEscape) > 0f ? 1f : 0f;
+            ApplyBehaviour(command, frame, bodyThreat, walk, ref requested);
             lastCommand = RateLimit(lastCommand, requested, smoothingElapsed);
             return lastCommand;
         }
 
-        public void Reset()
+        public void Reset(bool suspended = false)
         {
             ResetMotion();
             lastCommand = default;
+            Activity = suspended ? "Suspended" : RestingActivity;
+        }
+
+        private void ApplyBehaviour(FlyMotorCommand command, SensoryFrame frame, float bodyThreat, float walk,
+            ref PersonMotorCommand requested)
+        {
+            var escape = escapeWalkSeconds > 0f;
+            if (escape)
+            {
+                Activity = "Escaping";
+                return;
+            }
+
+            if (walk > LocomotionReleaseThreshold)
+            {
+                Activity = "Walking";
+                return;
+            }
+
+            if (walk < -LocomotionReleaseThreshold)
+            {
+                Activity = "Retreating";
+                return;
+            }
+
+            if (Math.Max(Math.Max(Math.Abs(requested.LeftArm), Math.Abs(requested.RightArm)),
+                    Math.Max(Math.Max(Math.Abs(requested.LeftLeg), Math.Abs(requested.RightLeg)),
+                        Math.Max(Math.Abs(requested.Head), Math.Abs(requested.Core)))) > LocomotionReleaseThreshold)
+            {
+                Activity = "Moving";
+                return;
+            }
+
+            // A threatened person retains their neutral, safety-owned posture.
+            // Grooming and feeding are only idle gestures; they must never
+            // compete with an escape decision or create a health bypass.
+            if (bodyThreat > .5f)
+            {
+                Activity = RestingActivity;
+                return;
+            }
+
+            var feed = Unit(command.FlyFeed);
+            if (feed > BehaviourThreshold && frame.FoodCuesValid && Unit(frame.FoodContactCue) > 0f)
+            {
+                var amount = .18f + feed * .22f;
+                requested.LeftArm = Signed(requested.LeftArm - amount * .65f);
+                requested.RightArm = Signed(requested.RightArm + amount);
+                requested.Head = Signed(requested.Head + amount * .75f);
+                Activity = "Feeding request";
+                return;
+            }
+
+            var antenna = Unit(command.FlyGroomAntenna);
+            var head = Unit(command.FlyGroomHead);
+            var leg = Unit(command.FlyGroomLeg);
+            var abdomen = Unit(command.FlyGroomAbdomen);
+            if (Math.Max(Math.Max(antenna, head), Math.Max(leg, abdomen)) <= BehaviourThreshold)
+            {
+                Activity = RestingActivity;
+                return;
+            }
+
+            // Each fly grooming channel gets its own restrained human posture,
+            // rather than reusing grip or a generic arm swing.
+            requested.LeftArm = Signed(requested.LeftArm - antenna * .35f + head * .28f - leg * .18f + abdomen * .15f);
+            requested.RightArm = Signed(requested.RightArm + antenna * .2f - head * .4f + leg * .3f - abdomen * .1f);
+            requested.Head = Signed(requested.Head + antenna * .6f + head * .45f - abdomen * .12f);
+            requested.Core = Signed(requested.Core + leg * .22f + abdomen * .38f);
+            Activity = "Grooming";
         }
 
         private static PersonMotorCommand BodyState(SensoryFrame frame, float bodyThreat, float freeze)
@@ -199,7 +279,7 @@ namespace Mod.Adapters
 
         private void ResetMotion()
         {
-            forwardFilter = backwardFilter = yawFilter = leftLegFilter = rightLegFilter = locomotionDwell = 0f;
+            forwardFilter = backwardFilter = leftLegFilter = rightLegFilter = locomotionDwell = 0f;
             escapeWalkSeconds = 0f;
             escapeWalkDirection = 0;
             locomotionMode = 0;

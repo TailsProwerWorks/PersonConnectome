@@ -1,5 +1,10 @@
 using UnityEngine;
 
+// These global types deliberately mirror People Playground's un-namespaced API,
+// and Spawnable's members remain instance members because linked production
+// sources reference them by those exact names and invocation shapes.
+#pragma warning disable S3903
+#pragma warning disable S2325
 public sealed class Spawnable
 {
     public T? GetComponent<T>() where T : class => null;
@@ -15,26 +20,36 @@ public sealed class Modification
     public Action<Spawnable>? AfterSpawn { get; set; }
 }
 
+#pragma warning restore S2325
+
+// ModAPI is the exact game API type name consumed by the linked runtime source.
+#pragma warning disable S101
 public static class ModAPI
 {
     internal static Texture2D? Texture;
+    internal static bool ThrowOnTextureLoad;
+    internal static int LoadTextureCalls;
     public static Spawnable? FindSpawnable(string _) => new();
     public static object FindCategory(string _) => new();
-    public static void Register(Modification _) { }
-    public static Texture2D? LoadTexture(string _) => Texture;
+    public static Modification? LastRegisteredModification { get; private set; }
+    public static void Register(Modification modification) => LastRegisteredModification = modification;
+    public static Texture2D? LoadTexture(string _)
+    {
+        LoadTextureCalls++;
+        if (ThrowOnTextureLoad) throw new InvalidOperationException("ModAPI texture loading is forbidden in this test.");
+        return Texture;
+    }
 }
-
-namespace Mod
-{
-    internal sealed class PersonConnectomeController { }
-}
+#pragma warning restore S101
+#pragma warning restore S3903
 
 namespace UnityEngine
 {
 
     public static class Debug
     {
-        public static void Log(string _) { }
+        internal static string? LastMessage { get; private set; }
+        public static void Log(string message) => LastMessage = message;
     }
 
     public struct Color32
@@ -68,7 +83,16 @@ namespace UnityEngine
         public static float Clamp(float value, float minimum, float maximum) => Math.Clamp(value, minimum, maximum);
         public static float Clamp01(float value) => Clamp(value, 0f, 1f);
         public static float Abs(float value) => MathF.Abs(value);
-        public static float Sign(float value) => value < 0f ? -1f : value > 0f ? 1f : 0f;
+        public static float Sign(float value)
+        {
+            if (value < 0f)
+                return -1f;
+
+            if (value > 0f)
+                return 1f;
+
+            return 0f;
+        }
         public static int Min(int left, int right) => Math.Min(left, right);
     }
 }

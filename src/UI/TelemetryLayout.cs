@@ -1,13 +1,13 @@
 using System;
 using System.Collections.Generic;
 
-namespace Mod.UI
+namespace ShadowNineX.PersonConnectome.UI
 {
     // Active display numbers, independent of Unity. Released slots are reused
     // without renumbering surviving people or retaining deleted displays.
     internal sealed class TelemetryIdentityPool
     {
-        private readonly List<object?> owners = [];
+        private readonly List<object?> owners = new();
 
         public int Acquire(object owner)
         {
