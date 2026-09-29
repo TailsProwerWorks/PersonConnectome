@@ -1,5 +1,19 @@
 # Person Connectome
 
+> **ARCHIVED — People Playground has ended C# mod support.**
+>
+> People Playground's developers have stopped supporting C# mods, and have said they
+> intend to replace the modding/scripting system. That replacement has not shipped yet,
+> and no date has been given for it.
+>
+> Person Connectome is a C# mod, so it cannot be loaded or maintained against current
+> versions of the game. **This repository is archived and no longer maintained.** There
+> will be no further updates, fixes or support; the existing code and releases remain
+> available as-is for older game builds.
+>
+> Once the replacement scripting system is released, a new mod will be built for it in a
+> separate repository. This one is kept archived as a reference and a record of the work.
+
 A People Playground Human variation controlled by a bounded neural simulation using a **MaleCNS v1.0-derived fly connectome**. The bundled graph has **176,422 neurons and 6,287,749 retained connections** (synapse weight ≥5). It is a thresholded derivative, not the full released graph or a biologically complete fly mind.
 
 ## Play
